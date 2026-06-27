@@ -27,9 +27,9 @@ SIGNATURES = [
             r"|xp_cmdshell"
             r"|'[\s]*or[\s]+'[^']*'[\s]*=[\s]*'"  # ' OR 'x'='x
             r"|\"[\s]*or[\s]+\"[^\"]*\"[\s]*=[\s]*\""  # " OR "x"="x
-            r"|[\d\s]+or[\s]+[\d]+=[\d]+"  # 1 OR 1=1
-            r"|1[\s]*=[\s]*1"
-            r"|'[\s]*--"
+            r"|[\d\s'\"]+or[\s]+[\d]+=[\d]+"  # 1 OR 1=1 / 1' OR / 1" OR
+            r"|\b1\s*=\s*1\b"              # 1=1 at word boundary (avoids step1=1 false-positives)
+            r"|['\"][\s]*--"              # '-- or "-- comment-based injection
             r"|/\*.*\*/"
             r"|;[\s]*(drop|select|insert|update|delete|create)"
             r"|sleep[\s]*\("
