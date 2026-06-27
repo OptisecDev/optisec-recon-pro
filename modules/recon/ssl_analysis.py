@@ -5,6 +5,30 @@ import socket
 from datetime import datetime, timezone
 
 
+def _parse_cert_der(der: bytes) -> dict:
+    """Parse DER certificate using cryptography library (available via cryptography>=41)."""
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.backends import default_backend
+        cert_obj = x509.load_der_x509_certificate(der, default_backend())
+        subject = {attr.oid._name: attr.value for attr in cert_obj.subject}
+        issuer = {attr.oid._name: attr.value for attr in cert_obj.issuer}
+        not_before = cert_obj.not_valid_before_utc if hasattr(cert_obj, "not_valid_before_utc") else cert_obj.not_valid_before.replace(tzinfo=timezone.utc)
+        not_after = cert_obj.not_valid_after_utc if hasattr(cert_obj, "not_valid_after_utc") else cert_obj.not_valid_after.replace(tzinfo=timezone.utc)
+        serial = format(cert_obj.serial_number, "X")
+        sans = []
+        try:
+            san_ext = cert_obj.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+            sans = san_ext.value.get_values_for_type(x509.DNSName)
+        except Exception:
+            pass
+        return {"subject": subject, "issuer": issuer,
+                "not_before": not_before, "not_after": not_after,
+                "serial": serial, "sans": sans}
+    except Exception:
+        return {}
+
+
 def analyze_ssl(domain: str, port: int = 443) -> dict:
     domain = domain.replace("https://", "").replace("http://", "").split("/")[0]
 
@@ -15,36 +39,33 @@ def analyze_ssl(domain: str, port: int = 443) -> dict:
     try:
         with socket.create_connection((domain, port), timeout=10) as sock:
             with ctx.wrap_socket(sock, server_hostname=domain) as ssock:
-                cert = ssock.getpeercert()
+                der = ssock.getpeercert(binary_form=True)
                 cipher = ssock.cipher()
                 tls_version = ssock.version()
-                der = ssock.getpeercert(binary_form=True)
+        cert_data = _parse_cert_der(der) if der else {}
     except Exception as e:
         return {"domain": domain, "error": str(e), "valid": False}
 
-    # Parse dates
-    not_before = _parse_cert_date(cert.get("notBefore", ""))
-    not_after = _parse_cert_date(cert.get("notAfter", ""))
-    now = datetime.now(timezone.utc)
+    # Use parsed cert data
+    not_before = cert_data.get("not_before")
+    not_after = cert_data.get("not_after")
+    subject = cert_data.get("subject", {})
+    issuer = cert_data.get("issuer", {})
+    san_list = list(cert_data.get("sans", []))
 
-    expired = not_after and not_after < now
+    now = datetime.now(timezone.utc)
+    expired = bool(not_after and not_after < now)
     days_left = (not_after - now).days if not_after else None
     expiring_soon = days_left is not None and 0 < days_left <= 30
-
-    # Subject / Issuer
-    subject = dict(x[0] for x in cert.get("subject", []))
-    issuer = dict(x[0] for x in cert.get("issuer", []))
-
-    # SANs
-    san_list = []
-    for ext_type, val in cert.get("subjectAltName", []):
-        if ext_type == "DNS":
-            san_list.append(val)
-
-    # Wildcard detection
     wildcards = [s for s in san_list if s.startswith("*")]
 
-    risk_score = _calc_risk(expired, expiring_soon, tls_version, wildcards, issuer)
+    # Normalize subject/issuer keys from cryptography OID names
+    cn = (subject.get("commonName") or subject.get("common_name") or
+          subject.get("CN") or "")
+    issuer_org = (issuer.get("organizationName") or issuer.get("organization_name") or
+                  issuer.get("O") or issuer.get("commonName") or "")
+
+    risk_score = _calc_risk(expired, expiring_soon, tls_version, wildcards, {"organizationName": issuer_org})
 
     return {
         "domain": domain,
@@ -56,18 +77,19 @@ def analyze_ssl(domain: str, port: int = 443) -> dict:
         "not_after": not_after.isoformat() if not_after else None,
         "subject": subject,
         "issuer": issuer,
-        "common_name": subject.get("commonName", ""),
-        "issuer_name": issuer.get("organizationName", issuer.get("commonName", "")),
+        "common_name": cn,
+        "issuer_name": issuer_org,
         "tls_version": tls_version,
         "cipher": cipher[0] if cipher else None,
         "key_bits": cipher[2] if cipher else None,
         "sans": san_list,
         "wildcard_count": len(wildcards),
         "wildcards": wildcards,
-        "serial_number": cert.get("serialNumber", ""),
+        "serial_number": cert_data.get("serial", ""),
         "risk_score": risk_score,
         "risk_label": "HIGH" if risk_score > 60 else "MEDIUM" if risk_score > 30 else "LOW",
-        "notes": _build_notes(expired, expiring_soon, tls_version, wildcards, days_left, issuer),
+        "notes": _build_notes(expired, expiring_soon, tls_version, wildcards, days_left,
+                              {"organizationName": issuer_org}),
     }
 
 
