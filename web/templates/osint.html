@@ -13,6 +13,7 @@
   <button class="btn btn-secondary" id="tab-btn-cell"      onclick="switchTab('cell')">📡 Cell Tower</button>
   <button class="btn btn-secondary" id="tab-btn-natid"     onclick="switchTab('natid')">🪪 National ID</button>
   <button class="btn btn-secondary" id="tab-btn-domain"    onclick="switchTab('domain')">🔍 Domain OSINT</button>
+  <button class="btn btn-secondary" id="tab-btn-phonesoc"  onclick="switchTab('phonesoc')">📲 Phone → Social</button>
 </div>
 
 <!-- ── PHONE INTELLIGENCE ── -->
@@ -269,6 +270,49 @@
         <div><span style="color:var(--accent)">70</span> → Najaf &nbsp; <span style="color:var(--accent)">75</span> → Qadisiyyah</div>
         <div><span style="color:var(--accent)">85</span> → Dhi Qar &nbsp; <span style="color:var(--accent)">90</span> → Maysan</div>
         <div><span style="color:var(--accent)">95</span> → Saladin &nbsp; <span style="color:var(--accent)">97</span> → Anbar</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── PHONE → SOCIAL ACCOUNTS ── -->
+<div id="tab-phonesoc" class="osint-tab" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📲 Phone → Social Accounts OSINT</div>
+          <div class="card-subtitle">5-Tier intelligence: breaches · carrier · social presence · dorks</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Phone Number</label>
+        <input type="text" id="ps-input" placeholder="+9647701234567 or 07701234567"
+               onkeydown="if(event.key==='Enter')runPhoneSocial()" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+          Iraqi formats accepted: +9647…, 009647…, 077…, 7…
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ps-input').value='+9647701234567'">Zain Sample</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ps-input').value='+9647801234567'">Asiacell Sample</button>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ps-input').value='+9647501234567'">Korek Sample</button>
+      </div>
+      <button class="btn btn-primary" id="ps-btn" onclick="runPhoneSocial()">🔍 Run 5-Tier OSINT</button>
+      <div class="progress-bar" id="ps-progress" style="display:none;margin-top:10px"><div class="progress-fill" style="width:100%;animation:pulse 1.5s infinite"></div></div>
+      <div id="ps-result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🏗️ Intelligence Tiers</div></div>
+      <div style="font-size:12px;line-height:2.2;color:var(--text-dim)">
+        <div><strong style="color:#ff4d4d">T1 — Breach Intel</strong> · HaveIBeenPwned v3 · Paste DB</div>
+        <div><strong style="color:#ffa000">T2 — Reverse Lookup</strong> · NumVerify · AbstractAPI · OpenCNAM</div>
+        <div><strong style="color:var(--accent)">T3 — Social Detection</strong> · WhatsApp · Telegram · Viber · Truecaller</div>
+        <div><strong style="color:#7ec8e3">T4 — Carrier Intel</strong> · Zain · Asiacell · Korek · Earthlink · MNP</div>
+        <div><strong style="color:#c084fc">T5 — OSINT Dorks</strong> · Google · Bing · Pastebin · GitHub patterns</div>
+        <hr style="border-color:var(--border);margin:8px 0">
+        <div style="margin-top:4px">Configure API keys in <code style="font-size:11px">.env</code>:</div>
+        <div style="font-family:monospace;font-size:10px;color:var(--accent);margin-top:4px">HIBP_API_KEY=<br>NUMVERIFY_API_KEY=<br>ABSTRACTAPI_PHONE_KEY=</div>
       </div>
     </div>
   </div>
@@ -673,6 +717,170 @@ async function runDomain() {
     document.getElementById('domain-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
   }
   btn.disabled = false; btn.innerHTML = '🔍 Run Full OSINT';
+}
+
+// ── Phone → Social OSINT ──────────────────────────────────────────────────────
+function confBar(pct, color) {
+  const col = pct >= 65 ? '#ff4d4d' : pct >= 40 ? '#ffa000' : pct >= 20 ? '#7ec8e3' : 'var(--border)';
+  return `<div style="display:flex;align-items:center;gap:8px;flex:1">
+    <div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+      <div style="height:100%;width:${pct}%;background:${col};transition:width .4s ease;border-radius:3px"></div>
+    </div>
+    <span style="font-size:11px;font-weight:700;color:${col};min-width:34px">${pct}%</span>
+  </div>`;
+}
+
+function platformCard(p) {
+  const conf = p.confidence || 0;
+  const rb = p.regional_adoption_pct ? `<span style="font-size:10px;color:var(--text-dim)"> (regional: ${p.regional_adoption_pct}%)</span>` : '';
+  const indicators = (p.indicators||[]).map(i=>`<div style="font-size:10px;color:var(--text-dim);padding:1px 0">• ${esc(i)}</div>`).join('');
+  const noteEl = p.note ? `<div style="font-size:10px;color:var(--text-dim);margin-top:2px">ℹ️ ${esc(p.note)}</div>` : '';
+  const urlEl  = p.url ? `<a href="${esc(p.url)}" target="_blank" style="font-size:10px;color:var(--accent);word-break:break-all">${esc(p.url)}</a>` : '';
+  return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--card-bg)">
+    <span style="font-size:18px;min-width:24px;text-align:center">${esc(p.icon||'')}</span>
+    <div style="min-width:90px;font-size:12px;font-weight:600">${esc(p.platform)}</div>
+    ${confBar(conf)}
+    <div style="font-size:11px;min-width:60px;text-align:right">${conf>=65?'<span style="color:#ff4d4d">LIKELY</span>':conf>=40?'<span style="color:#ffa000">POSSIBLE</span>':'<span style="color:var(--text-dim)">UNKNOWN</span>'}</div>
+  </div>
+  ${indicators || noteEl || urlEl ? `<div style="padding:0 12px 8px 46px">${indicators}${noteEl}${urlEl}</div>` : ''}`;
+}
+
+async function runPhoneSocial() {
+  const number = document.getElementById('ps-input').value.trim();
+  if (!number) return;
+
+  const btn  = document.getElementById('ps-btn');
+  const res  = document.getElementById('ps-result');
+  const prog = document.getElementById('ps-progress');
+  btn.disabled = true;
+  prog.style.display = 'block';
+  res.innerHTML = '<div style="color:var(--accent)"><span class="spinner"></span> Running 5-tier OSINT analysis…</div>';
+
+  try {
+    const d = await API.post('/api/osint/phone-social', {number});
+    prog.style.display = 'none';
+
+    if (d.error) { res.innerHTML = `<div class="alert alert-error">${esc(d.error)}</div>`; return; }
+
+    const vars = d.variations || {};
+    const carrier = d.carrier_intelligence;
+    const social = d.social_platforms || [];
+    const hibp = d.breach_intelligence || {};
+    const rl = d.reverse_lookup || {};
+    const dorks = d.osint_dorks || {};
+    const sum = d.summary || {};
+
+    // ── Section: Header ──
+    let html = `<div class="osint-result-card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <div style="font-size:15px;font-weight:700">${esc(vars.display||d.input)}</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${riskBadge(d.risk_label)}
+          <span style="font-size:12px;color:var(--text-dim)">Risk ${esc(String(d.risk_score))}/100</span>
+        </div>
+      </div>
+      ${infoRow('Iraqi Number', d.is_iraqi_number ? '🇮🇶 Yes' : 'No')}
+      ${infoRow('Platforms w/ Signal', `${sum.platforms_with_signal} / ${sum.platforms_probed} probed`)}
+      ${infoRow('Breach Hits', sum.breach_hits > 0 ? `⚠️ ${sum.breach_hits}` : '✅ None detected')}
+      ${infoRow('Carrier', carrier ? `${carrier.name} (${carrier.mcc_mnc})` : 'Not identified')}
+      ${infoRow('Dork Queries', `${sum.dork_queries} patterns generated`)}
+    </div>`;
+
+    // ── T4: Format Variations ──
+    html += `<div class="osint-result-card" style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px">📋 T4 — Number Format Variations</div>
+      ${Object.entries(vars).map(([k,v])=>infoRow(k.replace(/_/g,' '), v)).join('')}`;
+    if (carrier) {
+      html += `<hr style="border-color:var(--border);margin:10px 0">
+        <div style="font-size:12px;font-weight:700;color:#7ec8e3;margin-bottom:6px">🏢 Iraqi Carrier Intelligence</div>
+        ${infoRow('Carrier', carrier.name)}
+        ${infoRow('Brand (Arabic)', carrier.brand)}
+        ${infoRow('Region', carrier.region)}
+        ${infoRow('Technologies', (carrier.tech||[]).join(' / '))}
+        ${infoRow('MCC/MNC', carrier.mcc_mnc)}
+        ${infoRow('MNP / Port Risk', carrier.ported_risk)}
+        ${infoRow('Roaming', carrier.roaming ? '✅ Enabled' : '❌ Disabled')}`;
+    }
+    html += '</div>';
+
+    // ── T1: Breach Intelligence ──
+    const hibpChecked = hibp.checked;
+    html += `<div class="osint-result-card" style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:#ff4d4d;margin-bottom:8px">🔴 T1 — Data Breach Intelligence (HIBP v3)</div>
+      ${hibpChecked
+        ? `${infoRow('Breach Count', hibp.breach_count)}
+           ${infoRow('Paste Count', hibp.paste_count)}
+           ${infoRow('Status', hibp.risk === 'HIGH' ? '⚠️ Found in breaches!' : '✅ Not found in breach data')}
+           ${(hibp.pastes||[]).slice(0,5).map(p=>`<div class="alert alert-error" style="font-size:11px;margin-top:4px">Paste: ${esc(p.Source||JSON.stringify(p))}</div>`).join('')}`
+        : `<div class="alert alert-info" style="font-size:12px">${esc(hibp.status||'Not checked')}</div>`
+      }
+    </div>`;
+
+    // ── T2: Reverse Lookup ──
+    const nv = rl.numverify || {};
+    const aa = rl.abstractapi || {};
+    const cn = rl.opencnam || {};
+    html += `<div class="osint-result-card" style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:#ffa000;margin-bottom:8px">🟡 T2 — Reverse Phone Lookup</div>`;
+
+    if (nv.checked) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">NumVerify</div>
+        ${infoRow('Valid', nv.valid ? '✅' : '❌')}
+        ${infoRow('Carrier', nv.carrier||'—')}
+        ${infoRow('Line Type', nv.line_type||'—')}
+        ${infoRow('Location', nv.location||'—')}`;
+    } else {
+      html += `<div class="alert alert-info" style="font-size:11px">${esc(nv.status||'NumVerify not checked')}</div>`;
+    }
+
+    if (aa.checked) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin:8px 0 4px">AbstractAPI</div>
+        ${infoRow('Valid', aa.valid ? '✅' : '❌')}
+        ${infoRow('Carrier', aa.carrier||'—')}
+        ${infoRow('Type', aa.type||'—')}`;
+    } else {
+      html += `<div class="alert alert-info" style="font-size:11px;margin-top:4px">${esc(aa.status||'AbstractAPI not checked')}</div>`;
+    }
+
+    if ((cn.patterns||[]).length) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin:8px 0 4px">OpenCNAM Patterns</div>
+        ${(cn.patterns||[]).map(p=>`<div class="alert alert-info" style="font-size:11px;margin-top:4px">• ${esc(p)}</div>`).join('')}`;
+    }
+    html += '</div>';
+
+    // ── T3: Social Platforms ──
+    html += `<div class="osint-result-card" style="margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:10px">🟢 T3 — Social Platform Confidence</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">
+        Confidence = HTTP probe signal (60%) + regional adoption rate (40%). Bars show likelihood of presence.
+      </div>
+      ${social.map(platformCard).join('')}
+    </div>`;
+
+    // ── T5: OSINT Dorks ──
+    html += `<div class="osint-result-card">
+      <div style="font-size:12px;font-weight:700;color:#c084fc;margin-bottom:10px">🟣 T5 — OSINT Dork Patterns</div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">Click to copy dork query. Use in Google, Bing, DuckDuckGo.</div>`;
+
+    const dorkIcons = {google:'🔍', bing:'🔵', duckduckgo:'🦆', pastebin:'📋', github:'⚫'};
+    for (const [engine, queries] of Object.entries(dorks)) {
+      if (!queries?.length) continue;
+      html += `<div style="margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:4px">${dorkIcons[engine]||'•'} ${esc(engine.toUpperCase())}</div>
+        ${queries.map(q=>`<div onclick="navigator.clipboard.writeText(${JSON.stringify(q)});this.style.background='rgba(0,212,170,.15)';setTimeout(()=>this.style.background='',800)"
+          style="font-family:monospace;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;margin-bottom:4px;cursor:pointer;word-break:break-all;transition:background .2s">
+          ${esc(q)} <span style="float:right;color:var(--text-dim);font-size:9px">copy</span>
+        </div>`).join('')}
+      </div>`;
+    }
+    html += '</div>';
+
+    res.innerHTML = html;
+  } catch(e) {
+    prog.style.display = 'none';
+    res.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  btn.disabled = false;
 }
 
 // ── Initialize ─────────────────────────────────────────────────────────────────

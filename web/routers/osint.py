@@ -153,6 +153,20 @@ async def osint_national_id(request: Request, user: User = Depends(_user)):
     return JSONResponse(result)
 
 
+# ── Phone → Social Accounts OSINT ─────────────────────────────────────────────
+
+@router.post("/api/osint/phone-social")
+async def osint_phone_social(request: Request, user: User = Depends(_user)):
+    data = await request.json()
+    number = data.get("number", "").strip()
+    if not number:
+        raise HTTPException(400, "Phone number is required")
+
+    from modules.osint.phone_social import phone_social_lookup
+    result = await phone_social_lookup(number)
+    return JSONResponse(result)
+
+
 # ── Full Domain OSINT (existing enhanced) ─────────────────────────────────────
 
 @router.post("/api/osint/domain")
