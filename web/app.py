@@ -390,6 +390,13 @@ async def scans_history(request: Request, user: User = Depends(web_user), db: As
     })
 
 
+@app.get("/cve-pipeline", response_class=HTMLResponse)
+async def cve_pipeline_page(request: Request, user: User = Depends(web_user)):
+    return templates.TemplateResponse(request, "cve_pipeline.html", {
+        "app_name": APP_NAME, "active": "cve", "user": user,
+    })
+
+
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     require_admin(user)

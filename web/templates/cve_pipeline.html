@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}CVE Pipeline — {{ app_name }}{% endblock %}
+{% block page_title %}CVE Pipeline{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="align-items:start">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🔍 NVD CVE Search</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" />
+      <button class="btn btn-primary btn-sm" onclick="searchCVE()">Search</button>
+    </div>
+    <div id="cve-search-results"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">📋 CVE Submission Queue</div></div>
+    <button class="btn btn-secondary btn-sm" onclick="loadCVEQueue()" style="margin-bottom:12px">Refresh Queue</button>
+    <div id="cve-queue"></div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:16px;max-width:700px">
+  <div class="card-header">
+    <div class="card-title">📝 Draft CVE Report</div>
+  </div>
+  <div class="form-group">
+    <label>Title</label>
+    <input type="text" id="submit-title" placeholder="Remote Code Execution in ExampleLib < 2.3.1" />
+  </div>
+  <div class="form-group">
+    <label>Affected Product</label>
+    <input type="text" id="submit-product" placeholder="ExampleLib" />
+  </div>
+  <div class="form-group">
+    <label>Affected Versions</label>
+    <input type="text" id="submit-versions" placeholder="< 2.3.1" />
+  </div>
+  <div class="form-group">
+    <label>Severity</label>
+    <select id="submit-severity">
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium" selected>Medium</option>
+      <option value="low">Low</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>CVSS Vector (optional)</label>
+    <input type="text" id="submit-cvss" placeholder="CVSS:3.1/AV:N/AC:L/..." />
+  </div>
+  <div class="form-group">
+    <label>Description</label>
+    <textarea id="submit-desc" rows="4" placeholder="Detailed vulnerability description..."></textarea>
+  </div>
+  <div class="form-group">
+    <label>PoC URL (optional)</label>
+    <input type="text" id="submit-poc" placeholder="https://github.com/..." />
+  </div>
+  <button class="btn btn-primary" onclick="draftCVE()" style="width:100%;justify-content:center">
+    📝 Save Draft
+  </button>
+  <div id="draft-result" style="margin-top:12px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function searchCVE() {
+  const kw = document.getElementById('cve-keyword').value.trim();
+  if (!kw) return;
+  const params = kw.startsWith('CVE-') ? `cve_id=${encodeURIComponent(kw)}` : `keyword=${encodeURIComponent(kw)}`;
+  const r = await fetch(`/bug-bounty/api/cve/search?${params}`);
+  const d = await r.json();
+  const el = document.getElementById('cve-search-results');
+  el.innerHTML = (d.results || []).map(v => `
+    <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+      <a href="${v.url}" target="_blank" style="color:var(--accent);font-weight:600">${v.cve_id}</a>
+      <span style="margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;background:var(--severity-${(v.severity||'').toLowerCase()},#444)">${v.severity || 'N/A'}</span>
+      <div style="margin-top:4px;font-size:13px;color:var(--text-dim)">${v.description || ''}</div>
+    </div>`).join('') || '<div class="text-dim">No CVEs found</div>';
+}
+
+async function loadCVEQueue() {
+  const r = await fetch('/bug-bounty/api/cve/queue');
+  const d = await r.json();
+  const el = document.getElementById('cve-queue');
+  el.innerHTML = (d.queue || []).map(e => `
+    <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+      <div style="font-weight:600">${e.title || 'Untitled'}</div>
+      ${e.cve_id ? `<div style="color:var(--accent)">${e.cve_id}</div>` : ''}
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Status: ${e.status || 'draft'}</div>
+      ${e.status === 'draft' ? `<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="submitDraft('${e.id}')">Submit to MITRE</button>` : ''}
+    </div>`).join('') || '<div class="text-dim">Queue is empty</div>';
+}
+
+async function submitDraft(draftId) {
+  const r = await fetch(`/bug-bounty/api/cve/submit/${draftId}`, {method:'POST'});
+  const d = await r.json();
+  alert(d.message || (d.success ? 'Submitted!' : 'Error submitting draft'));
+  loadCVEQueue();
+}
+
+async function draftCVE() {
+  const payload = {
+    title: document.getElementById('submit-title').value.trim(),
+    affected_product: document.getElementById('submit-product').value.trim(),
+    affected_versions: document.getElementById('submit-versions').value.trim(),
+    severity: document.getElementById('submit-severity').value,
+    cvss_vector: document.getElementById('submit-cvss').value.trim(),
+    description: document.getElementById('submit-desc').value.trim(),
+    poc_url: document.getElementById('submit-poc').value.trim(),
+  };
+  if (!payload.title || !payload.description) {
+    document.getElementById('draft-result').innerHTML = '<div style="color:var(--danger)">Title and description are required.</div>';
+    return;
+  }
+  const r = await fetch('/bug-bounty/api/cve/draft', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  });
+  const d = await r.json();
+  const el = document.getElementById('draft-result');
+  if (d.success || d.id) {
+    el.innerHTML = `<div style="color:var(--success)">Draft saved${d.id ? ` (ID: ${d.id})` : ''}.</div>`;
+    loadCVEQueue();
+  } else {
+    el.innerHTML = `<div style="color:var(--danger)">${d.error || 'Failed to save draft.'}</div>`;
+  }
+}
+
+loadCVEQueue();
+</script>
+{% endblock %}
