@@ -37,7 +37,7 @@ async def inspect_request_api(request: Request, user: User = Depends(_user)):
         method=data.get("method", "GET"),
         path=data.get("path", "/"),
         headers=data.get("headers", {}),
-        body=data.get("body", ""),
+        body=data.get("request_body", ""),
         ip=data.get("ip", ""),
     )
 

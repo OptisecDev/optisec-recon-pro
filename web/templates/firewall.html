@@ -134,10 +134,15 @@ async function inspectRequest() {
     method: document.getElementById('req-method').value,
     path: document.getElementById('req-path').value,
     ip: document.getElementById('req-ip').value,
-    body: document.getElementById('req-body').value,
+    request_body: document.getElementById('req-body').value,
     headers: {'User-Agent': 'OptiSec Inspector'},
   };
   const r = await fetch('/firewall/api/inspect', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  if (!r.ok) {
+    document.getElementById('inspect-results').innerHTML =
+      `<div class="card" style="border-color:#ff3366;color:#ff3366">Error ${r.status}: ${r.statusText}</div>`;
+    return;
+  }
   const data = await r.json();
 
   const actionColor = {block:'#ff3366', alert:'#ffaa00', allow:'#00ff88'}[data.action] || 'var(--text)';
