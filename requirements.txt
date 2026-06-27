@@ -1,0 +1,46 @@
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+jinja2>=3.1.2
+aiofiles>=23.2.1
+
+# HTTP & parsing
+httpx>=0.25.0
+requests>=2.31.0
+beautifulsoup4>=4.12.2
+
+# Data validation
+pydantic>=2.5.0
+
+# Database — SQLAlchemy async + drivers
+sqlalchemy>=2.0.0
+asyncpg>=0.29.0
+aiosqlite>=0.19.0
+alembic>=1.13.0
+
+# Auth — JWT + password hashing
+python-jose[cryptography]>=3.3.0
+bcrypt>=4.0.0
+
+# Background tasks & WebSocket
+apscheduler>=3.10.0
+websockets>=12.0
+
+# Security scanning
+dnspython>=2.4.2
+python-whois>=0.8.0
+
+# Reports
+reportlab>=4.0.7
+
+# AI
+groq>=0.4.0
+
+# CLI
+colorama>=0.4.6
+rich>=13.7.0
+click>=8.1.7
+
+# Config
+python-dotenv>=1.0.0

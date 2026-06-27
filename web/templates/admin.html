@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Admin Panel — {{ app_name }}{% endblock %}
+{% block page_title %}Admin Panel{% endblock %}
+
+{% block content %}
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-value">{{ users|length }}</div>
+    <div class="stat-label">Total Users</div>
+  </div>
+  <div class="stat-card info">
+    <div class="stat-value">{{ total_scans }}</div>
+    <div class="stat-label">Total Scans</div>
+  </div>
+  <div class="stat-card high">
+    <div class="stat-value">{{ total_findings }}</div>
+    <div class="stat-label">Total Findings</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">👥 User Management</div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Username</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Last Login</th>
+          <th>API Key (prefix)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr id="user-row-{{ u.id }}">
+          <td class="mono dim">{{ u.id }}</td>
+          <td>
+            <strong>{{ u.username }}</strong>
+            {% if u.id == user.id %}<span class="badge badge-info" style="margin-left:4px">you</span>{% endif %}
+          </td>
+          <td class="dim">{{ u.email }}</td>
+          <td>
+            <select onchange="changeRole({{ u.id }}, this.value)"
+                    {% if u.id == user.id %}disabled title="Cannot change your own role"{% endif %}>
+              <option value="admin"   {% if u.role == 'admin'   %}selected{% endif %}>Admin</option>
+              <option value="analyst" {% if u.role == 'analyst' %}selected{% endif %}>Analyst</option>
+              <option value="viewer"  {% if u.role == 'viewer'  %}selected{% endif %}>Viewer</option>
+            </select>
+          </td>
+          <td>
+            <span class="badge badge-{% if u.is_active %}info{% else %}critical{% endif %}">
+              {{ 'Active' if u.is_active else 'Disabled' }}
+            </span>
+          </td>
+          <td class="dim" style="font-size:12px">
+            {{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else 'Never' }}
+          </td>
+          <td>
+            <code class="mono dim" style="font-size:10px">
+              {{ (u.api_key[:16] + '…') if u.api_key else '—' }}
+            </code>
+          </td>
+          <td>
+            {% if u.id != user.id %}
+            <button class="btn btn-secondary btn-sm"
+                    onclick="toggleUser({{ u.id }}, {{ 'false' if u.is_active else 'true' }})">
+              {{ 'Disable' if u.is_active else 'Enable' }}
+            </button>
+            <button class="btn btn-danger btn-sm"
+                    onclick="deleteUser({{ u.id }}, '{{ u.username }}')">✕</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="max-width:480px">
+  <div class="card-header">
+    <div class="card-title">🔑 My API Key</div>
+    <div class="card-subtitle">Use as X-API-Key header or for direct API access</div>
+  </div>
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;word-break:break-all">
+    <code id="my-api-key" class="mono" style="font-size:12px">{{ user.api_key }}</code>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:8px">
+    <button class="btn btn-secondary" onclick="copyApiKey()">📋 Copy</button>
+    <button class="btn btn-secondary" onclick="regenApiKey()">🔄 Regenerate</button>
+  </div>
+  <div id="apikey-out"></div>
+  <div style="margin-top:16px;font-size:12px;color:var(--text-dim)">
+    <strong>API Usage:</strong><br>
+    <code style="color:var(--accent)">curl -H "X-API-Key: &lt;key&gt;" http://localhost:8000/api/scans</code>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function changeRole(userId, role) {
+  const r = await API.patch(`/api/admin/users/${userId}`, { role });
+  if (r.success) toast(`Role updated to ${role}`, 'success');
+  else toast(r.error || 'Failed to update role', 'error');
+}
+
+async function toggleUser(userId, activate) {
+  const r = await API.patch(`/api/admin/users/${userId}`, { is_active: activate === 'true' || activate === true });
+  if (r.success) { toast('User updated', 'success'); setTimeout(() => location.reload(), 900); }
+  else toast(r.error || 'Failed', 'error');
+}
+
+async function deleteUser(userId, username) {
+  if (!confirm(`Delete user "${username}"?\n\nThis will remove all their data. This cannot be undone.`)) return;
+  const r = await API.delete(`/api/admin/users/${userId}`);
+  if (r.success) {
+    document.getElementById(`user-row-${userId}`)?.remove();
+    toast('User deleted', 'success');
+  } else {
+    toast(r.error || 'Failed to delete', 'error');
+  }
+}
+
+async function regenApiKey() {
+  if (!confirm('Regenerate API key? Any existing integrations using the old key will break.')) return;
+  const r = await API.post('/api/auth/api-key/regenerate', {});
+  if (r.api_key) {
+    document.getElementById('my-api-key').textContent = r.api_key;
+    document.getElementById('apikey-out').innerHTML = '<div class="alert alert-success">API key regenerated — copy it now</div>';
+  }
+}
+
+function copyApiKey() {
+  const key = document.getElementById('my-api-key').textContent;
+  navigator.clipboard.writeText(key).then(() => toast('API key copied!', 'success'));
+}
+</script>
+{% endblock %}

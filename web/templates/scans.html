@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Scan History — {{ app_name }}{% endblock %}
+{% block page_title %}Scan History{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">📊 All Scans</div>
+    <div class="card-subtitle">Full scan history with status and findings</div>
+  </div>
+
+  {% if scans %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Scan ID</th>
+          <th>Target</th>
+          <th>Status</th>
+          <th>Progress</th>
+          <th>Findings</th>
+          <th>Started</th>
+          <th>Completed</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in scans %}
+        <tr>
+          <td class="mono dim" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis">
+            {{ s.id }}
+          </td>
+          <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">
+            {{ s.target_url }}
+          </td>
+          <td>
+            <span class="badge badge-{% if s.status == 'done' %}info{% elif s.status == 'failed' %}critical{% elif s.status == 'running' %}high{% else %}medium{% endif %}">
+              {{ s.status }}
+            </span>
+          </td>
+          <td style="min-width:100px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="progress-bar" style="display:block;height:5px;flex:1;margin:0">
+                <div class="progress-fill" style="width:{{ s.progress }}%"></div>
+              </div>
+              <span style="font-size:11px;color:var(--text-dim);white-space:nowrap">{{ s.progress }}%</span>
+            </div>
+          </td>
+          <td>
+            {% set vuln_count = ((s.results or {}).get('vulnerabilities') or [])|length %}
+            {% if vuln_count > 0 %}
+            <span class="badge badge-high">{{ vuln_count }}</span>
+            {% else %}
+            <span class="dim">—</span>
+            {% endif %}
+          </td>
+          <td class="dim" style="font-size:11px;white-space:nowrap">
+            {{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}
+          </td>
+          <td class="dim" style="font-size:11px;white-space:nowrap">
+            {{ s.completed_at.strftime('%Y-%m-%d %H:%M') if s.completed_at else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info">No scans yet. Start a scan from the <a href="/scan" style="color:var(--accent)">Scan</a> page.</div>
+  {% endif %}
+</div>
+{% endblock %}

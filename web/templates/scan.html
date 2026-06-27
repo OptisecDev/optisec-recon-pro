@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Scan — {{ app_name }}{% endblock %}
+{% block page_title %}Security Scanner{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="align-items:start">
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🎯 Scan Configuration</div>
+          <div class="card-subtitle">Configure your security scan</div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Target</label>
+        <input type="text" id="scan-target" placeholder="example.com or https://target.com/path?id=1" />
+      </div>
+
+      {% if targets %}
+      <div class="form-group">
+        <label>Or select saved target</label>
+        <select id="target-select" onchange="document.getElementById('scan-target').value=this.value">
+          <option value="">— Select saved target —</option>
+          {% for t in targets %}
+          <option value="{{ t.url }}" data-id="{{ t.id }}">{{ t.name or t.url }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label>Scan Modules</label>
+        <div class="checkbox-grid">
+          {% set scan_modules = [
+            ('subdomain','🔎 Subdomains'),
+            ('dns','🌐 DNS'),
+            ('whois','📋 WHOIS'),
+            ('nmap','🔌 Nmap'),
+            ('xss','💉 XSS'),
+            ('sqli','🗄️ SQLi'),
+            ('ssrf','🔗 SSRF'),
+            ('lfi','📁 LFI'),
+            ('redirect','↩️ Open Redirect'),
+            ('osint','🕵️ OSINT'),
+          ] %}
+          {% for val, label in scan_modules %}
+          <label class="checkbox-item">
+            <input type="checkbox" class="scan-type" value="{{ val }}" checked>
+            <span>{{ label }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="btn btn-secondary btn-sm" onclick="selectAll(true)">Select All</button>
+          <button class="btn btn-secondary btn-sm" onclick="selectAll(false)">Deselect All</button>
+        </div>
+      </div>
+
+      <div class="progress-bar" id="scan-progress">
+        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+      </div>
+      <div id="ws-step" style="font-size:11px;color:var(--text-dim);margin-top:4px;min-height:16px"></div>
+
+      <button class="btn btn-primary" id="scan-btn" onclick="startScan()"
+              style="width:100%;justify-content:center;margin-top:8px">
+        ▶ Start Scan
+      </button>
+    </div>
+
+    <div id="scan-status"></div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">ℹ️ Scan Guide</div>
+      </div>
+      <div style="font-size:13px;color:var(--text-dim);line-height:1.8">
+        <p>• For <strong style="color:var(--text)">vulnerability scans</strong>, include parameters:<br>
+          <code style="color:var(--accent)">https://example.com/page?id=1</code></p>
+        <p style="margin-top:8px">• For <strong style="color:var(--text)">recon only</strong>, use domain:<br>
+          <code style="color:var(--accent)">example.com</code></p>
+        <p style="margin-top:8px">• Nmap requires <code>nmap</code> to be installed</p>
+        <p style="margin-top:8px">• AI analysis requires <code>GROQ_API_KEY</code></p>
+        <p style="margin-top:8px">• Progress updates via <span style="color:var(--accent)">WebSocket</span> in real-time</p>
+      </div>
+    </div>
+
+    <div class="card" id="ws-status-card" style="display:none">
+      <div class="card-header">
+        <div class="card-title">📡 Live Progress</div>
+      </div>
+      <div id="ws-log" style="font-size:12px;font-family:monospace;line-height:1.8;max-height:200px;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+<div id="scan-results" style="margin-top:24px"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function selectAll(checked) {
+  document.querySelectorAll('.scan-type').forEach(cb => cb.checked = checked);
+}
+
+window.startScan = async function() {
+  const target = document.getElementById('scan-target')?.value?.trim();
+  if (!target) { toast('Please enter a target', 'error'); return; }
+
+  const scanTypes = [...document.querySelectorAll('.scan-type:checked')].map(cb => cb.value);
+  const btn = document.getElementById('scan-btn');
+  const statusEl = document.getElementById('scan-status');
+  const resultsEl = document.getElementById('scan-results');
+  const fill = document.getElementById('progress-fill');
+  const wsLog = document.getElementById('ws-log');
+  const wsCard = document.getElementById('ws-status-card');
+  const wsStep = document.getElementById('ws-step');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Scanning…';
+  if (statusEl) statusEl.innerHTML = '';
+  if (resultsEl) resultsEl.innerHTML = '';
+  if (wsLog) wsLog.innerHTML = '';
+  if (fill) fill.style.width = '2%';
+  if (wsCard) wsCard.style.display = 'block';
+
+  const selectedOption = document.getElementById('target-select')?.selectedOptions[0];
+  const targetId = selectedOption?.dataset?.id || null;
+
+  function logStep(text) {
+    if (!wsLog) return;
+    const line = document.createElement('div');
+    line.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    wsLog.appendChild(line);
+    wsLog.scrollTop = wsLog.scrollHeight;
+  }
+
+  try {
+    const resp = await API.post('/api/scan', { target, scan_types: scanTypes, target_id: targetId });
+    const scanId = resp.scan_id;
+    window._currentScanId = scanId;
+    logStep(`Scan started: ${scanId}`);
+
+    const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${wsProto}//${location.host}/ws/scan/${scanId}`);
+
+    ws.onopen = () => logStep('WebSocket connected — receiving live updates');
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data);
+
+      if (msg.type === 'ping') { ws.send('ping'); return; }
+      if (msg.type === 'pong') return;
+
+      if (msg.type === 'state') {
+        fill.style.width = `${msg.progress}%`;
+        if (msg.status === 'done') {
+          fill.style.width = '100%';
+          finishScan(scanId, msg.results, target);
+          ws.close();
+        }
+        return;
+      }
+
+      if (msg.type === 'progress') {
+        fill.style.width = `${msg.progress}%`;
+        if (wsStep) wsStep.textContent = `Running: ${msg.step} (${msg.progress}%)`;
+        logStep(`✓ ${msg.step} — ${msg.progress}%`);
+      }
+
+      if (msg.type === 'completed') {
+        fill.style.width = '100%';
+        logStep('✅ Scan completed');
+        ws.close();
+        finishScan(scanId, msg.results, target);
+      }
+
+      if (msg.type === 'error') {
+        logStep(`❌ Error: ${msg.error}`);
+        ws.close();
+        btn.disabled = false;
+        btn.innerHTML = '▶ Start Scan';
+        if (statusEl) statusEl.innerHTML = `<div class="alert alert-error">Scan failed: ${esc(msg.error)}</div>`;
+      }
+    };
+
+    ws.onerror = () => {
+      logStep('WebSocket error — falling back to polling');
+      pollScanStatus(scanId, target);
+    };
+
+    ws.onclose = () => {
+      if (wsStep) wsStep.textContent = '';
+    };
+
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '▶ Start Scan';
+    if (statusEl) statusEl.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+};
+
+function finishScan(scanId, results, target) {
+  const btn = document.getElementById('scan-btn');
+  const statusEl = document.getElementById('scan-status');
+  btn.disabled = false;
+  btn.innerHTML = '▶ Start Scan';
+  if (statusEl) statusEl.innerHTML = `
+    <div class="alert alert-success">
+      Scan completed!
+      <button class="btn btn-secondary btn-sm" style="margin-left:8px"
+              onclick="generateReport('${esc(target)}')">📄 Generate Report</button>
+      <button class="btn btn-secondary btn-sm" style="margin-left:4px"
+              onclick="analyzeWithAI('${esc(target)}')">🤖 AI Analysis</button>
+    </div>`;
+  renderScanResults(results, target);
+}
+
+function pollScanStatus(scanId, target) {
+  const fill = document.getElementById('progress-fill');
+  const btn = document.getElementById('scan-btn');
+  const statusEl = document.getElementById('scan-status');
+  const poll = setInterval(async () => {
+    const data = await API.get(`/api/scan/${scanId}`);
+    if (fill) fill.style.width = `${data.progress || 0}%`;
+    if (data.status === 'done' || data.status === 'failed') {
+      clearInterval(poll);
+      if (data.status === 'failed') {
+        btn.disabled = false; btn.innerHTML = '▶ Start Scan';
+        if (statusEl) statusEl.innerHTML = `<div class="alert alert-error">Error: ${esc(data.error)}</div>`;
+        return;
+      }
+      finishScan(scanId, data.results, target);
+    }
+  }, 2000);
+}
+
+window.addEventListener('load', () => {
+  const el = document.getElementById('scan-target');
+  const t = new URLSearchParams(location.search).get('target') || sessionStorage.getItem('quickTarget');
+  if (t && el) { el.value = t; sessionStorage.removeItem('quickTarget'); }
+});
+</script>
+{% endblock %}

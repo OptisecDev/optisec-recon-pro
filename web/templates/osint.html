@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}OSINT — {{ app_name }}{% endblock %}
+{% block page_title %}OSINT Intelligence{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width:600px">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🕵️ OSINT Gathering</div>
+      <div class="card-subtitle">Emails, social media profiles and more</div>
+    </div>
+  </div>
+  <div class="form-group">
+    <label>Target Domain</label>
+    <input type="text" id="osint-domain" placeholder="example.com" onkeydown="if(event.key==='Enter')runOSINT()" />
+  </div>
+  <button class="btn btn-primary" id="osint-btn" onclick="runOSINT()">🔍 Gather OSINT</button>
+</div>
+
+<div id="osint-output" style="margin-top:20px"></div>
+{% endblock %}

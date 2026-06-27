@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ app_name }}{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:24px">
+  <h2 style="font-size:22px;font-weight:700;color:var(--accent)">Welcome, {{ user.username }}</h2>
+  <p style="color:var(--text-dim);margin-top:4px">OPTISEC Enterprise — Bug Bounty & Security Intelligence Platform</p>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-value">{{ target_count }}</div>
+    <div class="stat-label">My Targets</div>
+  </div>
+  <div class="stat-card info">
+    <div class="stat-value">{{ scan_count }}</div>
+    <div class="stat-label">Total Scans</div>
+  </div>
+  <div class="stat-card high">
+    <div class="stat-value">{{ finding_count }}</div>
+    <div class="stat-label">Findings</div>
+  </div>
+  <div class="stat-card" style="--before-color:var(--purple)">
+    <div class="stat-value" style="color:var(--purple)">AI</div>
+    <div class="stat-label">Groq Powered</div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">🚀 Quick Scan</div>
+        <div class="card-subtitle">Start a scan immediately</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Target URL or Domain</label>
+      <input type="text" id="quick-target" placeholder="example.com or https://target.com" />
+    </div>
+    <a href="/scan" class="btn btn-primary" onclick="quickScan(event)">▶ Start Scan</a>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">💬 Natural Language Command</div>
+        <div class="card-subtitle">Arabic &amp; English supported</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Command</label>
+      <input type="text" id="nlp-quick"
+        placeholder="افحص tesla.com عن ثغرات XSS"
+        onkeydown="if(event.key==='Enter')parseNLP()" />
+    </div>
+    <div id="nlp-result" style="margin-bottom:12px"></div>
+    <button class="btn btn-secondary" onclick="parseNLP()">🤖 Parse Command</button>
+  </div>
+</div>
+
+{% if recent_scans %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">🕐 Recent Scans</div>
+    <a href="/scans" class="btn btn-secondary btn-sm">View All</a>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Target</th><th>Status</th><th>Progress</th><th>Date</th></tr>
+      </thead>
+      <tbody>
+        {% for s in recent_scans %}
+        <tr>
+          <td class="mono">{{ s.target_url }}</td>
+          <td>
+            <span class="badge badge-{% if s.status == 'done' %}info{% elif s.status == 'failed' %}critical{% elif s.status == 'running' %}high{% else %}medium{% endif %}">
+              {{ s.status }}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px">
+              <div class="progress-bar" style="display:block;height:5px;width:80px;margin:0">
+                <div class="progress-fill" style="width:{{ s.progress }}%"></div>
+              </div>
+              <span class="dim" style="font-size:11px">{{ s.progress }}%</span>
+            </div>
+          </td>
+          <td class="dim" style="font-size:12px">
+            {{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">⚡ Modules</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      {% set modules = [
+        ('🔎','Subdomain Enum','Discover subdomains'),
+        ('🌐','DNS Lookup','Query DNS records'),
+        ('📋','WHOIS','Registration info'),
+        ('🔌','Port Scan','Nmap integration'),
+        ('💉','Vuln Scanner','XSS, SQLi, SSRF, LFI'),
+        ('🕵️','OSINT','Emails & social media'),
+        ('🤖','AI Analyzer','Groq LLaMA analysis'),
+        ('📄','PDF Reports','Professional reports'),
+      ] %}
+      {% for icon, name, desc in modules %}
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px">
+        <div style="font-size:18px;margin-bottom:4px">{{ icon }}</div>
+        <div style="font-size:12px;font-weight:600;color:var(--accent)">{{ name }}</div>
+        <div style="font-size:11px;color:var(--text-dim)">{{ desc }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📖 Arabic Commands</div>
+    </div>
+    <div style="font-size:12px;line-height:2">
+      {% for cmd in [
+        'افحص example.com عن ثغرات XSS',
+        'اجمع النطاقات الفرعية لـ tesla.com',
+        'ابدأ فحص شامل وأنشئ تقرير',
+        'اجمع الايميلات من example.com',
+      ] %}
+      <div style="background:var(--bg);border-radius:4px;padding:6px 10px;margin-bottom:6px;font-family:monospace;direction:rtl;text-align:right">
+        {{ cmd }}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function quickScan(e) {
+  const t = document.getElementById('quick-target').value.trim();
+  if (t) sessionStorage.setItem('quickTarget', t);
+}
+
+async function parseNLP() {
+  const text = document.getElementById('nlp-quick').value.trim();
+  if (!text) return;
+  const data = await API.post('/api/nlp', { text });
+  const out = document.getElementById('nlp-result');
+  if (data.action && data.action !== 'unknown') {
+    out.innerHTML = `<div class="alert alert-success">Action: <strong>${data.action}</strong>${data.target ? ' | Target: <strong>' + data.target + '</strong>' : ''}</div>`;
+    if (data.target) document.getElementById('quick-target').value = data.target;
+  } else {
+    out.innerHTML = `<div class="alert alert-warning">Could not parse command</div>`;
+  }
+}
+
+window.addEventListener('load', () => {
+  const t = sessionStorage.getItem('quickTarget');
+  if (t) {
+    const el = document.getElementById('quick-target');
+    if (el) { el.value = t; sessionStorage.removeItem('quickTarget'); }
+  }
+});
+</script>
+{% endblock %}

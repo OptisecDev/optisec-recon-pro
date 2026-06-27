@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Targets — {{ app_name }}{% endblock %}
+{% block page_title %}Target Manager{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="align-items:start">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">➕ Add Target</div>
+        <div class="card-subtitle">Add a new target to your list</div>
+      </div>
+    </div>
+    {% if user.role in ('admin', 'analyst') %}
+    <div class="form-group">
+      <label>URL *</label>
+      <input type="text" id="target-url" placeholder="https://example.com" />
+    </div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="target-name" placeholder="My Target" />
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="target-notes" placeholder="Bug bounty scope, notes..."></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="addTarget()">Add Target</button>
+    {% else %}
+    <div class="alert alert-info">Viewer role cannot add targets. Contact an admin to upgrade your role.</div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🎯 Saved Targets ({{ targets|length }})</div>
+    </div>
+    {% if targets %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>URL</th>
+            <th>Name</th>
+            <th>Added</th>
+            <th>Scans</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in targets %}
+          <tr id="target-row-{{ t.id }}">
+            <td class="mono">
+              <a href="{{ t.url if t.url.startswith('http') else 'https://' + t.url }}"
+                 target="_blank" style="color:var(--accent)">{{ t.url }}</a>
+            </td>
+            <td>{{ t.name or '—' }}</td>
+            <td class="dim" style="font-size:12px">
+              {{ t.created_at.strftime('%Y-%m-%d') if t.created_at else '—' }}
+            </td>
+            <td>
+              <span class="badge badge-info">{{ scan_counts.get(t.id, 0) }}</span>
+            </td>
+            <td>
+              <a href="/scan?target={{ t.url }}" class="btn btn-secondary btn-sm">🔍 Scan</a>
+              {% if user.role in ('admin', 'analyst') %}
+              <button class="btn btn-danger btn-sm" onclick="deleteTarget({{ t.id }})">✕</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-info">No targets yet. Add your first target.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

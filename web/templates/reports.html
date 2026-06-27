@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Reports — {{ app_name }}{% endblock %}
+{% block page_title %}Security Reports{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">📄 Generated Reports</div>
+      <div class="card-subtitle">PDF security assessment reports</div>
+    </div>
+  </div>
+
+  {% if reports %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Generated</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reports %}
+        <tr>
+          <td class="mono">{{ r.filename }}</td>
+          <td class="dim" style="font-size:12px">
+            {{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '—' }}
+          </td>
+          <td>
+            <a href="/reports/download/{{ r.filename }}"
+               class="btn btn-primary btn-sm" target="_blank">⬇ Download</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    No reports yet. Run a scan and click "Generate PDF Report" to create one.
+  </div>
+  {% endif %}
+</div>
+
+<div class="card" style="max-width:500px">
+  <div class="card-header">
+    <div class="card-title">📋 Quick Report</div>
+    <div class="card-subtitle">Generate a report without a scan</div>
+  </div>
+  <div class="form-group">
+    <label>Target</label>
+    <input type="text" id="quick-report-target" placeholder="example.com" />
+  </div>
+  <button class="btn btn-primary" onclick="quickReport()">Generate Empty Report</button>
+  <div id="quick-report-out" style="margin-top:12px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function quickReport() {
+  const target = document.getElementById('quick-report-target').value.trim();
+  if (!target) { toast('Enter a target', 'error'); return; }
+  const data = await API.post('/api/report', { target, scan_id: '' });
+  const out = document.getElementById('quick-report-out');
+  if (data.success) {
+    out.innerHTML = `<div class="alert alert-success">Report ready: <a href="/reports/download/${data.filename}" target="_blank">${data.filename}</a></div>`;
+    setTimeout(() => location.reload(), 2000);
+  } else {
+    out.innerHTML = `<div class="alert alert-error">${esc(data.error)}</div>`;
+  }
+}
+</script>
+{% endblock %}

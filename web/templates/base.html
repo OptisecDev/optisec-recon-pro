@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <h1>🛡️ OPTISEC</h1>
+    <div class="version">Enterprise v2.0</div>
+  </div>
+  <div class="sidebar-nav">
+    <div class="nav-section">Main</div>
+    <a href="/" class="nav-item {% if active == 'home' %}active{% endif %}">
+      <span class="icon">🏠</span><span>Dashboard</span>
+    </a>
+    <a href="/scan" class="nav-item {% if active == 'scan' %}active{% endif %}">
+      <span class="icon">🔍</span><span>Scan</span>
+    </a>
+    <a href="/targets" class="nav-item {% if active == 'targets' %}active{% endif %}">
+      <span class="icon">🎯</span><span>Targets</span>
+    </a>
+    <a href="/scans" class="nav-item {% if active == 'scans' %}active{% endif %}">
+      <span class="icon">📊</span><span>Scan History</span>
+    </a>
+
+    <div class="nav-section">Intelligence</div>
+    <a href="/osint" class="nav-item {% if active == 'osint' %}active{% endif %}">
+      <span class="icon">🕵️</span><span>OSINT</span>
+    </a>
+    <a href="/reports" class="nav-item {% if active == 'reports' %}active{% endif %}">
+      <span class="icon">📄</span><span>Reports</span>
+    </a>
+
+    {% if user and user.role == 'admin' %}
+    <div class="nav-section">Admin</div>
+    <a href="/admin" class="nav-item {% if active == 'admin' %}active{% endif %}">
+      <span class="icon">⚙️</span><span>Admin Panel</span>
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="sidebar-footer">
+    {% if user %}
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
+      <span style="color:var(--accent);font-size:10px">●</span>
+      <span style="font-size:12px;font-weight:600">{{ user.username }}</span>
+      <span class="badge badge-{% if user.role == 'admin' %}critical{% elif user.role == 'analyst' %}high{% else %}info{% endif %}"
+            style="font-size:9px;padding:1px 5px">{{ user.role }}</span>
+    </div>
+    <a href="/logout" class="btn btn-secondary btn-sm" style="width:100%;justify-content:center">Logout</a>
+    {% endif %}
+  </div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <div class="topbar-title">{% block page_title %}{% endblock %}</div>
+    <div class="topbar-right">
+      <div class="nlp-bar" style="min-width:320px;margin:0">
+        <span style="color:var(--accent);font-size:16px">💬</span>
+        <input id="nlp-input" type="text"
+          placeholder="افحص example.com عن ثغرات XSS | Scan target for XSS"
+          onkeydown="runNLPCommand(event)" />
+        <button class="btn btn-primary btn-sm" onclick="runNLPCommand(null)">Go</button>
+      </div>
+      {% if user %}
+      <div style="font-size:11px;color:var(--text-dim);margin-left:12px;white-space:nowrap">
+        {{ user.email }}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
+</div>
+
+<script src="/static/js/main.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
