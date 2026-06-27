@@ -715,9 +715,26 @@ async def run_osint(request: Request, user: User = Depends(web_user)):
     domain = data.get("domain", "").strip()
     if not domain:
         raise HTTPException(400, "Domain is required")
-    emails = await asyncio.to_thread(find_emails, domain)
-    social = await asyncio.to_thread(find_social_profiles, domain)
-    return JSONResponse({"emails": emails, "social": social})
+
+    # Run all OSINT tasks concurrently
+    emails_task = asyncio.to_thread(find_emails, domain)
+    social_task = asyncio.to_thread(find_social_profiles, domain)
+    dns_task = asyncio.to_thread(dns_lookup, domain)
+    whois_task = asyncio.to_thread(whois_lookup, domain)
+    subs_task = asyncio.to_thread(enumerate_subdomains, domain)
+
+    emails, social, dns_data, whois_data, subs = await asyncio.gather(
+        emails_task, social_task, dns_task, whois_task, subs_task,
+        return_exceptions=True,
+    )
+
+    return JSONResponse({
+        "emails": emails if not isinstance(emails, Exception) else {},
+        "social": social if not isinstance(social, Exception) else {},
+        "dns": dns_data if not isinstance(dns_data, Exception) else {},
+        "whois": whois_data if not isinstance(whois_data, Exception) else {},
+        "subdomains": subs if not isinstance(subs, Exception) else [],
+    })
 
 
 @app.post("/api/ai/analyze")

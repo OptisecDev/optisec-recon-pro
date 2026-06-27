@@ -10,7 +10,7 @@
 </div>
 
 <!-- Engagements List -->
-<div id="tab-engagements">
+<div id="tab-engagements" style="display:block">
   {% if engagements %}
   <div class="grid-2">
     {% for eng in engagements %}
@@ -53,7 +53,7 @@
     </div>
     <div class="form-group">
       <label>Target</label>
-      <input type="text" id="eng-target" placeholder="example.com, 192.168.1.0/24" />
+      <input type="text" id="eng-target" placeholder="example.com, 192.168.1.0/24" autocomplete="off" tabindex="1" />
     </div>
     <div class="form-group">
       <label>Scope (comma-separated)</label>
@@ -117,8 +117,15 @@
 <script>
 function showTab(name) {
   ['engagements','new','library'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+    const el = document.getElementById(`tab-${t}`);
+    if (el) el.style.display = t === name ? 'block' : 'none';
   });
+  if (name === 'new') {
+    setTimeout(() => {
+      const inp = document.getElementById('eng-target');
+      if (inp) { inp.focus(); inp.click(); }
+    }, 50);
+  }
 }
 
 async function createEngagement() {

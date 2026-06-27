@@ -224,22 +224,36 @@ window.generateReport = async function(target) {
 };
 
 window.analyzeWithAI = async function(target) {
-  const out = document.getElementById('ai-output');
+  let out = document.getElementById('ai-output');
+  if (!out) {
+    out = document.createElement('div');
+    out.id = 'ai-output';
+    out.style.marginTop = '16px';
+    const resultsEl = document.getElementById('scan-results');
+    if (resultsEl) resultsEl.appendChild(out);
+    else document.querySelector('.content')?.appendChild(out);
+  }
   out.innerHTML = '<div class="alert alert-info"><span class="spinner"></span> Analyzing with AI...</div>';
 
   const scanId = window._currentScanId || '';
   let findings = [];
   if (scanId) {
-    const scanData = await API.get(`/api/scan/${scanId}`);
-    findings = (scanData.results || {}).vulnerabilities || [];
+    try {
+      const scanData = await API.get(`/api/scan/${scanId}`);
+      findings = (scanData.results || {}).vulnerabilities || [];
+    } catch (_) {}
   }
 
-  const data = await API.post('/api/ai/analyze', { findings, target, lang: 'ar' });
-  if (data.analysis) {
-    out.innerHTML = `<div class="card"><div class="card-header"><div class="card-title">🤖 AI Analysis</div></div>
-    <div style="white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--text)">${esc(data.analysis)}</div></div>`;
-  } else {
-    out.innerHTML = `<div class="alert alert-error">${esc(data.error || 'AI analysis failed')}</div>`;
+  try {
+    const data = await API.post('/api/ai/analyze', { findings, target, lang: 'ar' });
+    if (data.analysis) {
+      out.innerHTML = `<div class="card"><div class="card-header"><div class="card-title">🤖 AI Analysis</div></div>
+      <div style="white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--text)">${esc(data.analysis)}</div></div>`;
+    } else {
+      out.innerHTML = `<div class="alert alert-error">${esc(data.error || 'AI analysis failed')}</div>`;
+    }
+  } catch (e) {
+    out.innerHTML = `<div class="alert alert-error">AI analysis error: ${esc(e.message)}</div>`;
   }
 };
 
@@ -312,22 +326,69 @@ window.runOSINT = async function() {
   btn.innerHTML = '🔍 Gather OSINT';
 
   const emails = (data.emails || {}).emails || [];
+  const relEmails = (data.emails || {}).related_emails || [];
   const social = (data.social || {}).profiles || {};
+  const dns = data.dns || {};
+  const whois = data.whois || {};
+  const subdomains = data.subdomains || [];
 
   let html = '';
-  if (emails.length) {
-    html += `<div class="card"><div class="card-header"><div class="card-title">📧 Emails (${emails.length})</div></div>
-    <div class="table-wrap"><table><tbody>`;
-    emails.forEach(e => { html += `<tr><td class="mono">${esc(e)}</td></tr>`; });
+
+  // DNS Records — always shown when domain is valid
+  const dnsEntries = Object.entries(dns).filter(([, v]) => v && v.length);
+  if (dnsEntries.length) {
+    html += `<div class="card"><div class="card-header"><div class="card-title">🌐 DNS Records</div></div>
+    <div class="table-wrap"><table><thead><tr><th>Type</th><th>Records</th></tr></thead><tbody>`;
+    dnsEntries.forEach(([type, vals]) => {
+      html += `<tr><td class="mono accent">${esc(type)}</td><td class="mono dim">${vals.map(v => esc(v)).join('<br>')}</td></tr>`;
+    });
     html += `</tbody></table></div></div>`;
   }
+
+  // WHOIS
+  if (whois && !whois.error && (whois.registrar || whois.org)) {
+    html += `<div class="card"><div class="card-header"><div class="card-title">📋 WHOIS</div></div>
+    <div class="table-wrap"><table><tbody>`;
+    const fields = [
+      ['Registrar', whois.registrar], ['Org', whois.org], ['Country', whois.country],
+      ['Created', whois.creation_date], ['Expires', whois.expiration_date],
+      ['Updated', whois.updated_date], ['Name Servers', (whois.name_servers || []).join(', ')],
+      ['Status', (whois.status || []).slice(0, 3).join(', ')],
+    ];
+    fields.filter(([, v]) => v).forEach(([k, v]) => {
+      html += `<tr><td style="font-weight:600;width:140px">${k}</td><td class="dim">${esc(v)}</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  // Subdomains
+  if (subdomains.length) {
+    html += `<div class="card"><div class="card-header"><div class="card-title">🔎 Subdomains (${subdomains.length})</div></div>
+    <div class="table-wrap"><table><thead><tr><th>Subdomain</th><th>IP</th></tr></thead><tbody>`;
+    subdomains.slice(0, 50).forEach(s => {
+      html += `<tr><td class="mono">${esc(s.subdomain)}</td><td class="mono dim">${esc(s.ip)}</td></tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  // Emails
+  if (emails.length) {
+    html += `<div class="card"><div class="card-header"><div class="card-title">📧 Emails Found (${emails.length + relEmails.length})</div></div>
+    <div class="table-wrap"><table><tbody>`;
+    emails.forEach(e => { html += `<tr><td class="mono">${esc(e)}</td></tr>`; });
+    relEmails.slice(0, 10).forEach(e => { html += `<tr><td class="mono dim">${esc(e)}</td></tr>`; });
+    html += `</tbody></table></div></div>`;
+  }
+
+  // Social Profiles
   if (Object.keys(social).length) {
     html += `<div class="card"><div class="card-header"><div class="card-title">🌐 Social Profiles</div></div>
     <div class="table-wrap"><table><thead><tr><th>Platform</th><th>Handles</th></tr></thead><tbody>`;
-    Object.entries(social).forEach(([p, h]) => { html += `<tr><td>${p}</td><td class="mono">${h.join(', ')}</td></tr>`; });
+    Object.entries(social).forEach(([p, h]) => { html += `<tr><td>${esc(p)}</td><td class="mono">${h.map(v => esc(v)).join(', ')}</td></tr>`; });
     html += `</tbody></table></div></div>`;
   }
-  if (!html) html = '<div class="alert alert-warning">No OSINT data found.</div>';
+
+  if (!html) html = '<div class="alert alert-warning">No OSINT data found for this domain.</div>';
   out.innerHTML = html;
 };
 

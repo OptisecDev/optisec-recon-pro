@@ -7,13 +7,65 @@ import asyncio
 from datetime import datetime
 from collections import defaultdict
 from typing import Optional
+from urllib.parse import unquote
 
 
 # ── Signature Rules ────────────────────────────────────────────────────────────
 
 SIGNATURES = [
-    {"id": "SQL-001", "name": "SQL Injection", "pattern": r"(?i)(union\s+select|select\s+\*|drop\s+table|insert\s+into|exec\s*\(|xp_cmdshell|1=1|'--|\bor\b\s+\d+=\d+)", "severity": "critical", "category": "sqli"},
-    {"id": "XSS-001", "name": "XSS Reflected", "pattern": r"(?i)(<script|javascript:|onerror\s*=|onload\s*=|eval\s*\(|document\.cookie|<iframe|alert\s*\()", "severity": "high", "category": "xss"},
+    {
+        "id": "SQL-001",
+        "name": "SQL Injection",
+        # Covers error-based, union-based, boolean-based (`'='`, `'x'='x`), time-based and comment payloads
+        "pattern": (
+            r"(?i)("
+            r"union[\s/\*]+select"
+            r"|select[\s/\*]+[\w\*]"
+            r"|drop[\s/\*]+table"
+            r"|insert[\s/\*]+into"
+            r"|exec[\s/\*]*\("
+            r"|xp_cmdshell"
+            r"|'[\s]*or[\s]+'[^']*'[\s]*=[\s]*'"  # ' OR 'x'='x
+            r"|\"[\s]*or[\s]+\"[^\"]*\"[\s]*=[\s]*\""  # " OR "x"="x
+            r"|[\d\s]+or[\s]+[\d]+=[\d]+"  # 1 OR 1=1
+            r"|1[\s]*=[\s]*1"
+            r"|'[\s]*--"
+            r"|/\*.*\*/"
+            r"|;[\s]*(drop|select|insert|update|delete|create)"
+            r"|sleep[\s]*\("
+            r"|waitfor[\s]+delay"
+            r"|benchmark[\s]*\("
+            r")"
+        ),
+        "severity": "critical",
+        "category": "sqli",
+    },
+    {
+        "id": "XSS-001",
+        "name": "XSS Reflected",
+        "pattern": (
+            r"(?i)("
+            r"<script[\s>]"
+            r"|</script"
+            r"|javascript\s*:"
+            r"|onerror\s*="
+            r"|onload\s*="
+            r"|onclick\s*="
+            r"|onmouseover\s*="
+            r"|eval\s*\("
+            r"|document\.cookie"
+            r"|document\.write"
+            r"|<iframe[\s>]"
+            r"|alert\s*\("
+            r"|confirm\s*\("
+            r"|prompt\s*\("
+            r"|<svg[\s>]"
+            r"|<img[^>]+on\w+\s*="
+            r")"
+        ),
+        "severity": "high",
+        "category": "xss",
+    },
     {"id": "LFI-001", "name": "Local File Inclusion", "pattern": r"(\.\./|\.\.\\|%2e%2e%2f|%252e|etc/passwd|etc/shadow|proc/self)", "severity": "high", "category": "lfi"},
     {"id": "SSRF-001", "name": "SSRF Attempt", "pattern": r"(?i)(169\.254\.169\.254|localhost|127\.\d+\.\d+\.\d+|0\.0\.0\.0|::1|internal\.|metadata\.)", "severity": "high", "category": "ssrf"},
     {"id": "CMD-001", "name": "Command Injection", "pattern": r"(?i)(;ls|;cat|;id|;whoami|\$\(|`.*`|\bping\s+-[cn]|\bncat\b|\bnetcat\b|/bin/sh|/bin/bash)", "severity": "critical", "category": "cmdi"},
@@ -38,7 +90,10 @@ def inspect_request(
     body: str = "",
     ip: str = "",
 ) -> dict:
-    payload = f"{method} {path} {body}"
+    # Decode URL encoding so patterns match encoded payloads too
+    path_decoded = unquote(path)
+    body_decoded = unquote(body)
+    payload = f"{method} {path_decoded} {body_decoded}"
     threats = []
 
     for sig, pattern in _compiled:
@@ -48,10 +103,10 @@ def inspect_request(
                 "name": sig["name"],
                 "severity": sig["severity"],
                 "category": sig["category"],
-                "matched_in": _find_match_location(pattern, method, path, body),
+                "matched_in": _find_match_location(pattern, method, path_decoded, body_decoded),
             })
 
-    anomaly = _ml_anomaly_score(method, path, headers, body)
+    anomaly = _ml_anomaly_score(method, path_decoded, headers, body_decoded)
     action = _decide_action(threats, anomaly["score"])
 
     return {
