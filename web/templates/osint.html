@@ -1,21 +1,682 @@
 {% extends "base.html" %}
-{% block title %}OSINT — {{ app_name }}{% endblock %}
-{% block page_title %}OSINT Intelligence{% endblock %}
+{% block title %}OSINT Engine — {{ app_name }}{% endblock %}
+{% block page_title %}World-Class OSINT Engine{% endblock %}
 
 {% block content %}
-<div class="card" style="max-width:600px">
-  <div class="card-header">
-    <div>
-      <div class="card-title">🕵️ OSINT Gathering</div>
-      <div class="card-subtitle">Emails, social media profiles and more</div>
-    </div>
-  </div>
-  <div class="form-group">
-    <label>Target Domain</label>
-    <input type="text" id="osint-domain" placeholder="example.com" onkeydown="if(event.key==='Enter')runOSINT()" />
-  </div>
-  <button class="btn btn-primary" id="osint-btn" onclick="runOSINT()">🔍 Gather OSINT</button>
+<!-- Tab Navigation -->
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
+  <button class="btn btn-primary"   id="tab-btn-phone"     onclick="switchTab('phone')">📱 Phone Intel</button>
+  <button class="btn btn-secondary" id="tab-btn-username"  onclick="switchTab('username')">👤 Username</button>
+  <button class="btn btn-secondary" id="tab-btn-device"    onclick="switchTab('device')">💻 Device</button>
+  <button class="btn btn-secondary" id="tab-btn-plate"     onclick="switchTab('plate')">🚗 Plate</button>
+  <button class="btn btn-secondary" id="tab-btn-ip"        onclick="switchTab('ip')">🌐 IP/Geo</button>
+  <button class="btn btn-secondary" id="tab-btn-cell"      onclick="switchTab('cell')">📡 Cell Tower</button>
+  <button class="btn btn-secondary" id="tab-btn-natid"     onclick="switchTab('natid')">🪪 National ID</button>
+  <button class="btn btn-secondary" id="tab-btn-domain"    onclick="switchTab('domain')">🔍 Domain OSINT</button>
 </div>
 
-<div id="osint-output" style="margin-top:20px"></div>
+<!-- ── PHONE INTELLIGENCE ── -->
+<div id="tab-phone" class="osint-tab">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📱 Phone Number Intelligence</div>
+          <div class="card-subtitle">Carrier · timezone · line type · format variations</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Phone Number (E.164 format)</label>
+        <input type="text" id="phone-input" placeholder="+9647701234567 or +12025551234"
+               onkeydown="if(event.key==='Enter')runPhone()" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Include country code (+964 for Iraq, +1 for USA)</div>
+      </div>
+      <button class="btn btn-primary" onclick="runPhone()" id="phone-btn">🔍 Analyze Number</button>
+      <div id="phone-result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">ℹ️ Iraq Phone Prefixes</div></div>
+      <div style="font-size:12px;line-height:2">
+        <div>🇮🇶 <strong>Zain Iraq</strong> — +964 770, 771, 772, 773</div>
+        <div>🇮🇶 <strong>Asiacell</strong> — +964 750, 751, 780, 781</div>
+        <div>🇮🇶 <strong>Korek Telecom</strong> — +964 750, 753, 783</div>
+        <div>🇮🇶 <strong>Landline Baghdad</strong> — +964 1 XXXXXXX</div>
+        <div>🇮🇶 <strong>Landline Basra</strong> — +964 40 XXXXXX</div>
+        <div>🇮🇶 <strong>Landline Erbil</strong> — +964 66 XXXXXX</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── USERNAME FOOTPRINT ── -->
+<div id="tab-username" class="osint-tab" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">👤 Username / Social Footprint</div>
+          <div class="card-subtitle">Check 50+ platforms asynchronously</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="username-input" placeholder="johndoe" onkeydown="if(event.key==='Enter')runUsername()" />
+      </div>
+      <button class="btn btn-primary" onclick="runUsername()" id="username-btn">🔍 Search Platforms</button>
+      <div style="margin-top:8px">
+        <div class="progress-bar" id="username-progress" style="display:none"><div class="progress-fill" style="width:100%;animation:pulse 1.5s infinite"></div></div>
+      </div>
+      <div id="username-result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📊 Platform Categories</div></div>
+      <div style="font-size:12px;line-height:2;color:var(--text-dim)">
+        <div><strong style="color:var(--text)">Dev:</strong> GitHub, GitLab, BitBucket, Replit, CodePen, NPM, PyPI</div>
+        <div><strong style="color:var(--text)">Social:</strong> Twitter/X, Instagram, TikTok, Reddit, Pinterest, Snapchat</div>
+        <div><strong style="color:var(--text)">Gaming:</strong> Steam, Xbox, PlayStation, Roblox, Twitch, Chess.com</div>
+        <div><strong style="color:var(--text)">Security:</strong> HackerOne, Bugcrowd, TryHackMe, HackTheBox</div>
+        <div><strong style="color:var(--text)">Creative:</strong> Behance, Dribbble, Flickr, SoundCloud, Vimeo</div>
+        <div><strong style="color:var(--text)">Professional:</strong> Fiverr, Upwork, LinkedIn patterns</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DEVICE FINGERPRINTING ── -->
+<div id="tab-device" class="osint-tab" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">💻 Device Fingerprinting</div>
+          <div class="card-subtitle">Parse User-Agent → device model · OS · chipset</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>User-Agent String</label>
+        <textarea id="ua-input" rows="3"
+          placeholder="Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="setUA('desktop-chrome')">Desktop Chrome</button>
+        <button class="btn btn-secondary btn-sm" onclick="setUA('android-samsung')">Samsung Android</button>
+        <button class="btn btn-secondary btn-sm" onclick="setUA('iphone')">iPhone</button>
+        <button class="btn btn-secondary btn-sm" onclick="setUA('my-ua')">My Browser</button>
+      </div>
+      <button class="btn btn-primary" onclick="runDevice()" id="device-btn">🔍 Fingerprint Device</button>
+      <div id="device-result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔬 What We Detect</div></div>
+      <div style="font-size:12px;line-height:2;color:var(--text-dim)">
+        <div>• Device brand & model</div>
+        <div>• OS family & version</div>
+        <div>• Browser engine (Blink/WebKit/Gecko)</div>
+        <div>• Chipset family estimate</div>
+        <div>• Release year estimate</div>
+        <div>• Form factor (phone/tablet/desktop)</div>
+        <div>• Security risk score (outdated OS?)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── VEHICLE PLATE ── -->
+<div id="tab-plate" class="osint-tab" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🚗 Iraqi Vehicle Plate Intelligence</div>
+          <div class="card-subtitle">Province decoder · format validator · plate history</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Plate Number</label>
+        <input type="text" id="plate-input" placeholder="10/12345ب or أ ب ج 1234" onkeydown="if(event.key==='Enter')runPlate()" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+          Old format: province_code/serial+letters &nbsp;|&nbsp; New: letters + 4-6 digits
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="setPlate('1/12345أ')">Baghdad Old</button>
+        <button class="btn btn-secondary btn-sm" onclick="setPlate('أ ب 1234')">New Format</button>
+        <button class="btn btn-secondary btn-sm" onclick="setPlate('CD 456')">Diplomatic</button>
+      </div>
+      <button class="btn btn-primary" onclick="runPlate()" id="plate-btn">🔍 Decode Plate</button>
+      <div id="plate-result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🗺️ Province Reference</div></div>
+      <div id="province-list" style="font-size:12px;max-height:320px;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── IP GEOLOCATION ── -->
+<div id="tab-ip" class="osint-tab" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🌐 IP / Geographic Intelligence</div>
+          <div class="card-subtitle">Dual-source: ip-api.com + ipinfo.io · proxy detection</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>IP Address or Domain</label>
+        <input type="text" id="ip-input" placeholder="8.8.8.8 or example.com" onkeydown="if(event.key==='Enter')runIP()" />
+      </div>
+      <button class="btn btn-primary" onclick="runIP()" id="ip-btn">🔍 Geolocate</button>
+      <div id="ip-result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📡 Iraqi ISPs</div></div>
+      <div style="font-size:12px;line-height:2;color:var(--text-dim)">
+        <div><strong style="color:var(--text)">Zain Iraq</strong> — AS21277</div>
+        <div><strong style="color:var(--text)">Asiacell</strong> — AS51684</div>
+        <div><strong style="color:var(--text)">Korek Telecom</strong> — AS198605</div>
+        <div><strong style="color:var(--text)">ITC Iraq</strong> — AS203385</div>
+        <div><strong style="color:var(--text)">EarthLink</strong> — AS56790</div>
+        <div><strong style="color:var(--text)">Al-Badir</strong> — Broadband provider</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── CELL TOWER ── -->
+<div id="tab-cell" class="osint-tab" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">📡 Cell Tower Fingerprinting</div>
+          <div class="card-subtitle">MCC/MNC → carrier · LAC/Cell ID analysis · signal quality</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>MCC (Mobile Country Code)</label>
+        <input type="number" id="cell-mcc" placeholder="418 (Iraq)" />
+      </div>
+      <div class="form-group">
+        <label>MNC (Mobile Network Code)</label>
+        <input type="number" id="cell-mnc" placeholder="20 (Zain Iraq)" />
+      </div>
+      <div class="form-group">
+        <label>LAC (Location Area Code) — optional</label>
+        <input type="number" id="cell-lac" placeholder="e.g. 12345" />
+      </div>
+      <div class="form-group">
+        <label>Cell ID — optional</label>
+        <input type="number" id="cell-cid" placeholder="e.g. 98765" />
+      </div>
+      <div class="form-group">
+        <label>Signal Strength (dBm) — optional</label>
+        <input type="number" id="cell-dbm" placeholder="e.g. -75" />
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
+        <button class="btn btn-secondary btn-sm" onclick="setCell(418,20)">Zain Iraq</button>
+        <button class="btn btn-secondary btn-sm" onclick="setCell(418,5)">Asiacell</button>
+        <button class="btn btn-secondary btn-sm" onclick="setCell(418,40)">Korek</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadIraqCarriers()">List Iraq Carriers</button>
+      </div>
+      <button class="btn btn-primary" onclick="runCell()" id="cell-btn">🔍 Lookup Tower</button>
+      <div id="cell-result" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📋 Iraq MCC/MNC Reference</div></div>
+      <div id="iraq-carriers" style="font-size:12px;max-height:360px;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── NATIONAL ID ── -->
+<div id="tab-natid" class="osint-tab" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🪪 Iraqi National ID Intelligence</div>
+          <div class="card-subtitle">Format validation · province · year extraction</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>National ID (12 digits)</label>
+        <input type="text" id="natid-input" placeholder="100012345678" onkeydown="if(event.key==='Enter')runNatID()" />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+          Format: PP YY SSSSSS CC (province · year · sequence · check)
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <button class="btn btn-secondary btn-sm" onclick="setNatID('100012345678')">Baghdad Example</button>
+        <button class="btn btn-secondary btn-sm" onclick="setNatID('200099876543')">Basra Example</button>
+        <button class="btn btn-secondary btn-sm" onclick="setNatID('350015678901')">Erbil Example</button>
+      </div>
+      <button class="btn btn-primary" onclick="runNatID()" id="natid-btn">🔍 Analyze ID</button>
+      <div class="alert alert-info" style="margin-top:12px;font-size:11px">
+        ⚠️ Metadata extraction only — no real database lookup. For investigative use.
+      </div>
+      <div id="natid-result" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🏛️ Province Codes</div></div>
+      <div style="font-size:12px;line-height:2;color:var(--text-dim)">
+        <div><span style="color:var(--accent)">10-12</span> → Baghdad &nbsp; <span style="color:var(--accent)">20</span> → Basra</div>
+        <div><span style="color:var(--accent)">30</span> → Nineveh &nbsp; <span style="color:var(--accent)">35</span> → Erbil</div>
+        <div><span style="color:var(--accent)">36</span> → Sulaymaniyah &nbsp; <span style="color:var(--accent)">37</span> → Duhok</div>
+        <div><span style="color:var(--accent)">40</span> → Kirkuk &nbsp; <span style="color:var(--accent)">50</span> → Diyala</div>
+        <div><span style="color:var(--accent)">60</span> → Babil &nbsp; <span style="color:var(--accent)">65</span> → Karbala</div>
+        <div><span style="color:var(--accent)">70</span> → Najaf &nbsp; <span style="color:var(--accent)">75</span> → Qadisiyyah</div>
+        <div><span style="color:var(--accent)">85</span> → Dhi Qar &nbsp; <span style="color:var(--accent)">90</span> → Maysan</div>
+        <div><span style="color:var(--accent)">95</span> → Saladin &nbsp; <span style="color:var(--accent)">97</span> → Anbar</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DOMAIN OSINT ── -->
+<div id="tab-domain" class="osint-tab" style="display:none">
+  <div class="card" style="max-width:600px">
+    <div class="card-header">
+      <div>
+        <div class="card-title">🔍 Full Domain OSINT</div>
+        <div class="card-subtitle">Emails · social · DNS · WHOIS · subdomains · geolocation — all in parallel</div>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Target Domain</label>
+      <input type="text" id="domain-input" placeholder="example.com" onkeydown="if(event.key==='Enter')runDomain()" />
+    </div>
+    <button class="btn btn-primary" id="domain-btn" onclick="runDomain()">🔍 Run Full OSINT</button>
+  </div>
+  <div id="domain-result" style="margin-top:20px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.osint-result-card{padding:16px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;background:var(--card-bg)}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-label{color:var(--text-dim);min-width:160px}
+.info-value{color:var(--text);text-align:right;word-break:break-all}
+.platform-found{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:5px;background:rgba(0,212,170,.08);border:1px solid rgba(0,212,170,.2);margin-bottom:4px;font-size:12px}
+.platform-url{color:var(--accent);text-decoration:none;flex:1}
+.platform-url:hover{text-decoration:underline}
+.risk-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700}
+.risk-LOW{background:rgba(0,212,170,.15);color:#00d4aa}
+.risk-MEDIUM{background:rgba(255,160,0,.15);color:#ffa000}
+.risk-HIGH{background:rgba(255,77,77,.15);color:#ff4d4d}
+.header-ok{color:#00d4aa}
+.header-missing{color:#ff4d4d}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+
+<script>
+// ── Tab switching ──────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.osint-tab').forEach(t => t.style.display = 'none');
+  document.querySelectorAll('[id^="tab-btn-"]').forEach(b => {
+    b.className = b.id === `tab-btn-${name}` ? 'btn btn-primary' : 'btn btn-secondary';
+  });
+  document.getElementById(`tab-${name}`).style.display = '';
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function riskBadge(label) { return `<span class="risk-badge risk-${esc(label||'LOW')}">${esc(label||'N/A')}</span>`; }
+function sev(s) { const m={critical:'critical',high:'high',medium:'high',low:'medium',info:'info'}; return m[String(s).toLowerCase()]||'info'; }
+
+function infoRow(label, value, isHtml=false) {
+  const v = isHtml ? value : `<span class="info-value">${esc(String(value??'—'))}</span>`;
+  return `<div class="info-row"><span class="info-label">${esc(label)}</span>${v}</div>`;
+}
+
+function showLoading(btn_id, result_id) {
+  document.getElementById(btn_id).disabled = true;
+  document.getElementById(result_id).innerHTML = `<div style="color:var(--accent)"><span class="spinner"></span> Analyzing…</div>`;
+}
+
+function stopLoading(btn_id) {
+  document.getElementById(btn_id).disabled = false;
+}
+
+// ── Phone Intelligence ─────────────────────────────────────────────────────────
+async function runPhone() {
+  const number = document.getElementById('phone-input').value.trim();
+  if (!number) return;
+  showLoading('phone-btn', 'phone-result');
+  try {
+    const d = await API.post('/api/osint/phone', {number});
+    if (d.error) { document.getElementById('phone-result').innerHTML = `<div class="alert alert-error">${esc(d.error)}</div>`; return; }
+    document.getElementById('phone-result').innerHTML = `
+      <div class="osint-result-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:14px;font-weight:700">${esc(d.formats?.international||d.input)}</div>
+          ${riskBadge(d.risk_label)} <span style="font-size:12px;margin-left:6px">Risk: ${esc(String(d.risk_score))}</span>
+        </div>
+        ${infoRow('Valid', d.valid ? '✅ Yes' : '❌ No')}
+        ${infoRow('Country', d.country)}
+        ${infoRow('Region Code', d.region)}
+        ${infoRow('Line Type', d.line_type)}
+        ${infoRow('Carrier', d.carrier)}
+        ${infoRow('Timezones', (d.timezones||[]).join(', '))}
+        ${infoRow('E.164 Format', d.formats?.e164)}
+        ${infoRow('National Format', d.formats?.national)}
+        ${infoRow('International', d.formats?.international)}
+        <div style="margin-top:10px">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">FORMAT VARIATIONS (${(d.variations||[]).length})</div>
+          <div style="font-family:monospace;font-size:12px;line-height:1.8">${(d.variations||[]).map(v=>`<div>${esc(v)}</div>`).join('')}</div>
+        </div>
+        ${d.intelligence_notes?.length ? `<div style="margin-top:10px">${(d.intelligence_notes).map(n=>`<div class="alert alert-info" style="margin-bottom:4px;font-size:12px">💡 ${esc(n)}</div>`).join('')}</div>` : ''}
+      </div>`;
+  } catch(e) {
+    document.getElementById('phone-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  stopLoading('phone-btn');
+}
+
+// ── Username Footprint ─────────────────────────────────────────────────────────
+async function runUsername() {
+  const username = document.getElementById('username-input').value.trim();
+  if (!username) return;
+  const btn = document.getElementById('username-btn');
+  const result = document.getElementById('username-result');
+  const prog = document.getElementById('username-progress');
+  btn.disabled = true;
+  prog.style.display = 'block';
+  result.innerHTML = `<div style="color:var(--accent)">Checking 50+ platforms asynchronously…</div>`;
+  try {
+    const d = await API.post('/api/osint/username', {username});
+    prog.style.display = 'none';
+    const found = d.found || [];
+    result.innerHTML = `
+      <div class="osint-result-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:14px;font-weight:700">@${esc(d.username)}</div>
+          ${riskBadge(d.risk_label)}
+        </div>
+        ${infoRow('Platforms Checked', d.platforms_checked)}
+        ${infoRow('Profiles Found', found.length)}
+        ${infoRow('Risk Score', `${d.risk_score}/100`)}
+        <div style="margin-top:12px">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">FOUND PROFILES (${found.length})</div>
+          ${found.length ? found.map(p=>`
+            <div class="platform-found">
+              <span style="font-weight:600;min-width:100px">${esc(p.platform)}</span>
+              <a href="${esc(p.url)}" target="_blank" class="platform-url">${esc(p.url)}</a>
+              <span class="badge badge-low">Found</span>
+            </div>`).join('') : '<div style="color:var(--text-dim)">No profiles found on checked platforms</div>'}
+        </div>
+        <div style="margin-top:10px">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">USERNAME VARIATIONS TO CHECK</div>
+          <div style="font-family:monospace;font-size:11px;line-height:1.8;color:var(--text-dim)">${(d.variations||[]).join(' · ')}</div>
+        </div>
+      </div>`;
+  } catch(e) {
+    prog.style.display = 'none';
+    result.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  btn.disabled = false;
+}
+
+// ── Device Fingerprinting ──────────────────────────────────────────────────────
+const UA_SAMPLES = {
+  'desktop-chrome': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'android-samsung': 'Mozilla/5.0 (Linux; Android 13; SM-S918B Build/TP1A.220624.014) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.5615.137 Mobile Safari/537.36',
+  'iphone': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  'my-ua': navigator.userAgent,
+};
+function setUA(key) { document.getElementById('ua-input').value = UA_SAMPLES[key] || ''; }
+
+async function runDevice() {
+  const ua = document.getElementById('ua-input').value.trim();
+  if (!ua) { setUA('my-ua'); return; }
+  showLoading('device-btn', 'device-result');
+  try {
+    const d = await API.post('/api/osint/device', {user_agent: ua});
+    if (d.error) { document.getElementById('device-result').innerHTML = `<div class="alert alert-error">${esc(d.error)}</div>`; return; }
+    document.getElementById('device-result').innerHTML = `
+      <div class="osint-result-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:14px;font-weight:700">${esc(d.device?.brand)} ${esc(d.device?.model)}</div>
+          ${riskBadge(d.risk_label)}
+        </div>
+        ${infoRow('Form Factor', d.device?.form_factor)}
+        ${infoRow('OS', `${d.os?.family} ${d.os?.version}`)}
+        ${infoRow('Browser', `${d.browser?.family} ${d.browser?.version}`)}
+        ${infoRow('Browser Engine', d.browser?.engine)}
+        ${infoRow('Chipset Family', d.hardware?.chipset_family)}
+        ${infoRow('Release Year Est.', d.hardware?.release_year_estimate)}
+        ${infoRow('Risk Score', `${d.risk_score}/100`)}
+        ${d.intelligence?.length ? `<div style="margin-top:8px">${d.intelligence.map(n=>`<div class="alert alert-info" style="margin-bottom:4px;font-size:12px">💡 ${esc(n)}</div>`).join('')}</div>` : ''}
+      </div>`;
+  } catch(e) {
+    document.getElementById('device-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  stopLoading('device-btn');
+}
+
+// ── Vehicle Plate ──────────────────────────────────────────────────────────────
+function setPlate(p) { document.getElementById('plate-input').value = p; }
+
+async function runPlate() {
+  const plate = document.getElementById('plate-input').value.trim();
+  if (!plate) return;
+  showLoading('plate-btn', 'plate-result');
+  try {
+    const d = await API.post('/api/osint/plate', {plate});
+    document.getElementById('plate-result').innerHTML = `
+      <div class="osint-result-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:14px;font-weight:700;font-family:monospace">${esc(d.plate)}</div>
+          <span class="badge badge-${d.valid?'low':'critical'}">${d.valid?'VALID':'INVALID'}</span>
+        </div>
+        ${d.valid ? `
+          ${infoRow('Format', d.format)}
+          ${d.province ? infoRow('Province', `${d.province} (${d.province_arabic||''})`) : ''}
+          ${d.region ? infoRow('Region', d.region) : ''}
+          ${d.year_estimate ? infoRow('Year Estimate', d.year_estimate) : ''}` : `<div class="alert alert-error">${esc(d.error||'Invalid plate format')}</div>`}
+        ${(d.notes||[]).map(n=>`<div class="alert alert-info" style="margin:4px 0;font-size:12px">• ${esc(n)}</div>`).join('')}
+      </div>`;
+  } catch(e) {
+    document.getElementById('plate-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  stopLoading('plate-btn');
+}
+
+async function loadProvinces() {
+  try {
+    const d = await API.get('/api/osint/plate/provinces');
+    document.getElementById('province-list').innerHTML = (d.provinces||[]).map(p=>`
+      <div class="info-row">
+        <span style="color:var(--accent);font-weight:600;min-width:30px">${esc(p.code)}</span>
+        <span style="flex:1;padding:0 8px">${esc(p.name)}</span>
+        <span style="color:var(--text-dim)">${esc(p.arabic)}</span>
+      </div>`).join('') || '<div class="text-dim">Loading…</div>';
+  } catch(e) {}
+}
+
+// ── IP Geolocation ─────────────────────────────────────────────────────────────
+async function runIP() {
+  const target = document.getElementById('ip-input').value.trim();
+  if (!target) return;
+  showLoading('ip-btn', 'ip-result');
+  try {
+    const d = await API.post('/api/osint/ip', {target});
+    if (d.error) { document.getElementById('ip-result').innerHTML = `<div class="alert alert-error">${esc(d.error)}</div>`; return; }
+    document.getElementById('ip-result').innerHTML = `
+      <div class="osint-result-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:14px;font-weight:700;font-family:monospace">${esc(d.ip)}</div>
+          ${riskBadge(d.risk_label)}
+        </div>
+        ${infoRow('City', d.city)}
+        ${infoRow('Region', d.region)}
+        ${infoRow('Country', d.country)}
+        ${infoRow('ISP', d.isp)}
+        ${infoRow('Organization', d.org)}
+        ${infoRow('ASN', d.asn)}
+        ${infoRow('Timezone', d.timezone)}
+        ${infoRow('Coordinates', d.lat && d.lon ? `${d.lat}, ${d.lon}` : '—')}
+        ${d.proxy ? '<div class="alert alert-error" style="margin-top:8px">⚠️ Proxy/VPN detected</div>' : ''}
+        ${d.hosting ? '<div class="alert" style="margin-top:8px;background:rgba(255,160,0,.1);border-color:rgba(255,160,0,.3)">🖥️ Hosting/datacenter IP</div>' : ''}
+        ${d.maps_url ? `<a href="${esc(d.maps_url)}" target="_blank" class="btn btn-secondary btn-sm" style="margin-top:10px">🗺️ View on Map</a>` : ''}
+        ${(d.intelligence_notes||[]).map(n=>`<div class="alert alert-info" style="margin-top:4px;font-size:12px">💡 ${esc(n)}</div>`).join('')}
+      </div>`;
+  } catch(e) {
+    document.getElementById('ip-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  stopLoading('ip-btn');
+}
+
+// ── Cell Tower ─────────────────────────────────────────────────────────────────
+function setCell(mcc, mnc) {
+  document.getElementById('cell-mcc').value = mcc;
+  document.getElementById('cell-mnc').value = mnc;
+}
+
+async function runCell() {
+  const mcc = document.getElementById('cell-mcc').value;
+  const mnc = document.getElementById('cell-mnc').value;
+  const lac = document.getElementById('cell-lac').value || null;
+  const cid = document.getElementById('cell-cid').value || null;
+  const dbm = document.getElementById('cell-dbm').value || null;
+  if (!mcc || !mnc) return;
+  showLoading('cell-btn', 'cell-result');
+  try {
+    const d = await API.post('/api/osint/cell', {mcc:+mcc, mnc:+mnc, lac:lac?+lac:null, cell_id:cid?+cid:null, signal_dbm:dbm?+dbm:null});
+    const sigInfo = d.signal;
+    document.getElementById('cell-result').innerHTML = `
+      <div class="osint-result-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <div style="font-size:14px;font-weight:700">${esc(d.carrier||d.country)}</div>
+          <span class="badge badge-${d.found?'low':'medium'}">${d.found?'IDENTIFIED':'UNKNOWN'}</span>
+        </div>
+        ${infoRow('Country', d.country)}
+        ${infoRow('Carrier', d.carrier||'Unknown')}
+        ${d.brand ? infoRow('Brand', d.brand) : ''}
+        ${d.tech ? infoRow('Technologies', (d.tech||[]).join(', ')) : ''}
+        ${infoRow('MCC', d.mcc)} ${infoRow('MNC', d.mnc)}
+        ${d.lac ? infoRow('LAC', d.lac) : ''}
+        ${d.cell_id ? infoRow('Cell ID', d.cell_id) : ''}
+        ${sigInfo ? `<div class="info-row"><span class="info-label">Signal Quality</span><span class="badge badge-${sev(sigInfo.color)}">${esc(sigInfo.label)} (${esc(String(sigInfo.dbm))} dBm)</span></div>` : ''}
+        ${(d.coverage_pattern||[]).map(n=>`<div class="alert alert-info" style="margin-top:4px;font-size:12px">• ${esc(n)}</div>`).join('')}
+      </div>`;
+  } catch(e) {
+    document.getElementById('cell-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  stopLoading('cell-btn');
+}
+
+async function loadIraqCarriers() {
+  try {
+    const d = await API.get('/api/osint/cell/iraq-carriers');
+    document.getElementById('iraq-carriers').innerHTML = (d.carriers||[]).map(c=>`
+      <div class="info-row" style="align-items:start">
+        <span style="color:var(--accent);font-weight:600;min-width:60px;font-size:11px">${esc(c.mcc_mnc)}</span>
+        <span style="flex:1;padding:0 6px">${esc(c.brand||c.carrier)}</span>
+        <span style="color:var(--text-dim);font-size:11px">${(c.tech||[]).join('/')}</span>
+      </div>`).join('') || '<div class="text-dim">Loading…</div>';
+  } catch(e) {}
+}
+
+// ── National ID ────────────────────────────────────────────────────────────────
+function setNatID(id) { document.getElementById('natid-input').value = id; }
+
+async function runNatID() {
+  const id = document.getElementById('natid-input').value.trim();
+  if (!id) return;
+  showLoading('natid-btn', 'natid-result');
+  try {
+    const d = await API.post('/api/osint/national-id', {id});
+    if (!d.valid) {
+      document.getElementById('natid-result').innerHTML = `<div class="alert alert-error">${esc(d.error||'Invalid National ID')}</div>`;
+    } else {
+      document.getElementById('natid-result').innerHTML = `
+        <div class="osint-result-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div style="font-size:14px;font-weight:700;font-family:monospace">${esc(d.formatted)}</div>
+            <span class="badge badge-low">VALID FORMAT</span>
+          </div>
+          ${infoRow('Province', `${d.province} (${d.province_arabic||''})`)}
+          ${infoRow('Region', d.region)}
+          ${infoRow('Reg. Year Estimate', d.registration_year_estimate)}
+          ${infoRow('Sequence', d.sequence_number)}
+          ${infoRow('Check Digits', d.check_digits)}
+          ${(d.notes||[]).map(n=>`<div class="alert alert-info" style="margin-top:4px;font-size:12px">• ${esc(n)}</div>`).join('')}
+          <div style="margin-top:8px;font-size:11px;color:var(--text-dim)">${esc(d.disclaimer)}</div>
+        </div>`;
+    }
+  } catch(e) {
+    document.getElementById('natid-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  stopLoading('natid-btn');
+}
+
+// ── Domain OSINT ───────────────────────────────────────────────────────────────
+async function runDomain() {
+  const domain = document.getElementById('domain-input').value.trim();
+  if (!domain) return;
+  const btn = document.getElementById('domain-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Gathering OSINT…';
+  document.getElementById('domain-result').innerHTML = '<div style="color:var(--accent)">Running all OSINT modules in parallel…</div>';
+  try {
+    const d = await API.post('/api/osint/domain', {domain});
+    let html = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px">`;
+
+    // Emails
+    const emails = d.emails?.emails || [];
+    html += `<div class="card"><div class="card-header"><div class="card-title">📧 Emails Found</div></div>
+      ${emails.length ? emails.map(e=>`<div style="font-family:monospace;padding:4px 0;border-bottom:1px solid var(--border);font-size:13px">${esc(e)}</div>`).join('') : '<div class="text-dim">None found</div>'}
+    </div>`;
+
+    // Social
+    const social = d.social?.profiles || {};
+    const socialEntries = Object.entries(social);
+    html += `<div class="card"><div class="card-header"><div class="card-title">🌐 Social Media</div></div>
+      ${socialEntries.length ? socialEntries.map(([platform, handles])=>`
+        <div style="margin-bottom:6px"><strong style="color:var(--accent)">${esc(platform)}</strong>: ${(handles||[]).map(h=>`<span style="font-family:monospace">${esc(h)}</span>`).join(', ')}</div>
+      `).join('') : '<div class="text-dim">None found</div>'}
+    </div>`;
+
+    // DNS
+    const dns = d.dns || {};
+    html += `<div class="card"><div class="card-header"><div class="card-title">🌐 DNS Records</div></div>
+      ${Object.entries(dns).filter(([k])=>k!=='domain'&&k!=='error').map(([type, vals])=>`
+        <div style="margin-bottom:6px"><strong style="color:var(--accent)">${esc(type.toUpperCase())}</strong>: ${Array.isArray(vals)?vals.map(v=>`<code style="font-size:11px">${esc(typeof v==='object'?JSON.stringify(v):v)}</code>`).join(', '):'<span style="color:var(--text-dim)">—</span>'}</div>
+      `).join('') || '<div class="text-dim">No DNS data</div>'}
+    </div>`;
+
+    // Geo
+    const geo = d.geolocation || {};
+    html += `<div class="card"><div class="card-header"><div class="card-title">📍 IP Geolocation</div></div>
+      ${geo.error ? `<div class="text-dim">${esc(geo.error)}</div>` : `
+        ${infoRow('IP', geo.ip)}
+        ${infoRow('Location', `${geo.city||''}, ${geo.country||''}`)}
+        ${infoRow('ISP', geo.isp||geo.org)}
+        ${geo.maps_url ? `<a href="${esc(geo.maps_url)}" target="_blank" class="btn btn-secondary btn-sm" style="margin-top:8px">🗺️ Map</a>` : ''}
+      `}
+    </div>`;
+
+    // Subdomains
+    const subs = Array.isArray(d.subdomains) ? d.subdomains : [];
+    html += `<div class="card"><div class="card-header"><div class="card-title">🔎 Subdomains (${subs.length})</div></div>
+      <div style="max-height:200px;overflow-y:auto">
+        ${subs.length ? subs.slice(0,50).map(s=>`<div style="font-family:monospace;font-size:12px;padding:2px 0;border-bottom:1px solid var(--border)">${esc(typeof s==='object'?`${s.subdomain} → ${s.ip}`:s)}</div>`).join('') : '<div class="text-dim">None found</div>'}
+      </div>
+    </div>`;
+
+    html += '</div>';
+    document.getElementById('domain-result').innerHTML = html;
+  } catch(e) {
+    document.getElementById('domain-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
+  }
+  btn.disabled = false; btn.innerHTML = '🔍 Run Full OSINT';
+}
+
+// ── Initialize ─────────────────────────────────────────────────────────────────
+loadProvinces();
+loadIraqCarriers();
+</script>
 {% endblock %}

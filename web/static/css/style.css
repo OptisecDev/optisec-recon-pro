@@ -498,3 +498,16 @@ textarea { resize: vertical; min-height: 80px; }
 .accent { color: var(--accent); }
 .dim { color: var(--text-dim); }
 .mono { font-family: 'Fira Code', monospace; font-size: 12px; }
+
+/* OSINT / Scanner Info Rows */
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255,255,255,.05);
+  font-size: 13px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-label { color: var(--text-dim); min-width: 150px; }
+.info-value { color: var(--text); text-align: right; word-break: break-all; }

@@ -40,7 +40,7 @@ from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
 from config import APP_NAME, APP_VERSION, REPORTS_DIR
-from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation
+from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 
 BASE_DIR = Path(__file__).parent
 
@@ -56,6 +56,7 @@ app.include_router(vpn.router)
 app.include_router(ai_security.router)
 app.include_router(quantum.router)
 app.include_router(federation.router)
+app.include_router(osint_router.router)
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
@@ -497,9 +498,10 @@ async def list_findings(user: User = Depends(web_user), db: AsyncSession = Depen
 # ─── Background Scan Task ─────────────────────────────────────────────────────
 
 _STEP_PROGRESS = {
-    "subdomain": 10, "dns": 20, "whois": 30, "nmap": 42,
-    "xss": 52, "sqli": 62, "ssrf": 72, "lfi": 80,
-    "redirect": 88, "osint": 95,
+    "subdomain": 8, "dns": 15, "whois": 22, "nmap": 30,
+    "ssl": 36, "headers": 42, "ports": 50,
+    "xss": 58, "sqli": 66, "ssrf": 74, "lfi": 80,
+    "redirect": 87, "osint": 94,
 }
 
 
@@ -559,6 +561,24 @@ async def _run_scan_task(
             d = await asyncio.to_thread(nmap_scan, domain)
             results["nmap"] = d
             await push("nmap", _STEP_PROGRESS["nmap"], d)
+
+        if run_all or "ssl" in scan_types:
+            from modules.recon.ssl_analysis import analyze_ssl
+            d = await asyncio.to_thread(analyze_ssl, domain)
+            results["ssl"] = d
+            await push("ssl", _STEP_PROGRESS["ssl"], d)
+
+        if run_all or "headers" in scan_types:
+            from modules.recon.security_headers import check_security_headers
+            d = await asyncio.to_thread(check_security_headers, url)
+            results["headers"] = d
+            await push("headers", _STEP_PROGRESS["headers"], d)
+
+        if run_all or "ports" in scan_types:
+            from modules.recon.port_scanner import scan_ports
+            d = await asyncio.to_thread(scan_ports, domain)
+            results["ports"] = d
+            await push("ports", _STEP_PROGRESS["ports"], d)
 
         if run_all or "xss" in scan_types:
             d = await asyncio.to_thread(scan_xss, url)
@@ -656,6 +676,43 @@ async def ws_scan(websocket: WebSocket, scan_id: str, db: AsyncSession = Depends
         pass
     finally:
         ws_manager.disconnect(scan_id, websocket)
+
+
+# ─── Scanner Upgrade APIs ─────────────────────────────────────────────────────
+
+@app.post("/api/scan/ssl")
+async def scan_ssl(request: Request, user: User = Depends(web_user)):
+    data = await request.json()
+    target = data.get("target", "").strip()
+    if not target:
+        raise HTTPException(400, "Target is required")
+    from modules.recon.ssl_analysis import analyze_ssl
+    result = await asyncio.to_thread(analyze_ssl, target)
+    return JSONResponse(result)
+
+
+@app.post("/api/scan/headers")
+async def scan_headers(request: Request, user: User = Depends(web_user)):
+    data = await request.json()
+    target = data.get("target", "").strip()
+    if not target:
+        raise HTTPException(400, "Target is required")
+    if not target.startswith(("http://", "https://")):
+        target = f"https://{target}"
+    from modules.recon.security_headers import check_security_headers
+    result = await asyncio.to_thread(check_security_headers, target)
+    return JSONResponse(result)
+
+
+@app.post("/api/scan/ports")
+async def scan_ports(request: Request, user: User = Depends(web_user)):
+    data = await request.json()
+    target = data.get("target", "").strip()
+    if not target:
+        raise HTTPException(400, "Target is required")
+    from modules.recon.port_scanner import scan_ports as do_scan
+    result = await asyncio.to_thread(do_scan, target)
+    return JSONResponse(result)
 
 
 # ─── Report API ───────────────────────────────────────────────────────────────
