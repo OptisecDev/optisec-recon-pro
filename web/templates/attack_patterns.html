@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}Attack Patterns — {{ app_name }}{% endblock %}
+{% block page_title %}Attack Pattern Recognition{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="align-items:start">
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔍 Analyze Events / Logs</div>
+        <div class="card-subtitle">Correlate events into MITRE ATT&CK kill chain</div>
+      </div>
+      <div class="form-group">
+        <label>Paste log lines or event descriptions</label>
+        <textarea id="event-input" rows="10"
+          placeholder="192.168.1.100 - GET /search?q=1 UNION SELECT 1,2,3-- 200
+attacker ran nmap -sV 10.0.0.0/24
+uploaded c99.php webshell to /uploads/
+cobaltstrike beacon checkin every 60 seconds
+massive data upload to external IP 203.0.113.50"></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="analyzePatterns()" style="width:100%;justify-content:center">
+        🔍 Analyze Attack Patterns
+      </button>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header"><div class="card-title">📚 Pattern Library</div></div>
+      <div style="overflow-y:auto;max-height:400px">
+        {% for pattern in patterns %}
+        <div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;gap:8px;font-size:12px">
+          <code style="color:var(--accent);min-width:90px;font-size:10px">{{ pattern.id }}</code>
+          <div>
+            <strong>{{ pattern.name }}</strong>
+            <span class="badge badge-{{ 'critical' if pattern.severity == 'critical' else 'high' if pattern.severity == 'high' else 'medium' }}"
+                  style="font-size:9px;margin-left:4px">{{ pattern.severity }}</span>
+            <div style="color:var(--text-dim)">{{ pattern.stage.replace('_',' ') }} | {{ pattern.technique_id }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div id="analysis-results">
+      <div class="card" style="border:1px dashed var(--border);text-align:center;padding:40px;opacity:0.5">
+        <div style="font-size:32px;margin-bottom:8px">⚔️</div>
+        <div style="color:var(--text-dim)">Submit events to analyze attack patterns</div>
+      </div>
+    </div>
+
+    {% if history %}
+    <div class="card" style="margin-top:16px">
+      <div class="card-header"><div class="card-title">📊 Analysis History</div></div>
+      {% for h in history[:5] %}
+      <div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <div style="display:flex;justify-content:space-between">
+          <span>{{ h.events }} events → {{ h.patterns }} patterns</span>
+          <span style="color:var(--text-dim)">{{ h.analyzed_at[:10] }}</span>
+        </div>
+        {% if h.campaign.detected %}
+        <div style="color:var(--accent);font-size:11px">{{ h.campaign.type }} ({{ (h.campaign.confidence * 100)|int }}% confidence)</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const KILL_CHAIN = ['reconnaissance','weaponization','delivery','exploitation','installation','command_and_control','actions_on_objectives'];
+const STAGE_ICONS = {reconnaissance:'🕵️', weaponization:'⚙️', delivery:'📦', exploitation:'💥', installation:'🔧', command_and_control:'📡', actions_on_objectives:'💰'};
+
+async function analyzePatterns() {
+  const text = document.getElementById('event-input').value.trim();
+  if (!text) { alert('Enter events to analyze'); return; }
+  const el = document.getElementById('analysis-results');
+  el.innerHTML = '<div class="alert alert-info">🔍 Analyzing patterns...</div>';
+  const r = await fetch('/ai-security/api/attack-patterns/analyze', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({text})
+  });
+  const data = await r.json();
+  const campaign = data.campaign || {};
+  const confColor = campaign.confidence >= 0.7 ? '#ff3366' : campaign.confidence >= 0.4 ? '#ffaa00' : '#00ff88';
+
+  el.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">⚔️ Attack Analysis</div>
+          <div style="font-size:11px;color:var(--text-dim)">${data.analyzed_events} events analyzed</div>
+        </div>
+        <span class="badge badge-${data.detected_patterns > 0 ? 'high' : 'low'}">${data.detected_patterns} patterns</span>
+      </div>
+
+      ${campaign.detected ? `
+      <div style="padding:12px;border:1px solid ${confColor};border-radius:6px;margin-bottom:12px;background:rgba(${confColor==='#ff3366'?'255,51,102':'255,170,0'},0.05)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="color:${confColor}">🎯 ${escHtml(campaign.type)}</strong>
+          <span class="badge badge-${campaign.confidence >= 0.7 ? 'critical' : 'high'}">${((campaign.confidence||0)*100).toFixed(0)}% confidence</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
+          ${campaign.stages_covered} stages | ${campaign.total_indicators} indicators | ${campaign.critical_patterns} critical
+        </div>
+        ${campaign.mitre_techniques?.length ? `
+        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
+          ${campaign.mitre_techniques.map(t => `<code style="font-size:10px;color:var(--accent)">${escHtml(t)}</code>`).join('')}
+        </div>` : ''}
+      </div>` : ''}
+
+      <div style="margin-bottom:12px">
+        <div style="font-weight:600;font-size:12px;margin-bottom:8px;color:var(--text-dim)">KILL CHAIN COVERAGE</div>
+        <div style="display:flex;gap:2px;flex-wrap:wrap">
+          ${KILL_CHAIN.map(stage => {
+            const info = data.kill_chain_coverage?.[stage] || {};
+            const covered = info.covered;
+            return `<div title="${stage.replace(/_/g,' ')}" style="flex:1;min-width:60px;padding:6px;text-align:center;border-radius:4px;
+              background:${covered ? (info.severity === 'critical' ? 'rgba(255,51,102,0.2)' : info.severity === 'high' ? 'rgba(255,102,0,0.2)' : 'rgba(0,255,136,0.1)') : 'var(--bg-hover)'};
+              border:1px solid ${covered ? (info.severity === 'critical' ? '#ff3366' : '#ffaa00') : 'var(--border)'}">
+              <div style="font-size:16px">${STAGE_ICONS[stage] || '●'}</div>
+              <div style="font-size:9px;color:${covered ? 'var(--text)' : 'var(--text-dim)'};margin-top:2px">${stage.replace(/_/g,' ').slice(0,10)}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      ${data.patterns?.length ? `
+      <div>
+        <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:var(--text-dim)">DETECTED PATTERNS</div>
+        ${data.patterns.map(p => `
+          <div style="padding:8px;border-left:2px solid ${p.severity==='critical'?'#ff3366':p.severity==='high'?'#ff6600':'#ffaa00'};margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between">
+              <div>
+                <strong>${escHtml(p.name)}</strong>
+                <code style="font-size:10px;color:var(--accent);margin-left:6px">${p.technique_id}</code>
+              </div>
+              <div>
+                <span class="badge badge-${p.severity}">${p.severity}</span>
+                <span class="badge badge-info" style="margin-left:4px">${p.occurrences}×</span>
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px">${p.stage.replace(/_/g,' ')}</div>
+          </div>`).join('')}
+      </div>` : '<div style="color:#00ff88">✅ No attack patterns detected</div>'}
+
+      ${campaign.recommended_response?.length ? `
+      <div style="margin-top:12px;padding:10px;background:rgba(255,51,102,0.05);border-radius:6px">
+        <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:#ff3366">🚨 Response Playbook</div>
+        ${campaign.recommended_response.map(r => `<div style="font-size:12px;padding:2px 0">• ${escHtml(r)}</div>`).join('')}
+      </div>` : ''}
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

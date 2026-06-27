@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block title %}AI Red Team — {{ app_name }}{% endblock %}
+{% block page_title %}AI Red Team{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;display:flex;gap:8px">
+  <button class="btn btn-primary" onclick="showTab('engagements')">🎯 Engagements</button>
+  <button class="btn btn-secondary" onclick="showTab('new')">➕ New Engagement</button>
+  <button class="btn btn-secondary" onclick="showTab('library')">📚 Technique Library</button>
+</div>
+
+<!-- Engagements List -->
+<div id="tab-engagements">
+  {% if engagements %}
+  <div class="grid-2">
+    {% for eng in engagements %}
+    <div class="card" onclick="loadEngagement('{{ eng.id }}')" style="cursor:pointer">
+      <div class="card-header">
+        <div>
+          <div class="card-title">{{ eng.id }}</div>
+          <div class="card-subtitle">{{ eng.target }}</div>
+        </div>
+        <span class="badge badge-{{ 'critical' if eng.risk_rating == 'critical' else 'high' if eng.risk_rating == 'high' else 'medium' }}">
+          {{ eng.risk_rating }}
+        </span>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim)">
+        Categories: {{ eng.categories|join(', ') }}
+      </div>
+      <div style="font-size:11px;margin-top:4px">
+        <span class="badge badge-{{ 'low' if eng.status == 'planned' else 'high' }}">{{ eng.status }}</span>
+        <span style="margin-left:8px;color:var(--text-dim)">{{ eng.created_at[:10] }}</span>
+        <span style="margin-left:8px;color:var(--accent)">{{ eng.findings|length }} findings</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card" style="text-align:center;padding:40px">
+    <div style="font-size:48px;margin-bottom:12px">🎯</div>
+    <div style="color:var(--text-dim)">No engagements yet. Create your first AI Red Team engagement.</div>
+    <button class="btn btn-primary" style="margin-top:12px" onclick="showTab('new')">Create Engagement</button>
+  </div>
+  {% endif %}
+  <div id="engagement-detail" style="margin-top:16px"></div>
+</div>
+
+<!-- New Engagement -->
+<div id="tab-new" style="display:none">
+  <div class="card" style="max-width:700px">
+    <div class="card-header">
+      <div class="card-title">➕ New AI Red Team Engagement</div>
+    </div>
+    <div class="form-group">
+      <label>Target</label>
+      <input type="text" id="eng-target" placeholder="example.com, 192.168.1.0/24" />
+    </div>
+    <div class="form-group">
+      <label>Scope (comma-separated)</label>
+      <input type="text" id="eng-scope" placeholder="*.example.com, api.example.com, 10.0.0.0/24" />
+    </div>
+    <div class="form-group">
+      <label>Objectives (comma-separated)</label>
+      <input type="text" id="eng-objectives" placeholder="Gain admin access, exfiltrate customer data, test IR response" />
+    </div>
+    <div class="form-group">
+      <label>Attack Categories</label>
+      <div class="checkbox-grid">
+        {% for cat in categories %}
+        <label class="checkbox-item">
+          <input type="checkbox" class="eng-category" value="{{ cat }}" {{ 'checked' if cat in ('reconnaissance', 'web_application') else '' }}>
+          <span>{{ cat.replace('_', ' ').title() }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Rules of Engagement</label>
+      <textarea id="eng-roe" rows="3" placeholder="No production data exfiltration. No DoS. Test only on agreed systems..."></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="createEngagement()" style="width:100%;justify-content:center">
+      🤖 Generate AI Red Team Plan
+    </button>
+    <div id="eng-result" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- Technique Library -->
+<div id="tab-library" style="display:none">
+  <div class="grid-2">
+    {% for category, techs in technique_library.items() %}
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">{{ category.replace('_',' ').title() }}</div>
+      </div>
+      {% for tech in techs %}
+      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between">
+          <strong style="font-size:13px">{{ tech.name }}</strong>
+          <code style="color:var(--accent);font-size:10px">{{ tech.id }}</code>
+        </div>
+        <div style="margin-top:4px">
+          {% for step in tech.steps %}
+          <div style="font-size:11px;color:var(--text-dim)">→ {{ step }}</div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(name) {
+  ['engagements','new','library'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+  });
+}
+
+async function createEngagement() {
+  const target = document.getElementById('eng-target').value.trim();
+  if (!target) { alert('Enter target'); return; }
+  const categories = [...document.querySelectorAll('.eng-category:checked')].map(c => c.value);
+  const el = document.getElementById('eng-result');
+  el.innerHTML = '<div class="alert alert-info">🤖 AI generating red team plan...</div>';
+  const r = await fetch('/ai-security/api/red-team/engagements', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      target,
+      scope: document.getElementById('eng-scope').value.split(',').map(s => s.trim()).filter(Boolean),
+      objectives: document.getElementById('eng-objectives').value.split(',').map(s => s.trim()).filter(Boolean),
+      categories,
+      roe: document.getElementById('eng-roe').value,
+    })
+  });
+  const data = await r.json();
+  if (data.id) {
+    el.innerHTML = `<div class="alert alert-info">✅ Engagement ${escHtml(data.id)} created!</div>`;
+    renderEngagementDetail(data);
+    showTab('engagements');
+  } else {
+    el.innerHTML = `<pre class="code-block">${JSON.stringify(data, null, 2)}</pre>`;
+  }
+}
+
+async function loadEngagement(id) {
+  const r = await fetch(`/ai-security/api/red-team/engagements/${id}`);
+  const data = await r.json();
+  renderEngagementDetail(data);
+}
+
+function renderEngagementDetail(data) {
+  const plan = data.plan || {};
+  document.getElementById('engagement-detail').innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">${escHtml(data.id)}</div>
+          <div class="card-subtitle">${escHtml(data.target)}</div>
+        </div>
+        <span class="badge badge-${data.risk_rating === 'critical' ? 'critical' : 'high'}">${(data.risk_rating||'').toUpperCase()}</span>
+      </div>
+
+      ${plan.executive_summary ? `<div style="padding:10px;background:rgba(0,255,136,0.05);border-radius:6px;margin-bottom:12px;font-size:13px">${escHtml(plan.executive_summary)}</div>` : ''}
+
+      <div class="stats-grid" style="margin-bottom:12px">
+        <div class="stat-card"><div class="stat-value">${plan.estimated_duration_days || '?'}</div><div class="stat-label">Days</div></div>
+        <div class="stat-card"><div class="stat-value">${plan.phases?.length || 0}</div><div class="stat-label">Phases</div></div>
+        <div class="stat-card"><div class="stat-value">${data.findings?.length || 0}</div><div class="stat-label">Findings</div></div>
+      </div>
+
+      ${plan.phases?.length ? plan.phases.map((phase, i) => `
+        <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong>Phase ${i+1}: ${escHtml(phase.phase_name)}</strong>
+            <span style="font-size:11px;color:var(--text-dim)">${phase.duration_days}d</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${escHtml(phase.success_criteria)}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+            ${(phase.tools||[]).map(t => `<span class="badge badge-info">${escHtml(t)}</span>`).join('')}
+          </div>
+          <div style="margin-top:6px">
+            ${(phase.techniques||[]).map(t => `<code style="font-size:10px;color:var(--accent);margin-right:4px">${escHtml(t)}</code>`).join('')}
+          </div>
+        </div>`).join('') : ''}
+
+      ${plan.key_attack_vectors?.length ? `
+      <div style="margin-top:8px">
+        <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text-dim)">KEY ATTACK VECTORS</div>
+        ${plan.key_attack_vectors.map(v => `<div style="font-size:12px;padding:2px 0;color:#ff6600">→ ${escHtml(v)}</div>`).join('')}
+      </div>` : ''}
+
+      <div style="margin-top:12px">
+        <button class="btn btn-secondary btn-sm" onclick="showLogFinding('${data.id}')">➕ Log Finding</button>
+      </div>
+
+      <div id="log-finding-form-${data.id}" style="display:none;margin-top:12px">
+        <div class="form-group"><label>Finding Title</label><input type="text" id="finding-title-${data.id}" placeholder="XSS in login page" /></div>
+        <div class="form-group"><label>Severity</label>
+          <select id="finding-sev-${data.id}"><option>critical</option><option>high</option><option>medium</option><option>low</option></select>
+        </div>
+        <div class="form-group"><label>Description</label><textarea id="finding-desc-${data.id}" rows="2"></textarea></div>
+        <button class="btn btn-primary btn-sm" onclick="logFinding('${data.id}')">Save Finding</button>
+      </div>
+    </div>`;
+}
+
+function showLogFinding(id) {
+  document.getElementById(`log-finding-form-${id}`).style.display = '';
+}
+
+async function logFinding(engId) {
+  const r = await fetch(`/ai-security/api/red-team/engagements/${engId}/findings`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title: document.getElementById(`finding-title-${engId}`).value,
+      severity: document.getElementById(`finding-sev-${engId}`).value,
+      description: document.getElementById(`finding-desc-${engId}`).value,
+    })
+  });
+  const data = await r.json();
+  alert(data.id ? `Finding ${data.id} logged!` : JSON.stringify(data));
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

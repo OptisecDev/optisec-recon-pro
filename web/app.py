@@ -40,12 +40,22 @@ from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
 from config import APP_NAME, APP_VERSION, REPORTS_DIR
+from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation
 
 BASE_DIR = Path(__file__).parent
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+
+# ─── Feature Routers ──────────────────────────────────────────────────────────
+app.include_router(bug_bounty.router)
+app.include_router(compliance.router)
+app.include_router(firewall.router)
+app.include_router(vpn.router)
+app.include_router(ai_security.router)
+app.include_router(quantum.router)
+app.include_router(federation.router)
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────

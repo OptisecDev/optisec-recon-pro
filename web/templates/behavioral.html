@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}Behavioral Analysis — {{ app_name }}{% endblock %}
+{% block page_title %}Behavioral Analysis — UEBA{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="align-items:start">
+  <!-- Entity List -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">👤 Entity Profiles</div>
+      <span class="badge badge-{{ 'critical' if high_risk|length > 0 else 'low' }}">{{ high_risk|length }} High Risk</span>
+    </div>
+
+    {% if entities %}
+    {% for ent in entities %}
+    <div style="padding:10px;border:1px solid {{ '#ff3366' if ent.risk_score >= 0.8 else '#ffaa00' if ent.risk_score >= 0.5 else 'var(--border)' }};
+                border-radius:6px;margin-bottom:8px;cursor:pointer" onclick="loadEntity('{{ ent.entity_id }}')">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>{{ ent.entity_id }}</strong>
+        <span class="badge badge-{{ 'critical' if ent.risk_level == 'critical' else 'high' if ent.risk_level == 'high' else 'medium' if ent.risk_level == 'medium' else 'low' }}">
+          {{ ent.risk_level }}
+        </span>
+      </div>
+      <div style="display:flex;gap:12px;font-size:11px;color:var(--text-dim);margin-top:4px">
+        <span>Risk: {{ (ent.risk_score * 100)|int }}%</span>
+        <span>Events: {{ ent.total_events }}</span>
+        <span>Anomalies: {{ ent.anomaly_count }}</span>
+      </div>
+      <div style="margin-top:6px;height:4px;background:var(--bg-hover);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:{{ (ent.risk_score * 100)|int }}%;background:{{ '#ff3366' if ent.risk_score >= 0.8 else '#ffaa00' if ent.risk_score >= 0.5 else '#00ff88' }};border-radius:2px"></div>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="color:var(--text-dim);text-align:center;padding:30px">
+      No entity profiles yet. Submit events to build profiles.
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Event Submission & Details -->
+  <div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📝 Record Event</div></div>
+      <div class="form-group">
+        <label>Entity ID (user/IP/service)</label>
+        <input type="text" id="evt-entity" placeholder="user:alice, ip:192.168.1.100" />
+      </div>
+      <div class="form-group">
+        <label>Action</label>
+        <select id="evt-action">
+          <option value="login">login</option>
+          <option value="login_failed">login_failed</option>
+          <option value="api_call">api_call</option>
+          <option value="file_access">file_access</option>
+          <option value="admin_access">admin_access</option>
+          <option value="privilege_change">privilege_change</option>
+          <option value="data_export">data_export</option>
+          <option value="sudo">sudo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Source IP</label>
+        <input type="text" id="evt-ip" placeholder="192.168.1.1" />
+      </div>
+      <div class="form-group">
+        <label>Bytes Transferred (optional)</label>
+        <input type="number" id="evt-bytes" placeholder="0" />
+      </div>
+      <button class="btn btn-primary" onclick="recordEvent()" style="width:100%;justify-content:center">
+        📝 Record Event
+      </button>
+      <div id="evt-result" style="margin-top:12px"></div>
+    </div>
+
+    <div id="entity-detail" style="margin-top:16px"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function recordEvent() {
+  const entity_id = document.getElementById('evt-entity').value.trim();
+  if (!entity_id) { alert('Enter entity ID'); return; }
+  const event = {
+    action: document.getElementById('evt-action').value,
+    ip: document.getElementById('evt-ip').value,
+    bytes_transferred: parseInt(document.getElementById('evt-bytes').value) || 0,
+    timestamp: new Date().toISOString(),
+  };
+  const r = await fetch('/ai-security/api/behavioral/event', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({entity_id, event})
+  });
+  const data = await r.json();
+  const actionColor = {block_and_alert:'#ff3366', require_mfa:'#ffaa00', alert_soc:'#ff6600', monitor:'#00ff88'}[data.action] || 'var(--text)';
+  document.getElementById('evt-result').innerHTML = `
+    <div style="padding:10px;border:1px solid ${actionColor};border-radius:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>${escHtml(entity_id)}</strong>
+        <span class="badge badge-${data.risk_level === 'critical' ? 'critical' : data.risk_level === 'high' ? 'high' : 'low'}">
+          ${data.risk_level || 'normal'}
+        </span>
+      </div>
+      <div style="font-size:12px;margin-top:6px">Risk Score: <strong style="color:${actionColor}">${((data.risk_score||0)*100).toFixed(1)}%</strong></div>
+      <div style="font-size:12px;color:${actionColor}">Action: ${escHtml(data.action)}</div>
+      ${data.anomalies?.length ? `
+      <div style="margin-top:8px">
+        ${data.anomalies.map(a => `
+          <div style="font-size:11px;padding:3px 0;color:#ffaa00">⚠️ ${escHtml(a.type)}: ${escHtml(a.detail)}</div>`).join('')}
+      </div>` : '<div style="font-size:11px;color:#00ff88;margin-top:4px">✅ No anomalies detected</div>'}
+    </div>`;
+  loadEntity(entity_id);
+}
+
+async function loadEntity(entity_id) {
+  const r = await fetch(`/ai-security/api/behavioral/entities/${encodeURIComponent(entity_id)}`);
+  if (!r.ok) return;
+  const data = await r.json();
+  const riskColor = data.risk_score >= 0.8 ? '#ff3366' : data.risk_score >= 0.5 ? '#ffaa00' : '#00ff88';
+  document.getElementById('entity-detail').innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">👤 ${escHtml(entity_id)}</div>
+        <span class="badge badge-${data.risk_score >= 0.8 ? 'critical' : data.risk_score >= 0.5 ? 'high' : 'low'}">
+          ${((data.risk_score||0)*100).toFixed(1)}% risk
+        </span>
+      </div>
+      <div style="margin-bottom:8px">
+        <div style="height:6px;background:var(--bg-hover);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${((data.risk_score||0)*100).toFixed(1)}%;background:${riskColor};border-radius:3px"></div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+        Total events: ${data.total_events} | Last seen: ${data.last_seen?.slice(0,19) || 'N/A'}
+      </div>
+      ${data.anomaly_log?.length ? `
+      <div>
+        <div style="font-weight:600;margin-bottom:6px">Recent Anomalies</div>
+        ${data.anomaly_log.slice(-5).reverse().map(al => `
+          <div style="padding:6px;border-left:2px solid #ffaa00;margin-bottom:4px;font-size:11px">
+            <div style="color:var(--text-dim)">${al.timestamp?.slice(0,19) || ''}</div>
+            ${al.anomalies.map(a => `<div style="color:#ffaa00">• ${escHtml(a.type)}: ${escHtml(a.detail)}</div>`).join('')}
+          </div>`).join('')}
+      </div>` : '<div style="font-size:12px;color:#00ff88">✅ No recent anomalies</div>'}
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

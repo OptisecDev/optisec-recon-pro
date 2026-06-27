@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Federated Scanning — {{ app_name }}{% endblock %}
+{% block page_title %}Federated Scanning{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;display:flex;gap:8px">
+  <button class="btn btn-primary" onclick="showTab('nodes')">🌐 Nodes</button>
+  <button class="btn btn-secondary" onclick="showTab('scan')">🔍 Dispatch Scan</button>
+  <button class="btn btn-secondary" onclick="showTab('tasks')">📋 Tasks</button>
+  {% if user.role == 'admin' %}
+  <button class="btn btn-secondary" onclick="showTab('setup')">⚙️ Setup</button>
+  {% endif %}
+</div>
+
+<!-- Nodes -->
+<div id="tab-nodes">
+  <div class="grid-2" style="align-items:start">
+    <!-- This Node -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏠 This Node</div>
+        <span class="badge badge-{{ 'low' if this_node else 'medium' }}">{{ 'Configured' if this_node else 'Not Initialized' }}</span>
+      </div>
+      {% if this_node %}
+      <div style="font-size:12px">
+        <div><strong>Name:</strong> {{ this_node.name }}</div>
+        <div><strong>ID:</strong> <code>{{ this_node.id }}</code></div>
+        <div><strong>Endpoint:</strong> {{ this_node.endpoint }}</div>
+        <div><strong>Region:</strong> {{ this_node.region }}</div>
+        <div><strong>Capabilities:</strong> {{ this_node.capabilities|join(', ') }}</div>
+      </div>
+      {% else %}
+      <div style="color:var(--text-dim);margin-bottom:12px">Node not initialized</div>
+      {% if user.role == 'admin' %}
+      <button class="btn btn-primary btn-sm" onclick="showTab('setup')">Initialize Node</button>
+      {% endif %}
+      {% endif %}
+    </div>
+
+    <!-- Peer Nodes -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🌐 Peer Nodes</div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="pingAll()">🏓 Ping All</button>
+          {% if user.role == 'admin' %}
+          <button class="btn btn-primary btn-sm" onclick="showAddNode()">+ Add</button>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if nodes %}
+      {% for node in nodes %}
+      <div style="padding:10px;border:1px solid {{ '#00ff88' if node.status == 'online' else '#ff3366' if node.status == 'offline' else 'var(--border)' }};border-radius:6px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>{{ node.name }}</strong>
+          <span class="badge badge-{{ 'low' if node.status == 'online' else 'critical' if node.status == 'offline' else 'medium' }}">
+            {{ node.status }}
+          </span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+          {{ node.endpoint }} | {{ node.region }}
+          {% if node.last_ping_ms %}| {{ node.last_ping_ms }}ms{% endif %}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+          {% for cap in node.capabilities %}
+          <span class="badge badge-info" style="font-size:9px">{{ cap }}</span>
+          {% endfor %}
+        </div>
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="btn btn-secondary btn-sm" onclick="pingNode('{{ node.id }}')">🏓 Ping</button>
+          {% if user.role == 'admin' %}
+          <button class="btn btn-secondary btn-sm" style="color:#ff3366" onclick="removeNode('{{ node.id }}')">✕ Remove</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="color:var(--text-dim);text-align:center;padding:20px">No peer nodes registered</div>
+      {% endif %}
+
+      <!-- Add Node Form -->
+      <div id="add-node-form" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+        <div class="form-group"><label>Node Name</label><input type="text" id="node-name" placeholder="datacenter-eu" /></div>
+        <div class="form-group"><label>Endpoint URL</label><input type="text" id="node-endpoint" placeholder="https://10.0.1.100:8000" /></div>
+        <div class="form-group"><label>API Key</label><input type="password" id="node-apikey" /></div>
+        <div class="form-group"><label>Region</label><input type="text" id="node-region" placeholder="eu-west" value="remote" /></div>
+        <button class="btn btn-primary btn-sm" onclick="addNode()">Add Node</button>
+        <div id="add-node-result" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Dispatch Scan -->
+<div id="tab-scan" style="display:none">
+  <div class="card" style="max-width:600px">
+    <div class="card-header">
+      <div class="card-title">🔍 Dispatch Federated Scan</div>
+    </div>
+    <div class="form-group">
+      <label>Target</label>
+      <input type="text" id="fed-target" placeholder="example.com" />
+    </div>
+    <div class="form-group">
+      <label>Scan Types</label>
+      <div class="checkbox-grid">
+        {% for t in ['recon', 'vuln', 'osint', 'dns', 'subdomain', 'xss', 'sqli'] %}
+        <label class="checkbox-item">
+          <input type="checkbox" class="fed-type" value="{{ t }}" {{ 'checked' if t in ('recon', 'vuln') else '' }}>
+          <span>{{ t }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Distribution Strategy</label>
+      <select id="fed-strategy">
+        <option value="parallel">Parallel — all nodes scan everything they support</option>
+        <option value="round-robin">Round-Robin — distribute scan types evenly</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="dispatchScan()" style="width:100%;justify-content:center">
+      🚀 Dispatch to Federation
+    </button>
+    <div id="dispatch-result" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- Tasks -->
+<div id="tab-tasks">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📋 Federated Tasks</div>
+      <button class="btn btn-secondary btn-sm" onclick="loadTasks()">🔄 Refresh</button>
+    </div>
+    <div id="tasks-list">
+      {% if tasks %}
+      {% for task in tasks %}
+      <div style="padding:10px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <code style="color:var(--accent);font-size:11px">{{ task.task_id[:8] }}</code>
+            <strong style="margin-left:8px">{{ task.target }}</strong>
+          </div>
+          <span class="badge badge-{{ 'low' if task.status == 'completed' else 'medium' if task.status == 'running' else 'info' }}">
+            {{ task.status }}
+          </span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+          Types: {{ task.scan_types|join(', ') }} | Nodes: {{ task.node_count or 0 }} | {{ task.created_at[:10] }}
+        </div>
+        {% if task.status == 'running' %}
+        <button class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="collectResults('{{ task.task_id }}')">📥 Collect Results</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="color:var(--text-dim);text-align:center;padding:20px">No tasks yet</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Setup -->
+<div id="tab-setup" style="display:none">
+  {% if user.role == 'admin' %}
+  <div class="card" style="max-width:500px">
+    <div class="card-header"><div class="card-title">⚙️ Initialize This Node</div></div>
+    <div class="form-group"><label>Node Name</label><input type="text" id="init-name" placeholder="OptiSec Primary" value="OptiSec Primary" /></div>
+    <div class="form-group"><label>This Node's Endpoint URL</label><input type="text" id="init-endpoint" placeholder="https://your-ip:8000" /></div>
+    <div class="form-group"><label>Region</label><input type="text" id="init-region" placeholder="us-east" value="primary" /></div>
+    <button class="btn btn-primary" onclick="initNode()" style="width:100%;justify-content:center">⚙️ Initialize</button>
+    <div id="init-result" style="margin-top:12px"></div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">Admin access required</div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(name) {
+  ['nodes','scan','tasks','setup'].forEach(t => {
+    const el = document.getElementById(`tab-${t}`);
+    if (el) el.style.display = t === name ? '' : 'none';
+  });
+}
+
+function showAddNode() {
+  document.getElementById('add-node-form').style.display = '';
+}
+
+async function addNode() {
+  const r = await fetch('/federation/api/nodes', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name: document.getElementById('node-name').value,
+      endpoint: document.getElementById('node-endpoint').value,
+      api_key: document.getElementById('node-apikey').value,
+      region: document.getElementById('node-region').value,
+    })
+  });
+  const data = await r.json();
+  document.getElementById('add-node-result').innerHTML = data.id
+    ? `<div class="alert alert-info">✅ Node ${escHtml(data.name)} added! <button class="btn btn-secondary btn-sm" onclick="location.reload()">Reload</button></div>`
+    : `<div class="alert alert-high">${escHtml(data.error || 'Error')}</div>`;
+}
+
+async function pingNode(id) {
+  const r = await fetch(`/federation/api/nodes/${id}/ping`, {method:'POST'});
+  const data = await r.json();
+  alert(`${data.node_id}: ${data.status} (${data.ping_ms || '?'}ms)`);
+  location.reload();
+}
+
+async function pingAll() {
+  const r = await fetch('/federation/api/nodes/ping-all', {method:'POST'});
+  const data = await r.json();
+  alert(`Pinged ${data.results?.length || 0} nodes. Check statuses.`);
+  location.reload();
+}
+
+async function removeNode(id) {
+  if (!confirm('Remove this node?')) return;
+  await fetch(`/federation/api/nodes/${id}`, {method:'DELETE'});
+  location.reload();
+}
+
+async function dispatchScan() {
+  const target = document.getElementById('fed-target').value.trim();
+  if (!target) { alert('Enter target'); return; }
+  const scan_types = [...document.querySelectorAll('.fed-type:checked')].map(c => c.value);
+  const el = document.getElementById('dispatch-result');
+  el.innerHTML = '<div class="alert alert-info">🚀 Dispatching...</div>';
+  const r = await fetch('/federation/api/scan', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({target, scan_types, strategy: document.getElementById('fed-strategy').value})
+  });
+  const data = await r.json();
+  el.innerHTML = `
+    <div class="card" style="border-color:var(--accent)">
+      <div style="color:var(--accent);font-weight:600">✅ ${data.strategy === 'local_fallback' ? 'Running locally (no online peers)' : 'Dispatched to ' + data.node_count + ' nodes'}</div>
+      <div style="font-size:11px;margin-top:4px"><strong>Task ID:</strong> <code>${escHtml(data.task_id)}</code></div>
+      <div style="font-size:11px"><strong>Target:</strong> ${escHtml(data.target)}</div>
+      <div style="font-size:11px"><strong>Types:</strong> ${escHtml(data.scan_types?.join(', ') || '')}</div>
+      ${data.note ? `<div class="alert alert-info" style="margin-top:6px;font-size:11px">${escHtml(data.note)}</div>` : ''}
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="collectResults('${data.task_id}')">📥 Collect Results</button>
+    </div>`;
+}
+
+async function collectResults(task_id) {
+  const r = await fetch(`/federation/api/tasks/${task_id}/results`);
+  const data = await r.json();
+  alert(`Results collected: ${data.results?.total_findings || 0} findings, ${data.results?.subdomains?.length || 0} subdomains`);
+}
+
+async function loadTasks() {
+  const r = await fetch('/federation/api/tasks');
+  const data = await r.json();
+  location.reload();
+}
+
+async function initNode() {
+  const r = await fetch('/federation/api/initialize', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name: document.getElementById('init-name').value,
+      endpoint: document.getElementById('init-endpoint').value,
+      region: document.getElementById('init-region').value,
+    })
+  });
+  const data = await r.json();
+  document.getElementById('init-result').innerHTML = data.id
+    ? `<div class="alert alert-info">✅ Node initialized: ${escHtml(data.name)} (${escHtml(data.id)})</div>`
+    : `<div class="alert alert-high">${escHtml(data.error || 'Error')}</div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

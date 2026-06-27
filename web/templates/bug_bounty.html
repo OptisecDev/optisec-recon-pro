@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+{% block title %}Bug Bounty — {{ app_name }}{% endblock %}
+{% block page_title %}Bug Bounty Platform{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
+  <button class="btn btn-primary" onclick="showTab('hackerone')">🎯 HackerOne</button>
+  <button class="btn btn-secondary" onclick="showTab('bugcrowd')">🐛 Bugcrowd</button>
+  <button class="btn btn-secondary" onclick="showTab('intigriti')">🔵 Intigriti</button>
+  <button class="btn btn-secondary" onclick="showTab('cve')">📋 CVE Pipeline</button>
+  <button class="btn btn-secondary" onclick="showTab('submit')">📤 Submit Report</button>
+</div>
+
+<!-- HackerOne Tab -->
+<div id="tab-hackerone">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <div class="card-title">🎯 HackerOne Programs</div>
+          <div class="card-subtitle">Discover and search bug bounty programs</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Search Programs</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="h1-keyword" placeholder="shopify, twitter, github..." style="flex:1" />
+          <button class="btn btn-primary btn-sm" onclick="searchH1Programs()">Search</button>
+        </div>
+      </div>
+      <div id="h1-programs-list" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📊 My Reports</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <select id="h1-report-state" style="flex:1">
+          <option value="all">All States</option>
+          <option value="new">New</option>
+          <option value="triaged">Triaged</option>
+          <option value="resolved">Resolved</option>
+          <option value="bounty_awarded">Bounty Awarded</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="loadH1Reports()">Load</button>
+      </div>
+      <div id="h1-reports-list"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div class="card-title">🔍 Program Scope Inspector</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input type="text" id="h1-scope-handle" placeholder="program handle (e.g. shopify)" style="flex:1" />
+      <button class="btn btn-primary btn-sm" onclick="loadH1Scope()">Load Scope</button>
+    </div>
+    <div id="h1-scope-result"></div>
+  </div>
+</div>
+
+<!-- Bugcrowd Tab -->
+<div id="tab-bugcrowd" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🐛 Bugcrowd Programs</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="loadBCPrograms()" style="margin-bottom:12px">Load Programs</button>
+      <div id="bc-programs-list"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🎯 Program Targets</div></div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input type="text" id="bc-program-code" placeholder="program code" style="flex:1" />
+        <button class="btn btn-secondary btn-sm" onclick="loadBCTargets()">Load</button>
+      </div>
+      <div id="bc-targets-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Intigriti Tab -->
+<div id="tab-intigriti" style="display:none">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🔵 Intigriti Programs</div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="loadIGPrograms()" style="margin-bottom:12px">Load Programs</button>
+    <div id="ig-programs-list"></div>
+  </div>
+</div>
+
+<!-- CVE Pipeline Tab -->
+<div id="tab-cve" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔍 NVD CVE Search</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" />
+        <button class="btn btn-primary btn-sm" onclick="searchCVE()">Search</button>
+      </div>
+      <div id="cve-search-results"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📋 CVE Submission Queue</div></div>
+      <button class="btn btn-secondary btn-sm" onclick="loadCVEQueue()" style="margin-bottom:12px">Refresh Queue</button>
+      <div id="cve-queue"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Submit Report Tab -->
+<div id="tab-submit" style="display:none">
+  <div class="card" style="max-width:700px">
+    <div class="card-header">
+      <div class="card-title">📤 Submit Vulnerability Report</div>
+    </div>
+    <div class="form-group">
+      <label>Platform</label>
+      <select id="submit-platform">
+        <option value="hackerone">HackerOne</option>
+        <option value="bugcrowd">Bugcrowd</option>
+        <option value="cve">CVE Pipeline (MITRE)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Program Handle / Code</label>
+      <input type="text" id="submit-program" placeholder="e.g. shopify" />
+    </div>
+    <div class="form-group">
+      <label>Report Title</label>
+      <input type="text" id="submit-title" placeholder="XSS in search parameter allows session hijacking" />
+    </div>
+    <div class="form-group">
+      <label>Severity</label>
+      <select id="submit-severity">
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium" selected>Medium</option>
+        <option value="low">Low</option>
+        <option value="info">Informational</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="submit-desc" rows="4" placeholder="Detailed vulnerability description..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Impact</label>
+      <textarea id="submit-impact" rows="3" placeholder="What is the potential impact?"></textarea>
+    </div>
+    <div class="form-group">
+      <label>Steps to Reproduce</label>
+      <textarea id="submit-steps" rows="4" placeholder="1. Navigate to...\n2. Enter payload...\n3. Observe..."></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="submitReport()" style="width:100%;justify-content:center">
+      📤 Submit Report
+    </button>
+    <div id="submit-result" style="margin-top:12px"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(name) {
+  ['hackerone','bugcrowd','intigriti','cve','submit'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+  });
+}
+
+async function searchH1Programs() {
+  const keyword = document.getElementById('h1-keyword').value;
+  const r = await fetch(`/bug-bounty/api/hackerone/programs?keyword=${encodeURIComponent(keyword)}&limit=20`);
+  const data = await r.json();
+  const el = document.getElementById('h1-programs-list');
+  if (data.programs?.length) {
+    el.innerHTML = data.programs.map(p => `
+      <div class="finding-item" style="margin-bottom:8px;padding:10px;border:1px solid var(--border);border-radius:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>${escHtml(p.name)}</strong>
+          <span class="badge badge-${p.submission_state === 'open' ? 'low' : 'medium'}">${p.submission_state || 'unknown'}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+          Response: ${p.response_efficiency || '?'}% |
+          <a href="${p.url}" target="_blank" style="color:var(--accent)">${p.handle}</a>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="loadH1ScopeDirect('${p.handle}')" style="margin-top:6px">View Scope</button>
+      </div>`).join('');
+    if (data.source === 'demo') el.innerHTML += `<div class="alert alert-info" style="margin-top:8px;font-size:11px">Demo data — set HACKERONE_USERNAME and HACKERONE_API_TOKEN for live results</div>`;
+  } else {
+    el.innerHTML = '<div class="text-dim">No programs found</div>';
+  }
+}
+
+async function loadH1ScopeDirect(handle) {
+  document.getElementById('h1-scope-handle').value = handle;
+  showTab('hackerone');
+  await loadH1Scope();
+}
+
+async function loadH1Scope() {
+  const handle = document.getElementById('h1-scope-handle').value.trim();
+  if (!handle) return;
+  const r = await fetch(`/bug-bounty/api/hackerone/scope/${encodeURIComponent(handle)}`);
+  const data = await r.json();
+  const el = document.getElementById('h1-scope-result');
+  if (data.scopes?.length) {
+    el.innerHTML = `<div style="font-weight:600;margin-bottom:8px">${escHtml(data.name || handle)} — Scope (${data.scopes.length} entries)</div>` +
+      data.scopes.map(s => `
+        <div style="padding:6px 10px;border-left:2px solid ${s.eligible_for_bounty ? 'var(--accent)' : 'var(--border)'};margin-bottom:4px;font-size:12px">
+          <strong>${escHtml(s.asset)}</strong>
+          <span style="margin-left:8px;color:var(--text-dim)">${s.type}</span>
+          ${s.eligible_for_bounty ? '<span class="badge badge-low" style="margin-left:4px">Bounty</span>' : ''}
+          ${s.max_severity ? `<span class="badge badge-${sev(s.max_severity)}" style="margin-left:4px">${s.max_severity}</span>` : ''}
+        </div>`).join('');
+  } else {
+    el.innerHTML = '<div class="text-dim">No scope data</div>';
+  }
+}
+
+async function loadH1Reports() {
+  const state = document.getElementById('h1-report-state').value;
+  const r = await fetch(`/bug-bounty/api/hackerone/reports?state=${state}`);
+  const data = await r.json();
+  const el = document.getElementById('h1-reports-list');
+  if (data.reports?.length) {
+    el.innerHTML = data.reports.map(rep => `
+      <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
+        <div style="display:flex;justify-content:space-between">
+          <a href="${rep.url}" target="_blank" style="color:var(--accent);font-weight:600">#${rep.id}</a>
+          <div>
+            <span class="badge badge-${sev(rep.severity || 'info')}">${rep.severity || 'N/A'}</span>
+            <span class="badge badge-info" style="margin-left:4px">${rep.state}</span>
+          </div>
+        </div>
+        <div style="color:var(--text-dim);margin-top:2px">${escHtml(rep.title)}</div>
+        ${rep.bounty ? `<div style="color:var(--accent);font-weight:600;margin-top:2px">$${rep.bounty}</div>` : ''}
+      </div>`).join('');
+  } else {
+    el.innerHTML = '<div class="text-dim">No reports found</div>';
+  }
+}
+
+async function loadBCPrograms() {
+  const r = await fetch('/bug-bounty/api/bugcrowd/programs');
+  const data = await r.json();
+  const el = document.getElementById('bc-programs-list');
+  el.innerHTML = (data.programs || []).map(p => `
+    <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="display:flex;justify-content:space-between">
+        <strong>${escHtml(p.name)}</strong>
+        <span class="badge badge-low">${p.status}</span>
+      </div>
+      <div style="color:var(--text-dim);margin-top:2px">
+        Payout: $${p.min_payout || 0} – $${p.max_payout || '?'}
+      </div>
+      <a href="${p.url}" target="_blank" style="color:var(--accent);font-size:11px">${p.url}</a>
+    </div>`).join('') || '<div class="text-dim">No programs</div>';
+}
+
+async function loadBCTargets() {
+  const code = document.getElementById('bc-program-code').value.trim();
+  if (!code) return;
+  const r = await fetch(`/bug-bounty/api/bugcrowd/targets/${code}`);
+  const data = await r.json();
+  const el = document.getElementById('bc-targets-list');
+  el.innerHTML = (data.targets || []).map(t => `
+    <div style="padding:6px;border-bottom:1px solid var(--border);font-size:12px">
+      <strong>${escHtml(t.name)}</strong>
+      <span class="badge badge-${t.priority === 'P1' ? 'critical' : 'medium'}" style="margin-left:4px">${t.priority}</span>
+      <div style="color:var(--text-dim)">${escHtml(t.uri)}</div>
+    </div>`).join('') || '<div class="text-dim">No targets</div>';
+}
+
+async function loadIGPrograms() {
+  const r = await fetch('/bug-bounty/api/intigriti/programs');
+  const data = await r.json();
+  document.getElementById('ig-programs-list').innerHTML =
+    (data.programs || []).map(p => `
+      <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
+        <div style="display:flex;justify-content:space-between">
+          <strong>${escHtml(p.name)}</strong>
+          <span class="badge badge-low">${p.status}</span>
+        </div>
+        <div style="color:var(--text-dim)">Bounty: €${p.min_bounty || 0} – €${p.max_bounty || '?'}</div>
+        <a href="${p.url}" target="_blank" style="color:var(--accent);font-size:11px">${p.platform}</a>
+      </div>`).join('') || '<div class="text-dim">No programs</div>';
+}
+
+async function searchCVE() {
+  const kw = document.getElementById('cve-keyword').value.trim();
+  const params = kw.startsWith('CVE-') ? `cve_id=${kw}` : `keyword=${encodeURIComponent(kw)}`;
+  const r = await fetch(`/bug-bounty/api/cve/search?${params}`);
+  const data = await r.json();
+  const el = document.getElementById('cve-search-results');
+  el.innerHTML = (data.vulnerabilities || []).map(v => `
+    <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <a href="${v.url}" target="_blank" style="color:var(--accent);font-weight:600">${v.cve_id}</a>
+        <div>
+          ${v.cvss_score ? `<span class="badge badge-${sev(v.severity?.toLowerCase() || 'medium')}">${v.cvss_score}</span>` : ''}
+          ${v.severity ? `<span class="badge badge-${sev(v.severity.toLowerCase())}" style="margin-left:4px">${v.severity}</span>` : ''}
+        </div>
+      </div>
+      <div style="color:var(--text-dim);margin-top:4px">${escHtml(v.description)}</div>
+    </div>`).join('') || '<div class="text-dim">No CVEs found</div>';
+}
+
+async function loadCVEQueue() {
+  const r = await fetch('/bug-bounty/api/cve/queue');
+  const data = await r.json();
+  const el = document.getElementById('cve-queue');
+  el.innerHTML = (data.queue || []).map(e => `
+    <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="display:flex;justify-content:space-between">
+        <strong>${escHtml(e.draft_id)}</strong>
+        <span class="badge badge-${e.status === 'submitted' ? 'low' : 'medium'}">${e.status}</span>
+      </div>
+      <div style="color:var(--text-dim)">${escHtml(e.title)}</div>
+      ${e.cve_id ? `<div style="color:var(--accent)">${e.cve_id}</div>` : ''}
+    </div>`).join('') || '<div class="text-dim">Queue is empty</div>';
+}
+
+async function submitReport() {
+  const platform = document.getElementById('submit-platform').value;
+  const payload = {
+    program_handle: document.getElementById('submit-program').value,
+    program_code: document.getElementById('submit-program').value,
+    title: document.getElementById('submit-title').value,
+    severity: document.getElementById('submit-severity').value,
+    description: document.getElementById('submit-desc').value,
+    impact: document.getElementById('submit-impact').value,
+    steps: document.getElementById('submit-steps').value,
+  };
+  const url = platform === 'hackerone' ? '/bug-bounty/api/hackerone/submit'
+    : platform === 'bugcrowd' ? '/bug-bounty/api/bugcrowd/submit'
+    : '/bug-bounty/api/cve/draft';
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const data = await r.json();
+  document.getElementById('submit-result').innerHTML = `<pre class="code-block">${JSON.stringify(data, null, 2)}</pre>`;
+}
+
+function sev(s) {
+  return {critical:'critical',high:'high',medium:'high',low:'medium',info:'info',informational:'info',none:'info'}[s] || 'info';
+}
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Auto-load H1 programs on page load
+searchH1Programs();
+</script>
+{% endblock %}

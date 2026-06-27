@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Zero-Day Prediction — {{ app_name }}{% endblock %}
+{% block page_title %}Zero-Day Prediction Engine{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="align-items:start">
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔮 Predict Zero-Day Risk</div>
+        <div class="card-subtitle">AI-powered vulnerability forecasting</div>
+      </div>
+      <div class="form-group">
+        <label>Target Software</label>
+        <input type="text" id="zd-software" placeholder="Apache HTTP Server, OpenSSL, Chrome..." />
+      </div>
+      <div class="form-group">
+        <label>Version (optional)</label>
+        <input type="text" id="zd-version" placeholder="2.4.51, 3.0.7, 108..." />
+      </div>
+      <button class="btn btn-primary" onclick="predict()" style="width:100%;justify-content:center">
+        🔮 Analyze Zero-Day Risk
+      </button>
+      <div id="predict-result" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">
+        <div class="card-title">🔥 CISA KEV — Trending Threats</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="loadTrending()" style="margin-bottom:12px">Load Trending</button>
+      <div id="trending-results"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📋 Recent Predictions</div></div>
+      {% if predictions %}
+      {% for p in predictions %}
+      <div style="padding:10px;border:1px solid {{ '#ff3366' if p.risk_level == 'critical' else '#ffaa00' if p.risk_level == 'high' else 'var(--border)' }};border-radius:6px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>{{ p.target_software }}</strong>
+          <span class="badge badge-{{ 'critical' if p.risk_level == 'critical' else 'high' if p.risk_level == 'high' else 'medium' if p.risk_level == 'medium' else 'low' }}">
+            {{ p.risk_level }}
+          </span>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+          {{ p.version or 'any version' }} | Risk: {{ (p.risk_score * 100)|int }}% | TTE: ~{{ p.time_to_exploit_estimate }}d
+        </div>
+        <div style="margin-top:4px;height:3px;background:var(--bg-hover);border-radius:2px;overflow:hidden">
+          <div style="height:100%;width:{{ (p.risk_score * 100)|int }}%;background:{{ '#ff3366' if p.risk_level in ('critical','high') else '#ffaa00' }};border-radius:2px"></div>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="color:var(--text-dim);text-align:center;padding:20px">No predictions yet</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function predict() {
+  const software = document.getElementById('zd-software').value.trim();
+  if (!software) { alert('Enter software name'); return; }
+  const el = document.getElementById('predict-result');
+  el.innerHTML = '<div class="alert alert-info">🔮 Analyzing... (fetching NVD data + CISA KEV)</div>';
+  const r = await fetch('/ai-security/api/zero-day/predict', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({software, version: document.getElementById('zd-version').value})
+  });
+  const data = await r.json();
+  const riskColor = {critical:'#ff3366', high:'#ff6600', medium:'#ffaa00', low:'#00ff88', unknown:'var(--text)'}[data.risk_level] || 'var(--text)';
+  el.innerHTML = `
+    <div class="card" style="border-color:${riskColor}">
+      <div class="card-header">
+        <div>
+          <div class="card-title">${escHtml(data.target_software)} ${escHtml(data.version || '')}</div>
+          <div style="font-size:11px;color:var(--text-dim)">Source: ${data.source} | Confidence: ${((data.confidence||0)*100).toFixed(0)}%</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:36px;font-weight:900;color:${riskColor}">${((data.risk_score||0)*100).toFixed(0)}%</div>
+          <div style="font-size:11px;color:var(--text-dim)">risk score</div>
+        </div>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:12px">
+        <div class="stat-card">
+          <div class="stat-value" style="color:${riskColor}">${(data.risk_level||'').toUpperCase()}</div>
+          <div class="stat-label">Risk Level</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${data.time_to_exploit_estimate || '?'}</div>
+          <div class="stat-label">Days to Exploit</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:${data.in_cisa_kev ? '#ff3366' : '#00ff88'}">${data.in_cisa_kev ? 'YES' : 'NO'}</div>
+          <div class="stat-label">CISA KEV</div>
+        </div>
+      </div>
+
+      ${data.predicted_vulnerability_classes?.length ? `
+      <div style="margin-bottom:10px">
+        <div style="font-weight:600;font-size:12px;margin-bottom:6px;color:var(--text-dim)">PREDICTED VULN CLASSES</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          ${data.predicted_vulnerability_classes.map(c => `<span class="badge badge-high">${escHtml(c)}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+      ${data.indicators?.length ? `
+      <div style="margin-bottom:10px">
+        <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text-dim)">RISK INDICATORS</div>
+        ${data.indicators.map(i => `<div style="font-size:12px;color:#ffaa00;padding:2px 0">⚠️ ${escHtml(i)}</div>`).join('')}
+      </div>` : ''}
+
+      ${data.recommendations?.length ? `
+      <div>
+        <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text-dim)">RECOMMENDATIONS</div>
+        ${data.recommendations.map(r => `<div style="font-size:12px;padding:2px 0;border-left:2px solid var(--accent);padding-left:8px;margin-bottom:3px">${escHtml(r)}</div>`).join('')}
+      </div>` : ''}
+    </div>`;
+}
+
+async function loadTrending() {
+  const el = document.getElementById('trending-results');
+  el.innerHTML = '<div class="alert alert-info">Fetching CISA KEV...</div>';
+  const r = await fetch('/ai-security/api/zero-day/trending');
+  const data = await r.json();
+  if (data.error) { el.innerHTML = `<div class="alert alert-high">${escHtml(data.error)}</div>`; return; }
+  el.innerHTML = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">Total KEV entries: ${data.total_kev}</div>` +
+    (data.trending || []).map(v => `
+      <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
+        <div style="display:flex;justify-content:space-between">
+          <span style="color:var(--accent);font-weight:600">${escHtml(v.cve_id)}</span>
+          <span style="color:var(--text-dim)">${v.date_added}</span>
+        </div>
+        <div><strong>${escHtml(v.vendor)}</strong> ${escHtml(v.product)}</div>
+        <div style="color:var(--text-dim);margin-top:2px">${escHtml(v.short_description)}</div>
+        <div style="color:#ff3366;font-size:11px;margin-top:2px">⚡ Action: ${escHtml(v.required_action)}</div>
+      </div>`).join('');
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

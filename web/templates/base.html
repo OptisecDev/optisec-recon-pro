@@ -37,6 +37,47 @@
       <span class="icon">📄</span><span>Reports</span>
     </a>
 
+    <div class="nav-section">Bug Bounty</div>
+    <a href="/bug-bounty" class="nav-item {% if active == 'bug_bounty' %}active{% endif %}">
+      <span class="icon">🎯</span><span>Bounty Platform</span>
+    </a>
+    <a href="/bug-bounty#cve" class="nav-item {% if active == 'cve' %}active{% endif %}">
+      <span class="icon">📋</span><span>CVE Pipeline</span>
+    </a>
+
+    <div class="nav-section">Compliance</div>
+    <a href="/compliance" class="nav-item {% if active == 'compliance' %}active{% endif %}">
+      <span class="icon">✅</span><span>Compliance Checker</span>
+    </a>
+
+    <div class="nav-section">AI Security</div>
+    <a href="/ai-security/behavioral" class="nav-item {% if active == 'behavioral' %}active{% endif %}">
+      <span class="icon">🧠</span><span>Behavioral UEBA</span>
+    </a>
+    <a href="/ai-security/zero-day" class="nav-item {% if active == 'zero_day' %}active{% endif %}">
+      <span class="icon">🔮</span><span>Zero-Day Predict</span>
+    </a>
+    <a href="/ai-security/attack-patterns" class="nav-item {% if active == 'attack_patterns' %}active{% endif %}">
+      <span class="icon">⚔️</span><span>Attack Patterns</span>
+    </a>
+    <a href="/ai-security/red-team" class="nav-item {% if active == 'red_team' %}active{% endif %}">
+      <span class="icon">🔴</span><span>AI Red Team</span>
+    </a>
+
+    <div class="nav-section">Defense</div>
+    <a href="/firewall" class="nav-item {% if active == 'firewall' %}active{% endif %}">
+      <span class="icon">🛡️</span><span>AI Firewall</span>
+    </a>
+    <a href="/vpn" class="nav-item {% if active == 'vpn' %}active{% endif %}">
+      <span class="icon">🔒</span><span>WireGuard VPN</span>
+    </a>
+    <a href="/quantum" class="nav-item {% if active == 'quantum' %}active{% endif %}">
+      <span class="icon">⚛️</span><span>Quantum Crypto</span>
+    </a>
+    <a href="/federation" class="nav-item {% if active == 'federation' %}active{% endif %}">
+      <span class="icon">🌐</span><span>Federated Scan</span>
+    </a>
+
     {% if user and user.role == 'admin' %}
     <div class="nav-section">Admin</div>
     <a href="/admin" class="nav-item {% if active == 'admin' %}active{% endif %}">

@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}WireGuard VPN — {{ app_name }}{% endblock %}
+{% block page_title %}WireGuard VPN{% endblock %}
+
+{% block content %}
+<div class="grid-2" style="align-items:start">
+  <!-- Status & Peers -->
+  <div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔒 VPN Status</div>
+        <span class="badge badge-{{ 'low' if wg_status.status == 'running' else 'medium' }}">
+          {{ wg_status.status | upper }}
+        </span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value">{{ wg_status.peer_count or peers|length }}</div>
+          <div class="stat-label">Peers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="font-size:14px">{{ wg_status.listen_port or '51820' }}</div>
+          <div class="stat-label">Port</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="font-size:12px;color:var(--accent)">10.13.37.0/24</div>
+          <div class="stat-label">Subnet</div>
+        </div>
+      </div>
+      {% if wg_status.note %}
+      <div class="alert alert-info" style="margin-top:8px;font-size:12px">{{ wg_status.note }}</div>
+      {% endif %}
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="refreshStatus()">🔄 Refresh Status</button>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-header">
+        <div class="card-title">👥 VPN Peers</div>
+        {% if user.role in ('admin',) %}
+        <button class="btn btn-primary btn-sm" onclick="showAddPeer()">+ Add Peer</button>
+        {% endif %}
+      </div>
+
+      {% if peers %}
+      {% for peer in peers %}
+      <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <strong>{{ peer.name }}</strong>
+            <code style="margin-left:8px;font-size:11px;color:var(--accent)">{{ peer.ip }}</code>
+          </div>
+          <div style="display:flex;gap:6px">
+            {% if user.role == 'admin' %}
+            <button class="btn btn-secondary btn-sm" onclick="downloadConfig('{{ peer.name }}')">⬇ Config</button>
+            <button class="btn btn-secondary btn-sm" onclick="showQR('{{ peer.name }}')">📱 QR</button>
+            <button class="btn btn-secondary btn-sm" style="color:#ff3366" onclick="removePeer('{{ peer.name }}')">✕</button>
+            {% endif %}
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+          Created: {{ peer.created_at[:10] if peer.created_at else 'N/A' }}
+          {% if peer.last_handshake %} | Last handshake: {{ peer.last_handshake }}{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="color:var(--text-dim);text-align:center;padding:20px">No peers configured</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Config & Setup -->
+  <div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">⚙️ Server Setup</div></div>
+      {% if user.role == 'admin' %}
+      <div class="form-group">
+        <label>Server Public Endpoint</label>
+        <input type="text" id="server-endpoint" placeholder="your.server.ip.or.domain" />
+      </div>
+      <div class="form-group">
+        <label>Listen Port</label>
+        <input type="number" id="server-port" value="51820" />
+      </div>
+      <button class="btn btn-primary" onclick="generateServerConfig()" style="width:100%;justify-content:center">
+        ⚙️ Generate Server Config
+      </button>
+      {% else %}
+      <div class="alert alert-info">Admin access required to configure server</div>
+      {% endif %}
+      <div id="server-result" style="margin-top:12px"></div>
+    </div>
+
+    <!-- Add Peer Form -->
+    <div id="add-peer-form" class="card" style="display:none;margin-top:16px">
+      <div class="card-header"><div class="card-title">➕ Add New Peer</div></div>
+      <div class="form-group">
+        <label>Peer Name</label>
+        <input type="text" id="peer-name" placeholder="laptop, phone, office..." />
+      </div>
+      <div class="form-group">
+        <label>Server Endpoint (for client config)</label>
+        <input type="text" id="peer-endpoint" placeholder="your.server.ip" />
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" onclick="addPeer()" style="flex:1;justify-content:center">➕ Add Peer</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('add-peer-form').style.display='none'">Cancel</button>
+      </div>
+      <div id="add-peer-result" style="margin-top:12px"></div>
+    </div>
+
+    <!-- QR Modal -->
+    <div id="qr-card" class="card" style="display:none;margin-top:16px;text-align:center">
+      <div class="card-header"><div class="card-title">📱 QR Code</div></div>
+      <div id="qr-content" style="padding:20px"></div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function refreshStatus() {
+  const r = await fetch('/vpn/api/status');
+  const data = await r.json();
+  // Simple refresh - reload page
+  location.reload();
+}
+
+function showAddPeer() {
+  document.getElementById('add-peer-form').style.display = '';
+}
+
+async function addPeer() {
+  const name = document.getElementById('peer-name').value.trim();
+  const endpoint = document.getElementById('peer-endpoint').value.trim();
+  if (!name) { alert('Enter peer name'); return; }
+  const r = await fetch('/vpn/api/peers', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name, endpoint: endpoint || 'YOUR_SERVER_IP'})
+  });
+  const data = await r.json();
+  const el = document.getElementById('add-peer-result');
+  if (data.name) {
+    el.innerHTML = `<div class="alert alert-info">✅ Peer <strong>${escHtml(data.name)}</strong> created — IP: <code>${data.ip}</code></div>
+      <button class="btn btn-primary btn-sm" onclick="location.reload()">Reload Page</button>`;
+  } else {
+    el.innerHTML = `<div class="alert alert-high">${escHtml(data.error || JSON.stringify(data))}</div>`;
+  }
+}
+
+async function removePeer(name) {
+  if (!confirm(`Remove peer "${name}"?`)) return;
+  const r = await fetch(`/vpn/api/peers/${encodeURIComponent(name)}`, {method:'DELETE'});
+  const data = await r.json();
+  if (data.removed) location.reload();
+  else alert(data.error || 'Error removing peer');
+}
+
+async function downloadConfig(name) {
+  const r = await fetch(`/vpn/api/peers/${encodeURIComponent(name)}/config`);
+  const text = await r.text();
+  const blob = new Blob([text], {type: 'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `${name}.conf`; a.click();
+}
+
+async function showQR(name) {
+  const r = await fetch(`/vpn/api/peers/${encodeURIComponent(name)}/qr`);
+  const data = await r.json();
+  const el = document.getElementById('qr-card');
+  const content = document.getElementById('qr-content');
+  el.style.display = '';
+  if (data.qr) {
+    content.innerHTML = `<img src="data:image/png;base64,${data.qr}" style="max-width:280px;border-radius:8px">
+      <div style="font-size:12px;color:var(--text-dim);margin-top:8px">Scan with WireGuard app</div>`;
+  } else {
+    content.innerHTML = `<div class="alert alert-info">${escHtml(data.note || 'QR not available')}</div>`;
+  }
+}
+
+async function generateServerConfig() {
+  const endpoint = document.getElementById('server-endpoint').value.trim();
+  const port = parseInt(document.getElementById('server-port').value);
+  const r = await fetch('/vpn/api/server/generate', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({endpoint: endpoint || 'YOUR_SERVER_IP', port})
+  });
+  const data = await r.json();
+  document.getElementById('server-result').innerHTML = `
+    <div style="font-size:12px">
+      <div style="margin-bottom:6px"><strong>Server IP:</strong> ${escHtml(data.server_ip)}</div>
+      <div style="margin-bottom:6px"><strong>Public Key:</strong> <code style="font-size:10px">${escHtml(data.public_key)}</code></div>
+      <div style="margin-bottom:6px"><strong>Config Path:</strong> <code>${escHtml(data.config_path)}</code></div>
+      <div class="alert alert-info" style="margin-top:8px">
+        Run: <code>sudo wg-quick up ${escHtml(data.config_path)}</code>
+      </div>
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

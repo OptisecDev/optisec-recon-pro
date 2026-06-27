@@ -44,3 +44,12 @@ click>=8.1.7
 
 # Config
 python-dotenv>=1.0.0
+
+# Cryptography (Quantum-Safe Encryption AES-GCM)
+cryptography>=41.0.0
+
+# QR Code generation (WireGuard peer configs)
+qrcode[pil]>=7.4.2
+
+# Optional: Real PQC (requires liboqs system library)
+# liboqs-python>=0.10.0

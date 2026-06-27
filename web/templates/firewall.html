@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}AI Firewall — {{ app_name }}{% endblock %}
+{% block page_title %}AI Firewall — Deep Packet Inspection{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;display:flex;gap:8px">
+  <button class="btn btn-primary" onclick="showTab('inspector')">🔍 Request Inspector</button>
+  <button class="btn btn-secondary" onclick="showTab('log-analyzer')">📄 Log Analyzer</button>
+  <button class="btn btn-secondary" onclick="showTab('rules')">📋 Firewall Rules</button>
+  <button class="btn btn-secondary" onclick="showTab('rate')">⏱️ Rate Limiting</button>
+</div>
+
+<!-- Request Inspector -->
+<div id="tab-inspector">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔍 Request Inspector</div>
+        <div class="card-subtitle">Analyze HTTP request for threats</div>
+      </div>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="req-method">
+          <option>GET</option><option>POST</option><option>PUT</option>
+          <option>DELETE</option><option>PATCH</option><option>OPTIONS</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Path / URL</label>
+        <input type="text" id="req-path" placeholder="/search?q=<script>alert(1)</script>" />
+      </div>
+      <div class="form-group">
+        <label>Client IP</label>
+        <input type="text" id="req-ip" placeholder="192.168.1.1" />
+      </div>
+      <div class="form-group">
+        <label>Request Body</label>
+        <textarea id="req-body" rows="3" placeholder='username=admin&password=1" OR 1=1--'></textarea>
+      </div>
+      <button class="btn btn-primary" onclick="inspectRequest()" style="width:100%;justify-content:center">
+        🔬 Inspect Request
+      </button>
+    </div>
+
+    <div id="inspect-results">
+      <div class="card" style="border:1px dashed var(--border);opacity:0.5;text-align:center;padding:40px">
+        <div style="font-size:32px;margin-bottom:8px">🛡️</div>
+        <div style="color:var(--text-dim)">Submit a request to analyze</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Log Analyzer -->
+<div id="tab-log-analyzer" style="display:none">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📄 Apache / Nginx Log Analyzer</div>
+    </div>
+    <div class="form-group">
+      <label>Paste log lines (Apache/Nginx combined format)</label>
+      <textarea id="log-input" rows="10" placeholder='192.168.1.1 - - [27/Jun/2026:10:00:00 +0000] "GET /search?q=%22%3E%3Cscript%3E HTTP/1.1" 200 1234
+10.0.0.5 - - [27/Jun/2026:10:00:01 +0000] "POST /login HTTP/1.1" 401 512
+10.0.0.5 - - [27/Jun/2026:10:00:02 +0000] "GET /?id=1 UNION SELECT 1,2,3-- HTTP/1.1" 200 2048'></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="analyzeLogs()" style="width:100%;justify-content:center">
+      🔍 Analyze Logs
+    </button>
+    <div id="log-results" style="margin-top:16px"></div>
+  </div>
+</div>
+
+<!-- Rules -->
+<div id="tab-rules" style="display:none">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📋 Active Firewall Rules</div>
+      <span class="badge badge-low">{{ rules|length }} Rules Active</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="data-table">
+        <thead>
+          <tr><th>Rule ID</th><th>Name</th><th>Category</th><th>Severity</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for rule in rules %}
+          <tr>
+            <td><code style="color:var(--accent)">{{ rule.id }}</code></td>
+            <td>{{ rule.name }}</td>
+            <td><span class="badge badge-info">{{ rule.category }}</span></td>
+            <td><span class="badge badge-{{ 'critical' if rule.severity == 'critical' else 'high' if rule.severity == 'high' else 'medium' }}">{{ rule.severity }}</span></td>
+            <td><span class="badge badge-low">Active</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Rate Limiting -->
+<div id="tab-rate" style="display:none">
+  <div class="card" style="max-width:500px">
+    <div class="card-header"><div class="card-title">⏱️ Rate Limit Check</div></div>
+    <div class="form-group">
+      <label>IP Address</label>
+      <input type="text" id="rate-ip" placeholder="192.168.1.100" />
+    </div>
+    <div class="form-group">
+      <label>Time Window (seconds)</label>
+      <input type="number" id="rate-window" value="60" />
+    </div>
+    <div class="form-group">
+      <label>Max Requests</label>
+      <input type="number" id="rate-max" value="100" />
+    </div>
+    <button class="btn btn-primary" onclick="checkRate()" style="width:100%;justify-content:center">Check Rate</button>
+    <div id="rate-result" style="margin-top:12px"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(name) {
+  ['inspector','log-analyzer','rules','rate'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+  });
+}
+
+async function inspectRequest() {
+  const payload = {
+    method: document.getElementById('req-method').value,
+    path: document.getElementById('req-path').value,
+    ip: document.getElementById('req-ip').value,
+    body: document.getElementById('req-body').value,
+    headers: {'User-Agent': 'OptiSec Inspector'},
+  };
+  const r = await fetch('/firewall/api/inspect', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const data = await r.json();
+
+  const actionColor = {block:'#ff3366', alert:'#ffaa00', allow:'#00ff88'}[data.action] || 'var(--text)';
+  const el = document.getElementById('inspect-results');
+  el.innerHTML = `
+    <div class="card" style="border-color:${actionColor}">
+      <div class="card-header">
+        <div class="card-title">🛡️ Inspection Result</div>
+        <span class="badge badge-${data.action === 'block' ? 'critical' : data.action === 'alert' ? 'high' : 'low'}"
+              style="font-size:14px;padding:4px 12px">${data.action.toUpperCase()}</span>
+      </div>
+
+      <div class="stats-grid" style="margin-bottom:16px">
+        <div class="stat-card">
+          <div class="stat-value" style="color:${actionColor}">${(data.risk_score * 100).toFixed(1)}%</div>
+          <div class="stat-label">Risk Score</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" style="color:#ff3366">${data.threats?.length || 0}</div>
+          <div class="stat-label">Threats Found</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value">${(data.anomaly?.score * 100 || 0).toFixed(1)}%</div>
+          <div class="stat-label">Anomaly Score</div>
+        </div>
+      </div>
+
+      ${data.threats?.length ? `
+      <div style="margin-bottom:12px">
+        <div style="font-weight:600;margin-bottom:8px;color:#ff3366">⚠️ Threats Detected</div>
+        ${data.threats.map(t => `
+          <div style="padding:6px 10px;border-left:2px solid ${t.severity==='critical'?'#ff3366':t.severity==='high'?'#ff6600':'#ffaa00'};margin-bottom:4px">
+            <div style="display:flex;justify-content:space-between;font-size:12px">
+              <span><strong>${escHtml(t.name)}</strong> <code style="color:var(--accent)">[${t.rule_id}]</code></span>
+              <span class="badge badge-${t.severity}">${t.severity}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim)">Found in: ${t.matched_in} | Category: ${t.category}</div>
+          </div>`).join('')}
+      </div>` : '<div style="color:#00ff88;margin-bottom:12px">✅ No signature threats detected</div>'}
+
+      ${data.anomaly?.signals?.length ? `
+      <div>
+        <div style="font-weight:600;margin-bottom:6px;color:#ffaa00">🤖 ML Anomaly Signals</div>
+        ${data.anomaly.signals.map(s => `
+          <div style="padding:3px 0;font-size:12px;color:var(--text-dim)">• ${escHtml(s)}</div>`).join('')}
+      </div>` : ''}
+    </div>`;
+}
+
+async function analyzeLogs() {
+  const logs = document.getElementById('log-input').value.trim().split('\n');
+  const r = await fetch('/firewall/api/analyze-logs', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({logs})
+  });
+  const data = await r.json();
+  const el = document.getElementById('log-results');
+  el.innerHTML = `
+    <div class="stats-grid" style="margin-bottom:16px">
+      <div class="stat-card"><div class="stat-value">${data.analyzed}</div><div class="stat-label">Analyzed</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:#ff3366">${data.blocked}</div><div class="stat-label">Blocked</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:#ffaa00">${data.alerted}</div><div class="stat-label">Alerted</div></div>
+      <div class="stat-card"><div class="stat-value" style="color:#00ff88">${data.allowed}</div><div class="stat-label">Allowed</div></div>
+    </div>
+    ${data.top_threats?.length ? `
+    <div class="card">
+      <div class="card-header"><div class="card-title">🎯 Top Threat Categories</div></div>
+      ${data.top_threats.map(t => `
+        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span>${escHtml(t.category)}</span>
+          <span class="badge badge-high">${t.count} hits</span>
+        </div>`).join('')}
+    </div>` : ''}
+    ${data.high_risk_requests?.length ? `
+    <div class="card" style="margin-top:12px">
+      <div class="card-header"><div class="card-title">🚨 Blocked Requests</div></div>
+      ${data.high_risk_requests.slice(0,10).map(r => `
+        <div style="padding:6px;border-bottom:1px solid var(--border);font-size:11px;font-family:monospace">
+          <span style="color:#ff3366">[BLOCK]</span> ${escHtml(r.method)} ${escHtml(r.path?.slice(0,80))} — ${escHtml(r.ip||'')}
+        </div>`).join('')}
+    </div>` : ''}`;
+}
+
+async function checkRate() {
+  const r = await fetch('/firewall/api/rate-check', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      ip: document.getElementById('rate-ip').value,
+      window_seconds: parseInt(document.getElementById('rate-window').value),
+      max_requests: parseInt(document.getElementById('rate-max').value),
+    })
+  });
+  const data = await r.json();
+  document.getElementById('rate-result').innerHTML = `
+    <div class="card" style="border-color:${data.rate_limited ? '#ff3366' : '#00ff88'}">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>${escHtml(data.ip)}</strong>
+        <span class="badge badge-${data.rate_limited ? 'critical' : 'low'}">${data.rate_limited ? 'RATE LIMITED' : 'OK'}</span>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:6px">
+        ${data.requests_in_window} / ${data.limit} requests in ${data.window_seconds}s window
+      </div>
+    </div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

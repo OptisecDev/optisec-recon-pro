@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Quantum-Safe Encryption — {{ app_name }}{% endblock %}
+{% block page_title %}Quantum-Safe Encryption{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:16px;display:flex;gap:8px">
+  <button class="btn btn-primary" onclick="showTab('keygen')">🔑 Key Generation</button>
+  <button class="btn btn-secondary" onclick="showTab('encrypt')">🔒 Encrypt/Decrypt</button>
+  <button class="btn btn-secondary" onclick="showTab('assess')">🔍 Crypto Assessment</button>
+  <button class="btn btn-secondary" onclick="showTab('keys')">📋 Key Store</button>
+</div>
+
+<!-- Key Generation -->
+<div id="tab-keygen">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔑 Generate PQC Keypair</div>
+        <div class="card-subtitle">NIST FIPS 203/204/205 algorithms</div>
+      </div>
+      <div class="form-group">
+        <label>Algorithm</label>
+        <select id="keygen-algo">
+          {% for key, algo in algorithms.items() %}
+          <option value="{{ key }}">{{ algo.name }} — {{ algo.standard }} (Level {{ algo.security_level }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="generateKeypair()" style="width:100%;justify-content:center">
+        🔑 Generate Keypair
+      </button>
+      <div id="keygen-result" style="margin-top:12px"></div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">📊 Algorithm Overview</div></div>
+        {% for key, algo in algorithms.items() %}
+        <div style="padding:8px;border-bottom:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between">
+            <strong style="font-size:13px">{{ algo.name }}</strong>
+            <span class="badge badge-low">{{ algo.standard }}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+            Type: {{ algo.type }} | Security Level: {{ algo.security_level }}
+            {% if algo.type == 'key_encapsulation' %}
+            | PK: {{ algo.public_key_size }}B | CT: {{ algo.ciphertext_size }}B
+            {% else %}
+            | PK: {{ algo.public_key_size }}B | Sig: {{ algo.signature_size }}B
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-header"><div class="card-title">🔀 Hybrid Schemes</div></div>
+        {% for key, scheme in hybrid_schemes.items() %}
+        <div style="padding:8px;border-bottom:1px solid var(--border)">
+          <strong>{{ scheme.name }}</strong>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">{{ scheme.description }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Encrypt/Decrypt -->
+<div id="tab-encrypt" style="display:none">
+  <div class="grid-2" style="align-items:start">
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔒 Encrypt Data</div></div>
+      <div class="form-group">
+        <label>Data to Encrypt</label>
+        <textarea id="enc-data" rows="4" placeholder="Secret message or data..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Shared Secret (base64, from KEM encapsulation)</label>
+        <input type="text" id="enc-secret" placeholder="base64 shared secret..." />
+      </div>
+      <button class="btn btn-primary" onclick="encryptData()" style="width:100%;justify-content:center">🔒 Encrypt (AES-256-GCM)</button>
+      <div id="enc-result" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">KEM — Key Encapsulation</div></div>
+      <div class="form-group">
+        <label>Recipient's Public Key (base64)</label>
+        <textarea id="kem-pubkey" rows="4" placeholder="base64 public key..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Algorithm</label>
+        <select id="kem-algo">
+          <option value="kyber768">Kyber-768 (FIPS 203)</option>
+          <option value="kyber1024">Kyber-1024 (FIPS 203)</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="encapsulate()" style="width:100%;justify-content:center">🔐 Encapsulate</button>
+      <div id="kem-result" style="margin-top:12px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Crypto Assessment -->
+<div id="tab-assess" style="display:none">
+  <div class="card" style="max-width:600px">
+    <div class="card-header">
+      <div class="card-title">🔍 Quantum Vulnerability Assessment</div>
+      <div class="card-subtitle">Check if your cryptography is quantum-safe</div>
+    </div>
+    <div class="form-group">
+      <label>Algorithm in Use</label>
+      <select id="assess-algo">
+        <option value="rsa-2048">RSA-2048 (Classical)</option>
+        <option value="rsa-4096">RSA-4096 (Classical)</option>
+        <option value="ecdsa-p256">ECDSA P-256 (Classical)</option>
+        <option value="ecdh-p256">ECDH P-256 (Classical)</option>
+        <option value="ed25519">Ed25519 (Classical)</option>
+        <option value="aes-128">AES-128</option>
+        <option value="aes-256">AES-256</option>
+        <option value="sha-256">SHA-256</option>
+        <option value="sha-512">SHA-512</option>
+        <option value="kyber768">Kyber-768 (PQC)</option>
+        <option value="dilithium3">Dilithium-3 (PQC)</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="assessCrypto()" style="width:100%;justify-content:center">🔍 Assess</button>
+    <div id="assess-result" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<!-- Key Store -->
+<div id="tab-keys" style="display:none">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📋 Generated Keys</div>
+      <button class="btn btn-secondary btn-sm" onclick="loadKeys()">🔄 Refresh</button>
+    </div>
+    <div id="keys-list">
+      {% if keys %}
+      {% for key in keys %}
+      <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <code style="color:var(--accent)">{{ key.key_id }}</code>
+          <span class="badge badge-{{ 'low' if key.mode != 'simulated' else 'medium' }}">{{ key.mode }}</span>
+        </div>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
+          {{ key.algorithm_name }} | {{ key.standard }} | Level {{ key.security_level }}
+        </div>
+        <div style="font-size:11px;margin-top:4px">
+          PK: <code style="font-size:10px">{{ key.public_key[:40] }}...</code>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim)">{{ key.created_at[:19] }}</div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="color:var(--text-dim);text-align:center;padding:20px">No keys generated yet</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showTab(name) {
+  ['keygen','encrypt','assess','keys'].forEach(t => {
+    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+  });
+}
+
+async function generateKeypair() {
+  const el = document.getElementById('keygen-result');
+  el.innerHTML = '<div class="alert alert-info">🔑 Generating keypair...</div>';
+  const r = await fetch('/quantum/api/keypair', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({algorithm: document.getElementById('keygen-algo').value})
+  });
+  const data = await r.json();
+  if (data.error) { el.innerHTML = `<div class="alert alert-high">${escHtml(data.error)}</div>`; return; }
+  el.innerHTML = `
+    <div class="card" style="border-color:var(--accent)">
+      <div style="font-size:11px;color:var(--accent);font-weight:700;margin-bottom:8px">✅ KEYPAIR GENERATED</div>
+      <div style="font-size:11px;margin-bottom:6px"><strong>Key ID:</strong> <code>${escHtml(data.key_id)}</code></div>
+      <div style="font-size:11px;margin-bottom:6px"><strong>Algorithm:</strong> ${escHtml(data.algorithm_name)}</div>
+      <div style="font-size:11px;margin-bottom:6px"><strong>Standard:</strong> ${escHtml(data.standard)}</div>
+      <div style="font-size:11px;margin-bottom:6px"><strong>Security Level:</strong> ${data.security_level}</div>
+      <div style="font-size:11px;margin-bottom:4px"><strong>Public Key (base64):</strong></div>
+      <textarea style="width:100%;height:80px;font-size:10px;font-family:monospace;background:var(--bg-hover);border:1px solid var(--border);color:var(--accent);padding:6px;resize:vertical" readonly>${escHtml(data.public_key)}</textarea>
+      ${data.note ? `<div class="alert alert-info" style="margin-top:8px;font-size:11px">${escHtml(data.note)}</div>` : ''}
+    </div>`;
+}
+
+async function encapsulate() {
+  const pubkey = document.getElementById('kem-pubkey').value.trim();
+  if (!pubkey) { alert('Enter public key'); return; }
+  const r = await fetch('/quantum/api/encapsulate', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({public_key: pubkey, algorithm: document.getElementById('kem-algo').value})
+  });
+  const data = await r.json();
+  document.getElementById('kem-result').innerHTML = `
+    <div style="font-size:11px">
+      <div style="margin-bottom:6px"><strong>Ciphertext:</strong><br><code style="font-size:9px;word-break:break-all">${escHtml(data.ciphertext?.slice(0,80))}...</code></div>
+      <div><strong>Shared Secret (use to encrypt):</strong></div>
+      <input type="text" value="${escHtml(data.shared_secret || '')}" readonly style="width:100%;font-size:10px;font-family:monospace;margin-top:4px;padding:4px 6px;background:var(--bg-hover);border:1px solid var(--border);color:var(--accent)" />
+      <button class="btn btn-secondary btn-sm" style="margin-top:6px" onclick="document.getElementById('enc-secret').value=this.previousElementSibling.value;showTab('encrypt')">Use for encryption</button>
+    </div>`;
+}
+
+async function encryptData() {
+  const r = await fetch('/quantum/api/encrypt', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({data: document.getElementById('enc-data').value, shared_secret: document.getElementById('enc-secret').value})
+  });
+  const data = await r.json();
+  document.getElementById('enc-result').innerHTML = `
+    <div style="font-size:11px">
+      ${data.error ? `<div class="alert alert-high">${escHtml(data.error)}</div>` : `
+        <div><strong>Cipher:</strong> ${data.cipher}</div>
+        <div style="margin-top:4px"><strong>Nonce:</strong> <code>${escHtml(data.nonce)}</code></div>
+        <div style="margin-top:4px"><strong>Ciphertext:</strong><br><code style="font-size:9px;word-break:break-all">${escHtml(data.ciphertext)}</code></div>
+      `}
+    </div>`;
+}
+
+async function assessCrypto() {
+  const r = await fetch('/quantum/api/assess', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({algorithm: document.getElementById('assess-algo').value})
+  });
+  const data = await r.json();
+  const broken = data.quantum_broken === true;
+  document.getElementById('assess-result').innerHTML = `
+    <div style="padding:14px;border:1px solid ${broken?'#ff3366':'#00ff88'};border-radius:6px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <strong>${escHtml(data.algorithm)}</strong>
+        <span class="badge badge-${broken?'critical':'low'}">${broken ? '⚡ QUANTUM BROKEN' : '✅ QUANTUM SAFE'}</span>
+      </div>
+      <div style="font-size:12px;margin-top:8px;color:${broken?'#ff3366':'#00ff88'}">${escHtml(data.recommendation)}</div>
+      ${data.shor_attack_time ? `
+      <div style="font-size:11px;color:var(--text-dim);margin-top:6px">
+        Shor's algorithm: ${escHtml(data.shor_attack_time)} | Grover's: ${escHtml(data.grover_attack_time||'N/A')}
+      </div>` : ''}
+    </div>`;
+}
+
+async function loadKeys() {
+  const r = await fetch('/quantum/api/keys');
+  const data = await r.json();
+  const el = document.getElementById('keys-list');
+  el.innerHTML = (data.keys || []).map(key => `
+    <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+      <code style="color:var(--accent)">${escHtml(key.key_id)}</code>
+      <div style="font-size:11px;color:var(--text-dim)">${escHtml(key.algorithm_name)} | ${escHtml(key.standard)}</div>
+    </div>`).join('') || '<div class="text-dim">No keys</div>';
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}
