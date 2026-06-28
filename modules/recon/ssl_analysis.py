@@ -43,6 +43,16 @@ def analyze_ssl(domain: str, port: int = 443) -> dict:
                 cipher = ssock.cipher()
                 tls_version = ssock.version()
         cert_data = _parse_cert_der(der) if der else {}
+    except socket.timeout:
+        return {"domain": domain, "error": "Connection timed out", "error_type": "network", "valid": False}
+    except socket.gaierror as e:
+        return {"domain": domain, "error": f"DNS resolution failed: {e}", "error_type": "network", "valid": False}
+    except ConnectionRefusedError:
+        return {"domain": domain, "error": "Connection refused — port may be closed", "error_type": "network", "valid": False}
+    except OSError as e:
+        return {"domain": domain, "error": f"Network error: {e}", "error_type": "network", "valid": False}
+    except ssl.SSLError as e:
+        return {"domain": domain, "error": f"SSL error: {e}", "error_type": "ssl", "valid": False}
     except Exception as e:
         return {"domain": domain, "error": str(e), "valid": False}
 

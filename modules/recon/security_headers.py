@@ -76,19 +76,32 @@ DANGEROUS_HEADERS = {
 
 def check_security_headers(url: str) -> dict:
     if not url.startswith(("http://", "https://")):
-        url = f"https://{url}"
+        candidates = [f"https://{url}", f"http://{url}"]
+    else:
+        candidates = [url]
 
-    try:
-        resp = requests.get(
-            url, timeout=DEFAULT_TIMEOUT,
-            allow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; OPTISEC/2.0 SecurityScanner)"},
-            verify=False,
-        )
-        status_code = resp.status_code
-        headers = {k.lower(): v for k, v in resp.headers.items()}
-    except Exception as e:
-        return {"url": url, "error": str(e)}
+    last_error = None
+    resp = None
+    for candidate in candidates:
+        try:
+            resp = requests.get(
+                candidate, timeout=DEFAULT_TIMEOUT,
+                allow_redirects=True,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; OPTISEC/2.0 SecurityScanner)"},
+                verify=False,
+            )
+            url = candidate
+            break
+        except requests.exceptions.ConnectionError as e:
+            last_error = e
+        except Exception as e:
+            return {"url": candidate, "error": str(e)}
+
+    if resp is None:
+        return {"url": url, "error": str(last_error)}
+
+    status_code = resp.status_code
+    headers = {k.lower(): v for k, v in resp.headers.items()}
 
     present = {}
     missing = {}

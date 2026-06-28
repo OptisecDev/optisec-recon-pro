@@ -177,6 +177,7 @@ FRAMEWORKS = {
 
 
 async def assess_target(target_url: str, framework: str, answers: dict) -> dict:
+    framework = framework.lower()
     framework_data = FRAMEWORKS.get(framework)
     if not framework_data:
         return {"error": f"Unknown framework: {framework}"}
@@ -267,7 +268,7 @@ def get_frameworks() -> dict:
 
 
 def get_framework_controls(framework: str) -> list:
-    return FRAMEWORKS.get(framework, {}).get("controls", [])
+    return FRAMEWORKS.get(framework.lower(), {}).get("controls", [])
 
 
 def _risk_level(status: str) -> str:
