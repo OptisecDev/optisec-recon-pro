@@ -155,7 +155,8 @@
       <table class="table" style="font-size:11px">
         <thead><tr><th>Country</th><th>Code</th><th>Attacks/hr</th><th>Threat Level</th><th>Active Campaigns</th></tr></thead>
         <tbody>
-          {% for p in threat_map.points|sort(attribute='attacks_per_hour',reverse=True)[:15] %}
+          {% set sorted_map_points = threat_map.points|sort(attribute='attacks_per_hour',reverse=True) %}
+      {% for p in sorted_map_points[:15] %}
           <tr>
             <td>{{ p.country }}</td>
             <td><code>{{ p.code }}</code></td>
@@ -217,7 +218,7 @@
 <div id="tab-sources" style="display:none">
   <div class="tf-card">
     <h3 style="margin-bottom:16px">Intelligence Feed Sources</h3>
-    {% for src in stats.feed_sources is defined and feed.feed_sources or [] %}
+    {% for src in feed.feed_sources %}
     <div class="feed-source">
       <div style="min-width:140px;font-weight:600">{{ src.name }}</div>
       <span class="badge badge-{{ 'info' if src.type == 'open' else 'medium' if src.type == 'community' else 'high' if src.type == 'government' else 'critical' }}" style="font-size:9px">{{ src.type }}</span>
