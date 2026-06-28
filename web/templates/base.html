@@ -12,7 +12,7 @@
 <nav class="sidebar">
   <div class="sidebar-logo">
     <h1>🛡️ OPTISEC</h1>
-    <div class="version">Enterprise v2.0</div>
+    <div class="version" style="color:#00ff88;font-weight:700">v4.0 SINGULARITY</div>
   </div>
   <div class="sidebar-nav">
     <div class="nav-section">Main</div>
@@ -62,6 +62,23 @@
     </a>
     <a href="/ai-security/red-team" class="nav-item {% if active == 'red_team' %}active{% endif %}">
       <span class="icon">🔴</span><span>AI Red Team</span>
+    </a>
+
+    <div class="nav-section" style="color:#FF6B6B;font-weight:700">SINGULARITY v4.0</div>
+    <a href="/attack-navigator" class="nav-item {% if active == 'attack_navigator' %}active{% endif %}">
+      <span class="icon">🎯</span><span>ATT&CK Navigator</span>
+    </a>
+    <a href="/darkweb" class="nav-item {% if active == 'darkweb' %}active{% endif %}">
+      <span class="icon">🕸️</span><span>Dark Web Intel</span>
+    </a>
+    <a href="/autonomous-redteam" class="nav-item {% if active == 'autonomous_rt' %}active{% endif %}">
+      <span class="icon">🤖</span><span>Autonomous RedTeam</span>
+    </a>
+    <a href="/ngfw" class="nav-item {% if active == 'ngfw' %}active{% endif %}">
+      <span class="icon">🔥</span><span>NGFW v2 (ML/DPI)</span>
+    </a>
+    <a href="/threat-feed" class="nav-item {% if active == 'threat_feed' %}active{% endif %}">
+      <span class="icon">🌍</span><span>Global Threat Feed</span>
     </a>
 
     <div class="nav-section">Defense</div>

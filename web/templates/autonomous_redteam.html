@@ -1,0 +1,366 @@
+{% extends "base.html" %}
+{% block title %}Autonomous Red Team Engine — {{ app_name }}{% endblock %}
+{% block page_title %}Autonomous Red Team Engine{% endblock %}
+
+{% block content %}
+<style>
+.art-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
+.phase-item{display:flex;gap:12px;align-items:flex-start;padding:12px;background:var(--bg-secondary);
+  border-radius:8px;margin-bottom:8px;border-left:3px solid var(--border);transition:border-color 0.2s}
+.phase-item.active{border-left-color:var(--accent)}
+.phase-num{width:28px;height:28px;border-radius:50%;background:var(--bg-card);border:2px solid var(--border);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.finding-item{padding:12px 16px;border-radius:8px;margin-bottom:8px;background:var(--bg-secondary);border-left:3px solid}
+.sev-CRITICAL{border-left-color:#FF6B6B}.sev-HIGH{border-left-color:#FFA726}
+.sev-MEDIUM{border-left-color:#FFCA28}.sev-LOW{border-left-color:#66BB6A}
+.payload-card{background:var(--bg-secondary);border-radius:8px;padding:12px;margin-bottom:10px;border:1px solid var(--border)}
+.payload-code{background:var(--bg-card);border-radius:6px;padding:10px;font-family:monospace;
+  font-size:11px;color:#00ff88;overflow-x:auto;margin-top:8px;white-space:pre-wrap;word-break:break-all}
+.session-card{background:var(--bg-secondary);border-radius:8px;padding:14px;margin-bottom:10px;
+  border:1px solid var(--border);cursor:pointer;transition:border-color 0.2s}
+.session-card:hover{border-color:var(--accent)}
+.attack-type-btn{padding:8px 14px;border-radius:8px;border:2px solid var(--border);background:var(--bg-secondary);
+  color:var(--text-dim);font-size:11px;cursor:pointer;transition:all 0.2s;display:flex;flex-direction:column;align-items:center;gap:4px}
+.attack-type-btn.selected{border-color:var(--accent);background:rgba(0,255,136,0.1);color:var(--accent)}
+.progress-container{display:none;margin-top:16px}
+.progress-bar-wrap{height:12px;background:var(--bg-secondary);border-radius:6px;overflow:hidden;margin-bottom:8px}
+.progress-bar-fill{height:100%;background:linear-gradient(90deg,#00ff88,#00D4AA);border-radius:6px;
+  transition:width 1s ease;animation:pulse 1.5s infinite alternate}
+@keyframes pulse{from{opacity:0.8}to{opacity:1}}
+.report-section{background:var(--bg-secondary);border-radius:8px;padding:14px;margin-bottom:12px}
+.report-section h4{color:var(--accent);margin-bottom:10px;font-size:13px}
+.compliance-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:6px;
+  font-size:10px;margin:3px;border:1px solid}
+.compliant{border-color:#66BB6A;background:#66BB6A18;color:#66BB6A}
+.non-compliant{border-color:#FF6B6B;background:#FF6B6B18;color:#FF6B6B}
+.partial{border-color:#FFA726;background:#FFA72618;color:#FFA726}
+</style>
+
+<!-- Stats -->
+<div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FF6B6B">{{ sessions|length }}</div>
+    <div class="stat-label">Total Sessions</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FFA726">{{ attack_phases|length }}</div>
+    <div class="stat-label">Attack Phases</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#00ff88">{{ payload_library|length }}</div>
+    <div class="stat-label">Payload Categories</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#7E57C2">AI</div>
+    <div class="stat-label">Groq-Powered</div>
+  </div>
+</div>
+
+<div class="tabs" style="margin-bottom:20px">
+  <button class="tab-btn active" onclick="showTab('launch')">Launch Simulation</button>
+  <button class="tab-btn" onclick="showTab('phases')">Attack Phases</button>
+  <button class="tab-btn" onclick="showTab('payloads')">Payload Library</button>
+  <button class="tab-btn" onclick="showTab('sessions')">Session History</button>
+</div>
+
+<!-- LAUNCH TAB -->
+<div id="tab-launch">
+  <div class="grid grid-2">
+    <div class="art-card">
+      <h3 style="color:#FF6B6B;margin-bottom:16px">Configure Simulation</h3>
+
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;color:var(--text-dim)">Target System / Domain</label>
+        <input type="text" id="art-target" class="form-control" placeholder="e.g. target.example.com" style="margin-top:4px">
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;color:var(--text-dim)">Scope (comma-separated)</label>
+        <input type="text" id="art-scope" class="form-control" placeholder="*.example.com, 192.168.1.0/24" style="margin-top:4px">
+      </div>
+
+      <div style="margin-bottom:14px">
+        <label style="font-size:11px;color:var(--text-dim)">Stealth Level</label>
+        <select id="art-stealth" class="form-control" style="margin-top:4px">
+          <option value="low">Low (fast, noisy)</option>
+          <option value="medium" selected>Medium (balanced)</option>
+          <option value="high">High (slow, evasive)</option>
+          <option value="ghost">Ghost (maximum evasion)</option>
+        </select>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label style="font-size:11px;color:var(--text-dim);margin-bottom:8px;display:block">Attack Types</label>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          {% set atypes = [("xss","XSS","🔗"),("sqli","SQLi","💉"),("ssrf","SSRF","🔄"),("lfi","LFI","📂"),("cmd_injection","Cmd Inj","💻"),("privilege_escalation","Priv Esc","⬆️")] %}
+          {% for val,label,icon in atypes %}
+          <button class="attack-type-btn" data-val="{{ val }}" onclick="toggleAttackType(this)">
+            <span style="font-size:16px">{{ icon }}</span>
+            <span>{{ label }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">
+        <label class="toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="art-ai" style="display:none">
+          <div id="ai-toggle" style="width:36px;height:20px;background:var(--bg-secondary);border-radius:10px;
+            position:relative;transition:background 0.2s;border:1px solid var(--border);cursor:pointer" onclick="toggleAI()">
+            <div id="ai-knob" style="width:14px;height:14px;background:#888;border-radius:50%;
+              position:absolute;top:2px;left:2px;transition:all 0.2s"></div>
+          </div>
+          <span style="font-size:12px">AI Analysis (requires GROQ_API_KEY)</span>
+        </label>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="launchSimulation()" id="launch-btn">
+        ⚡ Launch Autonomous Simulation
+      </button>
+
+      <div class="progress-container" id="progress-container">
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:6px">
+          <span id="progress-phase">Initializing...</span>
+          <span id="progress-pct">0%</span>
+        </div>
+        <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progress-bar" style="width:0%"></div></div>
+        <div id="progress-log" style="font-size:10px;color:var(--text-dim);font-family:monospace;
+          background:var(--bg-card);padding:8px;border-radius:6px;height:80px;overflow-y:auto"></div>
+      </div>
+    </div>
+
+    <div class="art-card" id="results-panel">
+      <h3 style="color:#FF6B6B;margin-bottom:16px">Simulation Results</h3>
+      <div id="results-content" style="text-align:center;padding:40px;color:var(--text-dim)">
+        <div style="font-size:40px;margin-bottom:10px">🎯</div>
+        <div>Configure and launch a simulation to see results</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ATTACK PHASES TAB -->
+<div id="tab-phases" style="display:none">
+  <div class="art-card">
+    <h3 style="margin-bottom:16px">Multi-Stage Attack Chain ({{ attack_phases|length }} Phases)</h3>
+    {% for phase in attack_phases %}
+    <div class="phase-item">
+      <div class="phase-num">{{ phase.phase }}</div>
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">{{ phase.name }}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">⏱ {{ phase.duration_estimate }}</div>
+        <div style="margin-bottom:8px">
+          <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Techniques:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            {% for t in phase.techniques %}<code style="font-size:9px;background:var(--bg-card);padding:2px 6px;border-radius:4px;border:1px solid var(--border)">{{ t }}</code>{% endfor %}
+          </div>
+        </div>
+        <div style="margin-bottom:8px">
+          <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Tools:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            {% for tool in phase.tools %}<span style="font-size:10px;background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.2);padding:2px 8px;border-radius:4px;color:#00ff88">{{ tool }}</span>{% endfor %}
+          </div>
+        </div>
+        <div style="font-size:10px;color:var(--text-dim)">
+          Outputs: {{ phase.outputs | join(' · ') }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- PAYLOAD LIBRARY TAB -->
+<div id="tab-payloads" style="display:none">
+  <div class="art-card">
+    <h3 style="margin-bottom:16px">Payload Library ({{ payload_library|length }} categories)</h3>
+    {% for key, cat in payload_library.items() %}
+    <div class="payload-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:13px;font-weight:700">{{ cat.type }}{% if cat.subtype %} — {{ cat.subtype }}{% endif %}</div>
+          <div style="font-size:10px;color:var(--text-dim)">{{ cat.payloads|length }} payloads</div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="togglePayloads('{{ key }}')">Show Payloads</button>
+      </div>
+      {% if cat.bypass_waf %}
+      <div style="font-size:10px;color:var(--text-dim)">WAF Bypass: {{ cat.bypass_waf | join(', ') }}</div>
+      {% endif %}
+      <div id="payloads-{{ key }}" style="display:none;margin-top:10px">
+        {% for p in cat.payloads %}
+        <div class="payload-code" onclick="copyPayload(this)">{{ p }}</div>
+        {% endfor %}
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Click payload to copy</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- SESSION HISTORY TAB -->
+<div id="tab-sessions" style="display:none">
+  <div id="sessions-list">
+    {% if sessions %}
+      {% for s in sessions %}
+      <div class="session-card" onclick="viewSession('{{ s.id }}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div>
+            <div style="font-size:14px;font-weight:700">{{ s.id }}</div>
+            <div style="font-size:12px;color:var(--text-dim)">{{ s.target }}</div>
+          </div>
+          <div style="text-align:right">
+            <span class="badge badge-{{ 'critical' if s.risk_score >= 75 else 'high' if s.risk_score >= 50 else 'medium' }}">
+              Risk: {{ s.risk_score }}/100
+            </span>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:4px">{{ s.started_at[:10] }}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;font-size:11px;color:var(--text-dim)">
+          <span>{{ s.findings|length }} findings</span>
+          <span>{{ s.attack_types | join(', ') }}</span>
+          <span class="badge badge-{{ 'high' if s.status == 'completed' else 'medium' }}" style="font-size:9px">{{ s.status }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div style="text-align:center;padding:60px;color:var(--text-dim)">
+        <div style="font-size:40px;margin-bottom:12px">🎯</div>
+        <div>No sessions yet — launch your first simulation</div>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+const selectedTypes = new Set();
+
+function showTab(t) {
+  ['launch','phases','payloads','sessions'].forEach(id => {
+    document.getElementById('tab-'+id).style.display = id===t?'':'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    b.classList.toggle('active', ['launch','phases','payloads','sessions'][i]===t);
+  });
+}
+
+function toggleAttackType(btn) {
+  const val = btn.dataset.val;
+  if (selectedTypes.has(val)) { selectedTypes.delete(val); btn.classList.remove('selected'); }
+  else { selectedTypes.add(val); btn.classList.add('selected'); }
+}
+
+let aiEnabled = false;
+function toggleAI() {
+  aiEnabled = !aiEnabled;
+  document.getElementById('ai-toggle').style.background = aiEnabled ? 'var(--accent)' : 'var(--bg-secondary)';
+  document.getElementById('ai-knob').style.left = aiEnabled ? '18px' : '2px';
+  document.getElementById('ai-knob').style.background = aiEnabled ? '#000' : '#888';
+}
+
+function togglePayloads(key) {
+  const el = document.getElementById('payloads-'+key);
+  el.style.display = el.style.display === 'none' ? '' : 'none';
+}
+
+function copyPayload(el) {
+  navigator.clipboard?.writeText(el.textContent).then(() => {
+    const orig = el.style.background;
+    el.style.background = 'rgba(0,255,136,0.2)';
+    setTimeout(() => el.style.background = orig, 800);
+  });
+}
+
+async function launchSimulation() {
+  const target = document.getElementById('art-target').value.trim();
+  if (!target) { alert('Enter a target'); return; }
+  const scope = document.getElementById('art-scope').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const types = [...selectedTypes];
+  if (!types.length) { alert('Select at least one attack type'); return; }
+
+  const btn = document.getElementById('launch-btn');
+  btn.textContent = 'Simulating...'; btn.disabled = true;
+  const prog = document.getElementById('progress-container');
+  prog.style.display = '';
+
+  const phases = ['Reconnaissance','Weaponization','Initial Access','Post-Exploitation','Lateral Movement','Objective','Reporting'];
+  let p = 0;
+  const interval = setInterval(() => {
+    p = Math.min(p + Math.random() * 15, 95);
+    document.getElementById('progress-bar').style.width = p + '%';
+    document.getElementById('progress-pct').textContent = Math.round(p) + '%';
+    document.getElementById('progress-phase').textContent = phases[Math.floor(p / 14)] || 'Finalizing...';
+    const log = document.getElementById('progress-log');
+    log.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ${phases[Math.floor(p/14)] || 'Reporting'}...</div>`;
+    log.scrollTop = log.scrollHeight;
+  }, 400);
+
+  try {
+    const resp = await fetch('/autonomous-redteam/api/start', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({target, scope, attack_types: types,
+        stealth_level: document.getElementById('art-stealth').value, auto_exploit: false})
+    });
+    const data = await resp.json();
+    clearInterval(interval);
+    document.getElementById('progress-bar').style.width = '100%';
+    document.getElementById('progress-pct').textContent = '100%';
+    document.getElementById('progress-phase').textContent = 'Completed';
+    setTimeout(() => { prog.style.display = 'none'; renderResults(data); }, 600);
+  } catch(e) {
+    clearInterval(interval);
+    alert('Simulation error: ' + e.message);
+  } finally {
+    btn.textContent = '⚡ Launch Autonomous Simulation'; btn.disabled = false;
+  }
+}
+
+function renderResults(data) {
+  const report = data.report || {};
+  const exec = report.executive_summary || {};
+  const findings = data.findings || [];
+  const sevColors = {CRITICAL:'#FF6B6B',HIGH:'#FFA726',MEDIUM:'#FFCA28',LOW:'#66BB6A'};
+  const riskScore = exec.risk_score || data.risk_score || 0;
+
+  document.getElementById('results-content').innerHTML = `
+    <div style="margin-bottom:16px;padding:14px;background:${riskScore>=75?'#FF6B6B18':riskScore>=50?'#FFA72618':'#FFCA2818'};
+      border:1px solid ${riskScore>=75?'#FF6B6B':riskScore>=50?'#FFA726':'#FFCA28'};border-radius:8px">
+      <div style="font-size:13px;font-weight:700;color:${riskScore>=75?'#FF6B6B':riskScore>=50?'#FFA726':'#FFCA28'}">${exec.overall_risk||'HIGH'} RISK — Score: ${riskScore}/100</div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${data.id} · ${data.target}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px">
+      ${[['Total','findings',findings.length,'#00ff88'],[`Critical`,'',(exec.critical_count||0),'#FF6B6B'],['High','',(exec.high_count||0),'#FFA726'],['Medium','',(exec.medium_count||0),'#FFCA28']].map(([l,s,v,c])=>`<div style="background:var(--bg-secondary);border-radius:6px;padding:8px;text-align:center"><div style="font-size:18px;font-weight:700;color:${c}">${v}</div><div style="font-size:9px;color:var(--text-dim)">${l} ${s}</div></div>`).join('')}
+    </div>
+    <div style="margin-bottom:12px">
+      ${findings.map(f=>`<div class="finding-item sev-${f.severity}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <div style="font-size:12px;font-weight:700">${f.vuln}</div>
+          <span style="font-size:10px;font-weight:700;color:${sevColors[f.severity]||'#888'}">${f.severity}</span>
+        </div>
+        <div style="font-size:10px;color:var(--text-dim)">${f.endpoint}</div>
+        <div style="font-size:10px;font-family:monospace;margin-top:4px;color:#FFA726">${f.proof}</div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:4px">MITRE: <code>${f.technique}</code> · CVSS: ${f.cvss}</div>
+      </div>`).join('')}
+    </div>
+    ${report.compliance_impact ? `<div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--accent)">Compliance Impact:</div>
+      ${Object.entries(report.compliance_impact||{}).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px"><span>${k}</span><span style="color:${v.includes('NON')||v.includes('MATERIAL')?'#FF6B6B':'#FFA726'}">${v}</span></div>`).join('')}
+    </div>` : ''}
+    <button class="btn btn-secondary btn-sm" onclick="viewFullReport('${data.id}')">View Full Report</button>
+  `;
+}
+
+async function viewFullReport(id) {
+  const resp = await fetch('/autonomous-redteam/api/generate-report/'+id);
+  const data = await resp.json();
+  const w = window.open('', '_blank');
+  w.document.write('<pre style="background:#000;color:#00ff88;padding:20px;font-size:12px">' + JSON.stringify(data, null, 2) + '</pre>');
+}
+
+async function viewSession(id) {
+  const resp = await fetch('/autonomous-redteam/api/sessions/'+id);
+  const data = await resp.json();
+  showTab('launch');
+  renderResults(data);
+}
+</script>
+{% endblock %}

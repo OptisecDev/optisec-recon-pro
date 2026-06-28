@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block title %}NGFW v2 — {{ app_name }}{% endblock %}
+{% block page_title %}Next-Gen Firewall v2{% endblock %}
+
+{% block content %}
+<style>
+.fw-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
+.traffic-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
+  margin-bottom:6px;background:var(--bg-secondary);border:1px solid var(--border);
+  transition:border-color 0.15s;font-size:11px}
+.traffic-row.BLOCK{border-left:3px solid #FF6B6B}
+.traffic-row.ALERT{border-left:3px solid #FFA726}
+.traffic-row.ALLOW{border-left:3px solid #66BB6A}
+.threat-bar{height:6px;border-radius:3px;background:var(--bg-card);overflow:hidden;width:80px;flex-shrink:0}
+.threat-fill{height:100%;border-radius:3px}
+.action-BLOCK{color:#FF6B6B;font-weight:700}.action-ALERT{color:#FFA726;font-weight:700}.action-ALLOW{color:#66BB6A;font-weight:700}
+.dpi-rule{background:var(--bg-secondary);border-radius:8px;padding:10px 14px;margin-bottom:6px;
+  border-left:3px solid var(--border);font-size:11px}
+.dpi-critical{border-left-color:#FF6B6B}.dpi-high{border-left-color:#FFA726}.dpi-medium{border-left-color:#FFCA28}
+.geo-country{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;
+  background:var(--bg-secondary);border-radius:6px;margin-bottom:6px;font-size:11px}
+.ml-feature{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px}
+.cat-bar{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.cat-fill{height:10px;border-radius:5px;min-width:4px}
+#live-chart{width:100%;height:200px;position:relative;overflow:hidden;background:var(--bg-secondary);border-radius:8px}
+.chart-bar{position:absolute;bottom:0;width:18px;border-radius:2px 2px 0 0;transition:height 0.3s}
+</style>
+
+<!-- Stats -->
+<div class="stats-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px">
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.totals.total }}</div>
+    <div class="stat-label">Total Requests</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FF6B6B">{{ stats.totals.blocked }}</div>
+    <div class="stat-label">Blocked</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FFA726">{{ stats.totals.anomalies }}</div>
+    <div class="stat-label">Anomalies</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#00ff88">{{ stats.dpi_rules_count }}</div>
+    <div class="stat-label">DPI Rules</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#7E57C2">{{ geo_blocks.blocked_countries|length }}</div>
+    <div class="stat-label">Geo Blocks</div>
+  </div>
+</div>
+
+<div class="tabs" style="margin-bottom:20px">
+  <button class="tab-btn active" onclick="showTab('inspect')">DPI Inspect</button>
+  <button class="tab-btn" onclick="showTab('traffic')">Live Traffic</button>
+  <button class="tab-btn" onclick="showTab('rules')">DPI Rules</button>
+  <button class="tab-btn" onclick="showTab('geo')">Geo Intelligence</button>
+</div>
+
+<!-- DPI INSPECT TAB -->
+<div id="tab-inspect">
+  <div class="grid grid-2">
+    <div class="fw-card">
+      <h3 style="color:var(--accent);margin-bottom:16px">Deep Packet Inspection</h3>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div>
+            <label style="font-size:11px;color:var(--text-dim)">Method</label>
+            <select id="dpi-method" class="form-control" style="margin-top:4px;font-size:12px">
+              <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>TRACE</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;color:var(--text-dim)">Destination Port</label>
+            <input type="number" id="dpi-port" class="form-control" value="80" style="margin-top:4px;font-size:12px">
+          </div>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Source IP</label>
+          <input type="text" id="dpi-ip" class="form-control" placeholder="e.g. 185.234.216.45" style="margin-top:4px;font-size:12px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Request Path</label>
+          <input type="text" id="dpi-path" class="form-control" placeholder="/api/users?id=1" style="margin-top:4px;font-size:12px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Request Body</label>
+          <textarea id="dpi-body" class="form-control" rows="3" style="font-size:12px;font-family:monospace;resize:vertical" placeholder="username=admin&password=' OR '1'='1"></textarea>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">User-Agent</label>
+          <input type="text" id="dpi-ua" class="form-control" placeholder="Mozilla/5.0 or sqlmap/1.7..." style="margin-top:4px;font-size:12px">
+        </div>
+        <button class="btn btn-primary" onclick="runDPI()">Inspect Packet</button>
+        <button class="btn btn-secondary btn-sm" onclick="simulateTraffic()">Simulate 20 Requests</button>
+      </div>
+    </div>
+
+    <div class="fw-card" id="dpi-result-panel">
+      <h3 style="margin-bottom:16px;color:var(--accent)">Analysis Result</h3>
+      <div id="dpi-result" style="text-align:center;padding:40px;color:var(--text-dim)">
+        <div style="font-size:32px;margin-bottom:8px">🛡️</div>
+        <div>Submit a request to inspect</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE TRAFFIC TAB -->
+<div id="tab-traffic" style="display:none">
+  <div class="fw-card" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3>Real-Time Traffic Monitor</h3>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-secondary btn-sm" onclick="refreshTraffic()">Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="startAutoRefresh()" id="auto-btn">Auto (5s)</button>
+      </div>
+    </div>
+
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">Category Breakdown</div>
+      <div id="cat-breakdown"></div>
+    </div>
+
+    <div id="live-chart" style="margin-bottom:16px">
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--text-dim);font-size:12px">Loading chart...</div>
+    </div>
+  </div>
+
+  <div class="fw-card">
+    <h3 style="margin-bottom:12px">Recent Traffic Log</h3>
+    <div id="traffic-log">Loading...</div>
+  </div>
+</div>
+
+<!-- DPI RULES TAB -->
+<div id="tab-rules" style="display:none">
+  <div class="fw-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3>DPI Signature Database ({{ stats.dpi_rules_count }} rules)</h3>
+      <input type="text" class="form-control" style="max-width:200px;font-size:12px" placeholder="Search rules..." oninput="searchRules(this.value)">
+    </div>
+    <div id="rules-list">
+      {% for rule in dpi_rules %}
+      <div class="dpi-rule dpi-{{ rule.severity.lower() }}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <div>
+            <code style="font-size:10px;color:var(--accent)">{{ rule.id }}</code>
+            <span style="font-size:12px;font-weight:700;margin-left:8px">{{ rule.name }}</span>
+          </div>
+          <span class="badge badge-{{ 'critical' if rule.severity == 'CRITICAL' else 'high' if rule.severity == 'HIGH' else 'medium' }}">{{ rule.severity }}</span>
+        </div>
+        <div style="font-size:10px;color:var(--text-dim)">Category: {{ rule.category }} · Base confidence: {{ rule.confidence_base }}%</div>
+        <div style="font-size:10px;font-family:monospace;color:#7E57C2;margin-top:4px;word-break:break-all">{{ rule.pattern[:80] }}…</div>
+      </div>
+      {% endfor %}
+      <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:11px">
+        Showing 10 of {{ stats.dpi_rules_count }} rules — <a href="/ngfw/api/rules" target="_blank" style="color:var(--accent)">View all via API</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GEO INTELLIGENCE TAB -->
+<div id="tab-geo" style="display:none">
+  <div class="grid grid-2">
+    <div class="fw-card">
+      <h3 style="color:#FF6B6B;margin-bottom:16px">Geo-Blocking Rules</h3>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">{{ geo_blocks.note }}</p>
+      {% for code, country in geo_blocks.blocked_countries.items() %}
+      <div class="geo-country">
+        <div>
+          <div style="font-size:12px;font-weight:700">{{ country }}</div>
+          <div style="font-size:10px;color:var(--text-dim)">{{ code }}</div>
+        </div>
+        <span class="badge badge-critical">BLOCK</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="fw-card">
+      <h3 style="margin-bottom:16px">Top Source IPs</h3>
+      {% if stats.top_source_ips %}
+        {% for item in stats.top_source_ips %}
+        <div class="geo-country">
+          <code style="font-size:12px">{{ item.ip }}</code>
+          <span class="badge badge-{{ 'critical' if item.count > 100 else 'high' if item.count > 20 else 'medium' }}">{{ item.count }} req</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="color:var(--text-dim);font-size:12px">No traffic logged yet. Run a simulation first.</p>
+      {% endif %}
+
+      <h3 style="margin-top:20px;margin-bottom:12px">Geo Distribution</h3>
+      {% if stats.geo_distribution %}
+        {% for code, count in stats.geo_distribution.items() %}
+        <div class="geo-country">
+          <span>{{ code }}</span>
+          <span class="badge badge-info">{{ count }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="color:var(--text-dim);font-size:12px">No geo data yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(t) {
+  ['inspect','traffic','rules','geo'].forEach(id => {
+    document.getElementById('tab-'+id).style.display = id===t?'':'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',['inspect','traffic','rules','geo'][i]===t));
+  if (t==='traffic') refreshTraffic();
+}
+
+async function runDPI() {
+  const btn = event.target; btn.textContent = 'Inspecting...'; btn.disabled = true;
+  const resp = await fetch('/ngfw/api/inspect', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      method: document.getElementById('dpi-method').value,
+      path: document.getElementById('dpi-path').value || '/',
+      body: document.getElementById('dpi-body').value,
+      src_ip: document.getElementById('dpi-ip').value || '127.0.0.1',
+      dst_port: parseInt(document.getElementById('dpi-port').value) || 80,
+      headers: {'User-Agent': document.getElementById('dpi-ua').value || 'Mozilla/5.0'},
+    })
+  });
+  const data = await resp.json();
+  btn.textContent = 'Inspect Packet'; btn.disabled = false;
+  renderDPIResult(data);
+}
+
+function renderDPIResult(data) {
+  const scoreColor = data.threat_score >= 70 ? '#FF6B6B' : data.threat_score >= 40 ? '#FFA726' : '#66BB6A';
+  const el = document.getElementById('dpi-result');
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:14px;
+      background:${scoreColor}18;border:1px solid ${scoreColor};border-radius:8px">
+      <div style="text-align:center;min-width:70px">
+        <div style="font-size:28px;font-weight:700;color:${scoreColor}">${data.threat_score}</div>
+        <div style="font-size:9px;color:var(--text-dim)">THREAT SCORE</div>
+      </div>
+      <div style="flex:1">
+        <div style="font-size:16px;font-weight:700;color:${scoreColor}" class="action-${data.action}">${data.action}</div>
+        <div style="font-size:11px;color:var(--text-dim)">${data.top_threat}</div>
+        <div style="font-size:10px;color:var(--text-dim);margin-top:2px">${data.src_ip} → Port ${data.dst_port} (${data.port_name})</div>
+      </div>
+    </div>
+    ${data.signature_hits.length ? `<div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:#FF6B6B">Signature Hits (${data.signature_hits.length})</div>
+      ${data.signature_hits.map(h=>`<div style="background:var(--bg-secondary);border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between">
+        <div><code style="font-size:9px">${h.id}</code> <span style="font-size:11px">${h.name}</span></div>
+        <span class="badge badge-${h.severity.toLowerCase()}">${h.confidence.toFixed(0)}%</span>
+      </div>`).join('')}
+    </div>` : ''}
+    <div style="margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--accent)">ML Features</div>
+      ${Object.entries(data.ml_features||{}).map(([k,v])=>`<div class="ml-feature"><span>${k.replace(/_/g,' ')}</span><strong>${v}</strong></div>`).join('')}
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px">Geo: ${data.geo?.country||'Unknown'} (${data.geo?.country_code||'??'})</div>
+      ${data.geo?.is_high_risk ? `<div style="color:#FF6B6B;font-size:11px">⚠ High-risk country — ${data.geo.risk_reason}</div>` : ''}
+      ${data.ua_suspicious ? `<div style="color:#FFA726;font-size:11px;margin-top:4px">⚠ Suspicious User-Agent detected: ${data.user_agent}</div>` : ''}
+    </div>
+  `;
+}
+
+async function simulateTraffic() {
+  const btn = event.target; btn.textContent = 'Simulating...'; btn.disabled = true;
+  await fetch('/ngfw/api/simulate-traffic', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({count:20})});
+  btn.textContent = 'Simulate 20 Requests'; btn.disabled = false;
+  refreshTraffic();
+  showTab('traffic');
+}
+
+async function refreshTraffic() {
+  const resp = await fetch('/ngfw/api/stats');
+  const data = await resp.json();
+  const log = document.getElementById('traffic-log');
+  if (!data.recent_log?.length) { log.innerHTML = '<p style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">No traffic logged. Run a simulation.</p>'; return; }
+  log.innerHTML = data.recent_log.map(r => `<div class="traffic-row ${r.action}">
+    <span class="action-${r.action}" style="min-width:48px">${r.action}</span>
+    <span style="min-width:60px;font-weight:700;color:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}">${r.threat_score}</span>
+    <div class="threat-bar"><div class="threat-fill" style="width:${r.threat_score}%;background:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}"></div></div>
+    <code style="min-width:110px;font-size:10px">${r.src_ip}</code>
+    <span style="color:var(--text-dim);min-width:48px">${r.port_name}</span>
+    <span style="color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.path}</span>
+    <span class="badge badge-${r.geo?.is_high_risk?'critical':'info'}" style="font-size:9px">${r.geo?.country_code||'??'}</span>
+    <span style="color:var(--text-dim);font-size:10px;min-width:65px">${new Date(r.timestamp).toLocaleTimeString()}</span>
+  </div>`).join('');
+
+  // Category breakdown
+  const cats = data.category_breakdown || {};
+  const catColors = {sqli:'#FF6B6B',xss:'#FFA726',lfi:'#FFCA28',cmdi:'#7E57C2',ssrf:'#EC407A',c2:'#AB47BC',evasion:'#78909C',protocol:'#42A5F5'};
+  const maxCat = Math.max(1, ...Object.values(cats));
+  document.getElementById('cat-breakdown').innerHTML = Object.entries(cats).map(([k,v]) =>
+    `<div class="cat-bar"><span style="min-width:70px;font-size:10px;color:var(--text-dim)">${k}</span><div style="flex:1;height:10px;background:var(--bg-secondary);border-radius:5px;overflow:hidden"><div class="cat-fill" style="width:${v/maxCat*100}%;background:${catColors[k]||'#888'}"></div></div><span style="min-width:25px;text-align:right;font-size:10px">${v}</span></div>`
+  ).join('') || '<p style="font-size:11px;color:var(--text-dim)">No threats detected yet.</p>';
+
+  // Chart
+  renderChart(data.recent_log.slice(0,20).reverse());
+}
+
+function renderChart(log) {
+  const chart = document.getElementById('live-chart');
+  chart.innerHTML = '';
+  const w = chart.offsetWidth;
+  const barW = 18, gap = 4;
+  log.forEach((entry, i) => {
+    const bar = document.createElement('div');
+    bar.className = 'chart-bar';
+    const h = (entry.threat_score / 100) * 180;
+    bar.style.cssText = `left:${i*(barW+gap)+8}px;height:${h}px;width:${barW}px;background:${entry.threat_score>=70?'#FF6B6B':entry.threat_score>=40?'#FFA726':'#66BB6A'}`;
+    bar.title = `${entry.src_ip}: ${entry.threat_score}/100 ${entry.action}`;
+    chart.appendChild(bar);
+  });
+}
+
+let autoTimer = null;
+function startAutoRefresh() {
+  const btn = document.getElementById('auto-btn');
+  if (autoTimer) { clearInterval(autoTimer); autoTimer=null; btn.textContent='Auto (5s)'; btn.classList.remove('active'); }
+  else { autoTimer=setInterval(refreshTraffic,5000); btn.textContent='Stop Auto'; btn.classList.add('active'); refreshTraffic(); }
+}
+
+function searchRules(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.dpi-rule').forEach(r => { r.style.display = (!q || r.textContent.toLowerCase().includes(q)) ? '' : 'none'; });
+}
+</script>
+{% endblock %}

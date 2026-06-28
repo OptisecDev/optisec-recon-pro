@@ -1,0 +1,377 @@
+{% extends "base.html" %}
+{% block title %}Global Threat Feed — {{ app_name }}{% endblock %}
+{% block page_title %}Global Threat Intelligence Feed{% endblock %}
+
+{% block content %}
+<style>
+.tf-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
+.ioc-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-secondary);
+  border-radius:8px;margin-bottom:6px;border:1px solid var(--border);font-size:11px;transition:border-color 0.15s}
+.ioc-row:hover{border-color:var(--accent)}
+.ioc-score{min-width:40px;text-align:center;font-weight:700;font-size:13px}
+.score-bar{height:6px;border-radius:3px;background:var(--bg-card);overflow:hidden;width:60px;flex-shrink:0}
+.score-fill{height:100%;border-radius:3px}
+.tlp-white{background:#ffffff22;color:#fff;border:1px solid #fff}
+.tlp-green{background:#00ff8822;color:#00ff88;border:1px solid #00ff88}
+.tlp-amber{background:#FFA72622;color:#FFA726;border:1px solid #FFA726}
+.tlp-red{background:#FF6B6B22;color:#FF6B6B;border:1px solid #FF6B6B}
+.campaign-card{background:var(--bg-secondary);border-radius:10px;padding:16px;border:1px solid var(--border);
+  margin-bottom:12px;border-left:4px solid}
+.camp-active{border-left-color:#FF6B6B}.camp-monitoring{border-left-color:#FFA726}.camp-closed{border-left-color:#888}
+.map-container{background:var(--bg-secondary);border-radius:10px;overflow:hidden;position:relative;
+  height:340px;border:1px solid var(--border)}
+.map-point{position:absolute;transform:translate(-50%,-50%);cursor:pointer;z-index:5}
+.map-dot{border-radius:50%;animation:ping 2s cubic-bezier(0,0,0.2,1) infinite}
+@keyframes ping{75%,100%{transform:scale(1.8);opacity:0}}
+.map-label{position:absolute;left:50%;transform:translateX(-50%);top:calc(100% + 4px);
+  font-size:8px;white-space:nowrap;color:var(--text-dim);pointer-events:none}
+.feed-source{background:var(--bg-secondary);border-radius:8px;padding:10px 12px;margin-bottom:6px;
+  border:1px solid var(--border);display:flex;align-items:center;gap:10px;font-size:11px}
+.source-rel{height:6px;border-radius:3px;background:var(--bg-card);overflow:hidden;flex:1}
+.source-rel-fill{height:100%;border-radius:3px;background:var(--accent)}
+.submit-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
+</style>
+
+<!-- Global threat level banner -->
+<div style="background:{{ '#FF6B6B18' if feed.global_threat_level == 'CRITICAL' else '#FFA72618' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA18' }};
+  border:1px solid {{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }};
+  border-radius:10px;padding:16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
+  <div>
+    <div style="font-size:18px;font-weight:700;color:{{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }}">
+      GLOBAL THREAT LEVEL: {{ feed.global_threat_level }}
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
+      {{ feed.total }} active IOCs tracked across {{ stats.feed_sources }} intelligence sources
+    </div>
+  </div>
+  <div style="text-align:right;font-size:11px;color:var(--text-dim)">
+    Updated: {{ feed.updated_at[:19] }} UTC<br>
+    <span style="color:#FF6B6B;font-weight:700">{{ feed.stats.critical_iocs }}</span> Critical ·
+    <span style="color:#FFA726;font-weight:700">{{ feed.stats.high_iocs }}</span> High ·
+    <span style="color:#FFCA28;font-weight:700">{{ feed.stats.medium_iocs }}</span> Medium
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px">
+  <div class="stat-card">
+    <div class="stat-value">{{ feed.total }}</div>
+    <div class="stat-label">Active IOCs</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FF6B6B">{{ feed.stats.critical_iocs }}</div>
+    <div class="stat-label">Critical</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#00ff88">{{ stats.active_campaigns }}</div>
+    <div class="stat-label">Active Campaigns</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#7E57C2">{{ stats.feed_sources }}</div>
+    <div class="stat-label">Feed Sources</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FFA726">{{ threat_map.total_attacks_per_hour | int }}</div>
+    <div class="stat-label">Attacks/Hour</div>
+  </div>
+</div>
+
+<div class="tabs" style="margin-bottom:20px">
+  <button class="tab-btn active" onclick="showTab('feed')">Live IOC Feed</button>
+  <button class="tab-btn" onclick="showTab('map')">Threat Map</button>
+  <button class="tab-btn" onclick="showTab('campaigns')">Campaigns</button>
+  <button class="tab-btn" onclick="showTab('sources')">Feed Sources</button>
+  <button class="tab-btn" onclick="showTab('submit')">Submit IOC</button>
+</div>
+
+<!-- LIVE FEED TAB -->
+<div id="tab-feed">
+  <div class="tf-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+      <h3>Live IOC Stream</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input type="text" class="form-control" style="max-width:200px;font-size:11px" placeholder="Search IOCs..." oninput="filterFeed(this.value)" id="feed-search">
+        <select class="form-control" style="max-width:130px;font-size:11px" onchange="filterFeedType(this.value)">
+          <option value="">All Types</option>
+          {% for t, c in feed.stats.by_type.items() %}<option value="{{ t }}">{{ t }} ({{ c }})</option>{% endfor %}
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="refreshFeed()">Refresh</button>
+      </div>
+    </div>
+    <div id="ioc-feed-list">
+      {% for ioc in feed.iocs %}
+      <div class="ioc-row" data-type="{{ ioc.type }}" data-value="{{ ioc.value.lower() }}">
+        <div class="ioc-score" style="color:{{ '#FF6B6B' if ioc.threat_score >= 80 else '#FFA726' if ioc.threat_score >= 60 else '#FFCA28' if ioc.threat_score >= 40 else '#66BB6A' }}">
+          {{ ioc.threat_score }}
+        </div>
+        <div class="score-bar">
+          <div class="score-fill" style="width:{{ ioc.threat_score }}%;background:{{ '#FF6B6B' if ioc.threat_score >= 80 else '#FFA726' if ioc.threat_score >= 60 else '#FFCA28' if ioc.threat_score >= 40 else '#66BB6A' }}"></div>
+        </div>
+        <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:80px;text-align:center">{{ ioc.type }}</span>
+        <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px" title="{{ ioc.value }}">{{ ioc.value[:60] }}{% if ioc.value|length > 60 %}…{% endif %}</code>
+        <span style="color:#FFA726;font-size:10px;min-width:100px">{{ ioc.malware[:20] }}</span>
+        <span class="tlp-{{ ioc.tlp.lower() }}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700">TLP:{{ ioc.tlp }}</span>
+        <span style="color:var(--text-dim);font-size:9px;min-width:80px">{{ ioc.source }}</span>
+        <span style="color:var(--text-dim);font-size:9px">{{ ioc.last_seen[:10] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- THREAT MAP TAB -->
+<div id="tab-map" style="display:none">
+  <div class="tf-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <h3>Global Threat Map — Live Attack Origins</h3>
+      <div style="font-size:12px;color:var(--text-dim)">Top origin: <strong style="color:#FF6B6B">{{ threat_map.top_origin }}</strong></div>
+    </div>
+    <div class="map-container" id="threat-map">
+      <!-- World map SVG approximation using dots -->
+      <div style="position:absolute;inset:0;background:linear-gradient(135deg,#0d0d1a 0%,#1a1a2e 100%);
+        display:flex;align-items:center;justify-content:center">
+        <div style="font-size:11px;color:var(--text-dim);opacity:0.3">WORLD MAP</div>
+      </div>
+      {% for point in threat_map.points %}
+      {% set x = ((point.lon + 180) / 360 * 100)|round(1) %}
+      {% set y = ((90 - point.lat) / 180 * 100)|round(1) %}
+      {% set size = [6, [6, (point.attacks_per_hour / 100)|int]|max]|max %}
+      <div class="map-point" style="left:{{ x }}%;top:{{ y }}%" title="{{ point.country }}: {{ point.attacks_per_hour }} attacks/hr">
+        <div class="map-dot" style="width:{{ [size,20]|min }}px;height:{{ [size,20]|min }}px;
+          background:{{ '#FF6B6B' if point.threat_level == 'critical' else '#FFA726' if point.threat_level == 'high' else '#FFCA28' if point.threat_level == 'medium' else '#66BB6A' }};
+          opacity:0.85"></div>
+        <div class="map-label">{{ point.code }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div style="margin-top:14px;display:flex;gap:16px;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--text-dim)">Legend:</span>
+      {% for level, color in [('Critical','#FF6B6B'),('High','#FFA726'),('Medium','#FFCA28'),('Low','#66BB6A')] %}
+      <span style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="width:10px;height:10px;border-radius:50%;background:{{ color }};display:inline-block"></span>{{ level }}</span>
+      {% endfor %}
+    </div>
+
+    <div style="margin-top:20px;overflow-x:auto">
+      <table class="table" style="font-size:11px">
+        <thead><tr><th>Country</th><th>Code</th><th>Attacks/hr</th><th>Threat Level</th><th>Active Campaigns</th></tr></thead>
+        <tbody>
+          {% for p in threat_map.points|sort(attribute='attacks_per_hour',reverse=True)[:15] %}
+          <tr>
+            <td>{{ p.country }}</td>
+            <td><code>{{ p.code }}</code></td>
+            <td><strong style="color:{{ '#FF6B6B' if p.attacks_per_hour > 500 else '#FFA726' if p.attacks_per_hour > 100 else '#FFCA28' }}">{{ p.attacks_per_hour }}</strong></td>
+            <td><span class="badge badge-{{ 'critical' if p.threat_level == 'critical' else 'high' if p.threat_level == 'high' else 'medium' if p.threat_level == 'medium' else 'info' }}">{{ p.threat_level }}</span></td>
+            <td>{{ p.active_campaigns }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- CAMPAIGNS TAB -->
+<div id="tab-campaigns" style="display:none">
+  {% for camp in campaigns %}
+  <div class="campaign-card camp-{{ camp.status }}">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+      <div>
+        <div style="font-size:15px;font-weight:700">{{ camp.name }}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+          {{ camp.id }} · <span style="color:#FFA726">{{ camp.actor }}</span> · Since {{ camp.start_date }}
+        </div>
+      </div>
+      <div style="text-align:right">
+        <span class="badge badge-{{ 'critical' if camp.status == 'active' else 'medium' }}">{{ camp.status }}</span>
+        <div style="font-size:11px;margin-top:4px;color:{{ '#FF6B6B' if camp.confidence >= 90 else '#FFA726' }}">{{ camp.confidence }}% confidence</div>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">{{ camp.description }}</p>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px">
+      <div>
+        <div style="color:var(--text-dim);margin-bottom:4px">Target Sectors</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          {% for s in camp.target_sectors %}<span class="badge badge-info" style="font-size:9px">{{ s }}</span>{% endfor %}
+        </div>
+      </div>
+      <div>
+        <div style="color:var(--text-dim);margin-bottom:4px">MITRE Techniques</div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">
+          {% for t in camp.techniques %}<code style="font-size:9px;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);padding:2px 5px;border-radius:3px">{{ t }}</code>{% endfor %}
+        </div>
+      </div>
+      <div>
+        <div style="color:var(--text-dim);margin-bottom:4px">IOC Count</div>
+        <div style="font-size:14px;font-weight:700;color:#FFA726">{{ camp.ioc_count }}</div>
+      </div>
+      <div>
+        <div style="color:var(--text-dim);margin-bottom:4px">Countries Targeted</div>
+        <div>{% for c in camp.countries_targeted %}<code style="font-size:10px;margin-right:4px">{{ c }}</code>{% endfor %}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- FEED SOURCES TAB -->
+<div id="tab-sources" style="display:none">
+  <div class="tf-card">
+    <h3 style="margin-bottom:16px">Intelligence Feed Sources</h3>
+    {% for src in stats.feed_sources is defined and feed.feed_sources or [] %}
+    <div class="feed-source">
+      <div style="min-width:140px;font-weight:600">{{ src.name }}</div>
+      <span class="badge badge-{{ 'info' if src.type == 'open' else 'medium' if src.type == 'community' else 'high' if src.type == 'government' else 'critical' }}" style="font-size:9px">{{ src.type }}</span>
+      <div style="flex:1">
+        <div style="font-size:9px;color:var(--text-dim);margin-bottom:3px">Reliability: {{ (src.reliability * 100)|int }}%</div>
+        <div class="source-rel"><div class="source-rel-fill" style="width:{{ (src.reliability * 100)|int }}%"></div></div>
+      </div>
+      <code style="font-size:9px;color:var(--text-dim)">{{ src.id }}</code>
+    </div>
+    {% endfor %}
+    <div style="margin-top:16px;padding:12px;background:var(--bg-secondary);border-radius:8px;font-size:11px;color:var(--text-dim)">
+      <strong style="color:var(--text)">By IOC Source:</strong><br>
+      {% for src, count in feed.stats.by_source.items() %}
+        <span style="margin-right:12px">{{ src }}: <strong>{{ count }}</strong></span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- SUBMIT IOC TAB -->
+<div id="tab-submit" style="display:none">
+  <div class="grid grid-2">
+    <div class="submit-panel">
+      <h3 style="color:var(--accent);margin-bottom:16px">Submit IOC to Global Feed</h3>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">IOC Type</label>
+          <select id="sub-type" class="form-control" style="margin-top:4px;font-size:12px">
+            {% for t in ['ip','domain','url','hash_md5','hash_sha256','email','cve','malware_family','certificate_sha1','bitcoin_address'] %}
+            <option value="{{ t }}">{{ t }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">IOC Value</label>
+          <input type="text" id="sub-value" class="form-control" placeholder="Enter the indicator value" style="margin-top:4px;font-size:12px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Associated Malware / Threat Actor</label>
+          <input type="text" id="sub-malware" class="form-control" placeholder="e.g. Emotet, APT28, LockBit" style="margin-top:4px;font-size:12px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Confidence (0-100)</label>
+          <input type="range" id="sub-conf" min="0" max="100" value="75" oninput="document.getElementById('conf-val').textContent=this.value+'%'" style="width:100%;margin-top:4px">
+          <span id="conf-val" style="font-size:11px;color:var(--accent)">75%</span>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">TLP Classification</label>
+          <select id="sub-tlp" class="form-control" style="margin-top:4px;font-size:12px">
+            <option value="WHITE">TLP:WHITE — Unrestricted</option>
+            <option value="GREEN">TLP:GREEN — Community</option>
+            <option value="AMBER" selected>TLP:AMBER — Limited distribution</option>
+            <option value="RED">TLP:RED — Eyes only</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="submitIOC()">Share to Global Feed</button>
+      </div>
+      <div id="submit-result" style="margin-top:14px"></div>
+    </div>
+
+    <div class="submit-panel">
+      <h3 style="color:var(--accent);margin-bottom:16px">IOC Correlation Engine</h3>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Paste multiple IOCs (one per line) to correlate against known campaigns and TTPs.</p>
+      <textarea id="correlate-input" class="form-control" rows="8" style="font-size:12px;font-family:monospace;resize:vertical" placeholder="ip:185.234.216.45&#10;domain:evil-c2.ru&#10;hash_md5:d41d8cd98f00b204e9800998ecf8427e&#10;cve:CVE-2021-44228"></textarea>
+      <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="correlateIOCs()">Correlate IOCs</button>
+      <div id="correlate-result" style="margin-top:14px"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(t) {
+  ['feed','map','campaigns','sources','submit'].forEach(id => {
+    document.getElementById('tab-'+id).style.display = id===t?'':'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',['feed','map','campaigns','sources','submit'][i]===t));
+}
+
+function filterFeed(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.ioc-row').forEach(r => {
+    r.style.display = (!q || r.dataset.value.includes(q)) ? '' : 'none';
+  });
+}
+
+function filterFeedType(t) {
+  document.querySelectorAll('.ioc-row').forEach(r => {
+    r.style.display = (!t || r.dataset.type === t) ? '' : 'none';
+  });
+}
+
+async function refreshFeed() {
+  const resp = await fetch('/threat-feed/api/feed?limit=30');
+  const data = await resp.json();
+  const scoreColors = s => s>=80?'#FF6B6B':s>=60?'#FFA726':s>=40?'#FFCA28':'#66BB6A';
+  document.getElementById('ioc-feed-list').innerHTML = data.iocs.map(ioc => `
+    <div class="ioc-row" data-type="${ioc.type}" data-value="${ioc.value.toLowerCase()}">
+      <div class="ioc-score" style="color:${scoreColors(ioc.threat_score)}">${ioc.threat_score}</div>
+      <div class="score-bar"><div class="score-fill" style="width:${ioc.threat_score}%;background:${scoreColors(ioc.threat_score)}"></div></div>
+      <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:80px;text-align:center">${ioc.type}</span>
+      <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${ioc.value.slice(0,60)}${ioc.value.length>60?'…':''}</code>
+      <span style="color:#FFA726;font-size:10px;min-width:100px">${(ioc.malware||'').slice(0,20)}</span>
+      <span class="tlp-${(ioc.tlp||'white').toLowerCase()}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700">TLP:${ioc.tlp||'WHITE'}</span>
+      <span style="color:var(--text-dim);font-size:9px;min-width:80px">${ioc.source||''}</span>
+    </div>`).join('');
+}
+
+async function submitIOC() {
+  const value = document.getElementById('sub-value').value.trim();
+  if (!value) { alert('Enter an IOC value'); return; }
+  const resp = await fetch('/threat-feed/api/submit-ioc', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      type: document.getElementById('sub-type').value,
+      value, malware: document.getElementById('sub-malware').value,
+      confidence: parseInt(document.getElementById('sub-conf').value),
+      tlp: document.getElementById('sub-tlp').value,
+    })
+  });
+  const data = await resp.json();
+  document.getElementById('submit-result').innerHTML = `<div style="background:#00ff8818;border:1px solid #00ff88;border-radius:8px;padding:12px;font-size:12px">
+    <div style="color:#00ff88;font-weight:700">✓ IOC shared to global feed</div>
+    <div style="color:var(--text-dim);margin-top:4px">ID: ${data.id} · Score: ${data.threat_score}/100</div>
+  </div>`;
+  document.getElementById('sub-value').value = '';
+}
+
+async function correlateIOCs() {
+  const input = document.getElementById('correlate-input').value.trim();
+  if (!input) return;
+  const iocs = input.split('\n').map(line => {
+    const [type, ...rest] = line.split(':');
+    return {type: type.trim(), value: rest.join(':').trim()};
+  }).filter(i => i.type && i.value);
+  const resp = await fetch('/threat-feed/api/correlate', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({iocs})
+  });
+  const data = await resp.json();
+  const el = document.getElementById('correlate-result');
+  el.innerHTML = `<div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
+    <div style="font-size:13px;font-weight:700;margin-bottom:10px">Correlation Results</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+      <div style="background:var(--bg-card);border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:#FF6B6B">${data.campaign_matches?.length||0}</div>
+        <div style="font-size:10px;color:var(--text-dim)">Campaign Matches</div>
+      </div>
+      <div style="background:var(--bg-card);border-radius:6px;padding:10px;text-align:center">
+        <div style="font-size:20px;font-weight:700;color:#FFA726">${Math.round(data.attribution_confidence||0)}%</div>
+        <div style="font-size:10px;color:var(--text-dim)">Attribution Confidence</div>
+      </div>
+    </div>
+    ${data.campaign_matches?.length ? data.campaign_matches.map(m=>`<div style="background:var(--bg-card);border-radius:6px;padding:8px;margin-bottom:6px;font-size:11px"><strong>${m.campaign}</strong> — <span style="color:#FFA726">${m.actor}</span> (${m.confidence}%)</div>`).join('') : '<div style="font-size:11px;color:var(--text-dim)">No campaign matches found.</div>'}
+    ${data.pattern_analysis?.likely_ttps?.length ? `<div style="margin-top:10px"><div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--accent)">Likely TTPs:</div>${data.pattern_analysis.likely_ttps.map(t=>`<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)">${t}</div>`).join('')}</div>` : ''}
+  </div>`;
+}
+</script>
+{% endblock %}

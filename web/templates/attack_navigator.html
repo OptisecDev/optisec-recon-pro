@@ -1,0 +1,378 @@
+{% extends "base.html" %}
+{% block title %}ATT&CK Navigator — {{ app_name }}{% endblock %}
+{% block page_title %}MITRE ATT&CK Navigator{% endblock %}
+
+{% block content %}
+<style>
+.nav-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.matrix-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--bg-card)}
+.matrix-table{border-collapse:collapse;min-width:100%}
+.matrix-table th{background:var(--bg-secondary);color:var(--text);font-size:10px;font-weight:700;
+  text-transform:uppercase;padding:10px 8px;text-align:center;border:1px solid var(--border);
+  white-space:nowrap;min-width:120px;position:sticky;top:0;z-index:10}
+.tac-header{display:flex;flex-direction:column;gap:4px;align-items:center}
+.tac-count{font-size:9px;color:var(--text-dim);font-weight:400}
+.tech-cell{padding:4px;border:1px solid var(--border);vertical-align:top;width:130px;cursor:pointer;
+  transition:background 0.2s;position:relative}
+.tech-cell:hover{background:rgba(0,255,136,0.07)}
+.tech-item{font-size:9.5px;padding:4px 6px;border-radius:4px;margin-bottom:3px;cursor:pointer;
+  border:1px solid transparent;transition:all 0.15s;line-height:1.3}
+.tech-item:hover{border-color:var(--accent);background:rgba(0,255,136,0.1)}
+.tech-item.detected{background:rgba(255,107,107,0.25);border-color:#FF6B6B}
+.tech-item.sub{font-size:8.5px;margin-left:8px;opacity:0.8;padding:2px 5px}
+.sev-critical{color:#FF6B6B}.sev-high{color:#FFA726}.sev-medium{color:#FFCA28}.sev-low{color:#66BB6A}
+.apt-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:16px;
+  transition:all 0.2s;cursor:pointer}
+.apt-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.apt-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;
+  font-size:10px;font-weight:700;text-transform:uppercase}
+.apt-critical{background:rgba(255,107,107,0.2);color:#FF6B6B;border:1px solid #FF6B6B}
+.apt-high{background:rgba(255,167,38,0.2);color:#FFA726;border:1px solid #FFA726}
+.ioc-panel{background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:16px}
+.coverage-bar{height:8px;border-radius:4px;background:var(--bg-secondary);overflow:hidden;margin-top:4px}
+.coverage-fill{height:100%;border-radius:4px;background:var(--accent);transition:width 0.5s}
+.filter-btn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;
+  color:var(--text-dim);font-size:11px;cursor:pointer;transition:all 0.2s}
+.filter-btn.active,.filter-btn:hover{background:var(--accent);color:#000;border-color:var(--accent)}
+#detail-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;
+  align-items:center;justify-content:center}
+#detail-modal.open{display:flex}
+.modal-box{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;
+  padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto}
+</style>
+
+<div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+  <div class="stat-card">
+    <div class="stat-value" style="color:#00ff88">{{ matrix.total_tactics }}</div>
+    <div class="stat-label">Tactics</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FFA726">{{ matrix.total_techniques }}</div>
+    <div class="stat-label">Techniques</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#FF6B6B" id="detected-count">0</div>
+    <div class="stat-label">Detected</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#7E57C2" id="coverage-pct">0%</div>
+    <div class="stat-label">Coverage</div>
+  </div>
+</div>
+
+<div class="tabs" style="margin-bottom:20px">
+  <button class="tab-btn active" onclick="showTab('matrix')">Matrix View</button>
+  <button class="tab-btn" onclick="showTab('apt')">APT Profiles</button>
+  <button class="tab-btn" onclick="showTab('ioc')">IOC Detection</button>
+  <button class="tab-btn" onclick="showTab('detections')">Live Detections</button>
+</div>
+
+<!-- MATRIX TAB -->
+<div id="tab-matrix">
+  <div class="nav-controls">
+    <span style="font-size:12px;color:var(--text-dim)">Filter severity:</span>
+    <button class="filter-btn active" onclick="filterSev('all')">All</button>
+    <button class="filter-btn" onclick="filterSev('critical')" style="color:#FF6B6B">Critical</button>
+    <button class="filter-btn" onclick="filterSev('high')" style="color:#FFA726">High</button>
+    <button class="filter-btn" onclick="filterSev('medium')" style="color:#FFCA28">Medium</button>
+    <input type="text" class="form-control" style="max-width:200px;font-size:12px" placeholder="Search technique..." oninput="searchMatrix(this.value)">
+    <button class="btn btn-secondary btn-sm" onclick="loadDetections()">Refresh Detections</button>
+  </div>
+
+  <div class="matrix-wrap">
+    <table class="matrix-table" id="attack-matrix">
+      <thead>
+        <tr>
+          {% for tac in matrix.tactics %}
+          <th>
+            <div class="tac-header">
+              <span style="color:{{ tac.color }}">{{ tac.name }}</span>
+              <span class="tac-count">{{ tac.id }} · {{ tac.technique_count }} techs</span>
+            </div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          {% for tac in matrix.tactics %}
+          <td class="tech-cell" data-tactic="{{ tac.id }}">
+            {% for tech in tac.techniques %}
+            <div class="tech-item{% if tech.sub %} sub{% endif %}"
+                 data-id="{{ tech.id }}" data-sev="{{ tech.severity }}"
+                 data-tactic="{{ tac.id }}"
+                 onclick="showTechDetail('{{ tech.id }}','{{ tech.name }}','{{ tech.severity }}','{{ tac.name }}','{{ tac.color }}')"
+                 title="{{ tech.id }}: {{ tech.name }}">
+              <span class="sev-{{ tech.severity }}">{% if tech.sub %}↳ {% endif %}{{ tech.id }}</span>
+              <div style="font-size:8px;color:var(--text-dim);margin-top:1px;line-height:1.2">{{ tech.name[:28] }}{% if tech.name|length > 28 %}…{% endif %}</div>
+            </div>
+            {% endfor %}
+          </td>
+          {% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- APT PROFILES TAB -->
+<div id="tab-apt" style="display:none">
+  <div class="grid grid-3">
+    {% for apt in apt_groups %}
+    <div class="apt-card" onclick="showAptDetail('{{ apt.id }}')">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--text)">{{ apt.name }}</div>
+          <div style="font-size:11px;color:var(--text-dim)">{{ apt.id }}</div>
+        </div>
+        <span class="apt-badge apt-{{ apt.risk_level }}">{{ apt.risk_level }}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">
+        <span>🌍 {{ apt.origin }}</span> · <span>🏛️ {{ apt.sponsor }}</span> · <span>📅 Since {{ apt.active_since }}</span>
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:8px">{{ apt.description[:100] }}…</div>
+      <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">
+        {% for sector in apt.target_sectors[:3] %}
+        <span class="badge badge-info" style="font-size:9px">{{ sector }}</span>
+        {% endfor %}
+      </div>
+      <div style="font-size:10px;color:var(--text-dim)">
+        Techniques: {% for tid in apt.techniques[:4] %}<code style="font-size:9px;background:var(--bg-secondary);padding:1px 4px;border-radius:3px">{{ tid }}</code>{% if not loop.last %} {% endif %}{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- IOC DETECTION TAB -->
+<div id="tab-ioc" style="display:none">
+  <div class="grid grid-2">
+    <div class="ioc-panel">
+      <h3 style="margin-bottom:16px;color:var(--accent)">IOC → Technique Mapping</h3>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Submit IOCs to automatically map them to MITRE ATT&CK techniques.</p>
+      <div id="ioc-rows">
+        <div class="ioc-row" style="display:flex;gap:8px;margin-bottom:8px">
+          <select class="form-control" style="flex:0 0 130px;font-size:11px" name="ioc_type">
+            {% for t in ioc_types[:15] %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+          </select>
+          <input type="text" class="form-control" name="ioc_value" placeholder="IOC value..." style="font-size:12px">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-secondary btn-sm" onclick="addIocRow()">+ Add IOC</button>
+        <button class="btn btn-primary" onclick="detectIOCs()">Map to ATT&CK</button>
+      </div>
+      <div id="ioc-results" style="margin-top:16px"></div>
+    </div>
+
+    <div class="ioc-panel">
+      <h3 style="margin-bottom:16px;color:var(--accent)">Add Detection</h3>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Manually record a technique detection to update matrix coverage.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Technique ID</label>
+          <input type="text" id="det-tech-id" class="form-control" placeholder="e.g. T1059.001" style="font-size:12px;margin-top:4px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Confidence (0-100)</label>
+          <input type="number" id="det-confidence" class="form-control" value="75" min="0" max="100" style="font-size:12px;margin-top:4px">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Source</label>
+          <select id="det-source" class="form-control" style="font-size:12px;margin-top:4px">
+            <option>SIEM Alert</option><option>EDR</option><option>Manual Analysis</option>
+            <option>Network IDS</option><option>Threat Intel</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text-dim)">Details</label>
+          <input type="text" id="det-details" class="form-control" placeholder="Brief description..." style="font-size:12px;margin-top:4px">
+        </div>
+        <button class="btn btn-primary" onclick="addDetection()">Record Detection</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LIVE DETECTIONS TAB -->
+<div id="tab-detections" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <h3 style="color:var(--accent)">Live Detection Log</h3>
+    <button class="btn btn-secondary btn-sm" onclick="loadDetections()">Refresh</button>
+  </div>
+  <div id="detections-container">
+    <div style="text-align:center;padding:40px;color:var(--text-dim)">Loading detections...</div>
+  </div>
+  <div style="margin-top:20px">
+    <h4 style="color:var(--text);margin-bottom:12px">Tactic Coverage</h4>
+    <div id="coverage-bars" style="display:flex;flex-direction:column;gap:8px"></div>
+  </div>
+</div>
+
+<!-- DETAIL MODAL -->
+<div id="detail-modal">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+      <div>
+        <div id="modal-tid" style="font-size:12px;color:var(--text-dim)"></div>
+        <div id="modal-tname" style="font-size:18px;font-weight:700"></div>
+        <div id="modal-tactic" style="font-size:12px;color:var(--text-dim);margin-top:4px"></div>
+      </div>
+      <button onclick="closeModal()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">×</button>
+    </div>
+    <div id="modal-sev" style="margin-bottom:12px"></div>
+    <div style="margin-bottom:16px">
+      <button class="btn btn-primary btn-sm" onclick="recordFromModal()">Record Detection</button>
+      <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="highlightOnMatrix()">Highlight on Matrix</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentModalTech = {};
+
+function showTab(tab) {
+  ['matrix','apt','ioc','detections'].forEach(t => {
+    document.getElementById('tab-'+t).style.display = t === tab ? '' : 'none';
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    b.classList.toggle('active', ['matrix','apt','ioc','detections'][i] === tab);
+  });
+  if (tab === 'detections') loadDetections();
+}
+
+function filterSev(sev) {
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  document.querySelectorAll('.tech-item').forEach(el => {
+    el.style.display = (sev === 'all' || el.dataset.sev === sev) ? '' : 'none';
+  });
+}
+
+function searchMatrix(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.tech-item').forEach(el => {
+    const text = el.textContent.toLowerCase();
+    el.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
+}
+
+function showTechDetail(id, name, sev, tactic, color) {
+  currentModalTech = {id, name, sev, tactic};
+  document.getElementById('modal-tid').textContent = id;
+  document.getElementById('modal-tname').textContent = name;
+  document.getElementById('modal-tname').style.color = color;
+  document.getElementById('modal-tactic').textContent = 'Tactic: ' + tactic;
+  const sevColors = {critical:'#FF6B6B',high:'#FFA726',medium:'#FFCA28',low:'#66BB6A'};
+  document.getElementById('modal-sev').innerHTML = `<span class="badge" style="background:${sevColors[sev]}20;color:${sevColors[sev]};border:1px solid ${sevColors[sev]};text-transform:uppercase;font-size:11px;padding:4px 10px;border-radius:20px">${sev}</span>`;
+  document.getElementById('detail-modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('detail-modal').classList.remove('open');
+}
+
+async function recordFromModal() {
+  if (!currentModalTech.id) return;
+  const resp = await fetch('/attack-navigator/api/add-detection', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({technique_id: currentModalTech.id, confidence: 80, source: 'Manual', details: 'Recorded from Navigator'})
+  });
+  const data = await resp.json();
+  closeModal();
+  const el = document.querySelector(`[data-id="${currentModalTech.id}"]`);
+  if (el) el.classList.add('detected');
+  loadDetections();
+  alert(`Detection recorded: ${currentModalTech.id}`);
+}
+
+function highlightOnMatrix() {
+  closeModal();
+  const el = document.querySelector(`[data-id="${currentModalTech.id}"]`);
+  if (el) { el.scrollIntoView({behavior:'smooth',block:'center'}); el.style.outline='2px solid var(--accent)'; setTimeout(()=>el.style.outline='',2000); }
+}
+
+function addIocRow() {
+  const row = document.createElement('div');
+  row.className = 'ioc-row';
+  row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
+  const types = {{ ioc_types | tojson }};
+  row.innerHTML = `<select class="form-control" style="flex:0 0 130px;font-size:11px" name="ioc_type">${types.slice(0,15).map(t=>`<option value="${t}">${t}</option>`).join('')}</select><input type="text" class="form-control" name="ioc_value" placeholder="IOC value..." style="font-size:12px"><button onclick="this.parentElement.remove()" style="background:none;border:none;color:#FF6B6B;font-size:16px;cursor:pointer">×</button>`;
+  document.getElementById('ioc-rows').appendChild(row);
+}
+
+async function detectIOCs() {
+  const rows = document.querySelectorAll('.ioc-row');
+  const iocs = [];
+  rows.forEach(row => {
+    const type = row.querySelector('[name=ioc_type]')?.value;
+    const value = row.querySelector('[name=ioc_value]')?.value;
+    if (type && value) iocs.push({type, value});
+  });
+  if (!iocs.length) return;
+  const resp = await fetch('/attack-navigator/api/detect-iocs', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({iocs})
+  });
+  const data = await resp.json();
+  const container = document.getElementById('ioc-results');
+  if (!data.technique_hits?.length) { container.innerHTML = '<p style="color:var(--text-dim);font-size:12px">No technique mappings found.</p>'; return; }
+  container.innerHTML = `<div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--accent)">${data.total_hits} techniques mapped from ${data.iocs_processed} IOCs</div>` +
+    data.technique_hits.map(h => `<div style="background:var(--bg-secondary);border-radius:6px;padding:8px;margin-bottom:6px;font-size:11px"><strong>${h.technique_id}</strong> — ${h.technique_name} <span style="color:var(--text-dim)">(${h.ioc_count} IOC hits)</span></div>`).join('');
+  data.technique_hits.forEach(h => {
+    const el = document.querySelector(`[data-id="${h.technique_id}"]`);
+    if (el) el.classList.add('detected');
+  });
+  updateCounters(data.total_hits);
+}
+
+async function addDetection() {
+  const tid = document.getElementById('det-tech-id').value;
+  const conf = document.getElementById('det-confidence').value;
+  const src = document.getElementById('det-source').value;
+  const details = document.getElementById('det-details').value;
+  if (!tid) { alert('Enter a technique ID'); return; }
+  await fetch('/attack-navigator/api/add-detection', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({technique_id: tid, confidence: parseInt(conf), source: src, details})
+  });
+  const el = document.querySelector(`[data-id="${tid}"]`);
+  if (el) el.classList.add('detected');
+  document.getElementById('det-tech-id').value = '';
+  loadDetections();
+}
+
+async function loadDetections() {
+  const resp = await fetch('/attack-navigator/api/detections');
+  const data = await resp.json();
+  const container = document.getElementById('detections-container');
+  if (!data.detections?.length) {
+    container.innerHTML = '<p style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">No detections recorded yet.</p>';
+  } else {
+    container.innerHTML = '<table class="table" style="font-size:11px"><thead><tr><th>Technique</th><th>Name</th><th>Confidence</th><th>Source</th><th>Time</th></tr></thead><tbody>' +
+      data.detections.slice(0,20).map(d => `<tr><td><code>${d.technique_id}</code></td><td>${d.technique_name}</td><td><span class="badge badge-${d.confidence>=80?'critical':d.confidence>=60?'high':'medium'}">${d.confidence}%</span></td><td>${d.source}</td><td style="color:var(--text-dim)">${new Date(d.timestamp).toLocaleString()}</td></tr>`).join('') +
+      '</tbody></table>';
+  }
+  // Coverage bars
+  if (data.coverage) {
+    const bars = document.getElementById('coverage-bars');
+    bars.innerHTML = Object.entries(data.coverage).map(([id, c]) => `<div><div style="display:flex;justify-content:space-between;font-size:10px;margin-bottom:2px"><span>${c.tactic_name}</span><span style="color:var(--text-dim)">${c.covered}/${c.total} (${c.pct}%)</span></div><div class="coverage-bar"><div class="coverage-fill" style="width:${c.pct}%"></div></div></div>`).join('');
+  }
+  updateCounters(data.detections?.length || 0);
+}
+
+function updateCounters(n) {
+  document.getElementById('detected-count').textContent = n;
+  const total = {{ matrix.total_techniques }};
+  document.getElementById('coverage-pct').textContent = Math.round(n/total*100) + '%';
+}
+
+function showAptDetail(id) {
+  const apt = {{ apt_groups | tojson }}.find(a => a.id === id);
+  if (!apt) return;
+  alert(`${apt.name}\n\nDescription: ${apt.description}\nMalware: ${apt.malware.join(', ')}\nTechniques: ${apt.techniques.join(', ')}`);
+}
+
+window.addEventListener('click', e => { if (e.target.id === 'detail-modal') closeModal(); });
+</script>
+{% endblock %}
