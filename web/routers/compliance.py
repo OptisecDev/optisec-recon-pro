@@ -49,8 +49,9 @@ async def framework_controls(framework: str, user: User = Depends(_user)):
 async def assess(request: Request, user: User = Depends(_user)):
     data = await request.json()
     from modules.compliance.checker import assess_target
+    target = data.get("target_url") or data.get("target", "")
     return await assess_target(
-        target_url=data.get("target_url", ""),
+        target_url=target,
         framework=data.get("framework", "nist"),
         answers=data.get("answers", {}),
     )
@@ -60,4 +61,5 @@ async def assess(request: Request, user: User = Depends(_user)):
 async def probe_target(request: Request, user: User = Depends(_user)):
     data = await request.json()
     from modules.compliance.checker import auto_probe_target
-    return await auto_probe_target(data.get("target_url", ""))
+    target = data.get("target_url") or data.get("target", "")
+    return await auto_probe_target(target)

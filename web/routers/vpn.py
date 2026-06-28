@@ -21,7 +21,9 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 
 async def _admin(request: Request, db: AsyncSession = Depends(get_db)) -> User:
-    return await require_admin(request, db)
+    user = await get_current_user(request, db)
+    require_admin(user)
+    return user
 
 
 @router.get("", response_class=HTMLResponse)

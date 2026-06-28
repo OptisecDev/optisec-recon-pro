@@ -34,8 +34,9 @@ _PUBLIC_HEADERS = {
 
 async def search_programs(keyword: str = "", limit: int = 20) -> dict:
     """Search HackerOne programs — tries public API first, falls back to auth then demo."""
+    # Empty query returns [] from H1 public API; use broad term to list all programs
     params = {
-        "query": keyword,
+        "query": keyword if keyword.strip() else "a",
         "sort": "published_at",
         "direction": "DESC",
         "page": 1,
