@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Reports
+reports/
+
+# Environment
+.env
+
+# Database
+data/optisec.db
+
+# Virtualenv
+venv/
+
+# Logs
+*.log
+nohup.out
+
+# Keys & secrets
+data/federation_node.key
+data/quantum_keys/
+data/wireguard/
