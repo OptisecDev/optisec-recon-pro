@@ -176,8 +176,21 @@ FRAMEWORKS = {
 }
 
 
+def _normalize_framework(framework: str) -> str:
+    fw = framework.lower().strip()
+    if fw in FRAMEWORKS:
+        return fw
+    no_spaces = fw.replace(" ", "")
+    if no_spaces in FRAMEWORKS:
+        return no_spaces
+    underscored = fw.replace(" ", "_").replace("-", "_")
+    if underscored in FRAMEWORKS:
+        return underscored
+    return fw
+
+
 async def assess_target(target_url: str, framework: str, answers: dict) -> dict:
-    framework = framework.lower()
+    framework = _normalize_framework(framework)
     framework_data = FRAMEWORKS.get(framework)
     if not framework_data:
         return {"error": f"Unknown framework: {framework}"}
@@ -268,7 +281,7 @@ def get_frameworks() -> dict:
 
 
 def get_framework_controls(framework: str) -> list:
-    return FRAMEWORKS.get(framework.lower(), {}).get("controls", [])
+    return FRAMEWORKS.get(_normalize_framework(framework), {}).get("controls", [])
 
 
 def _risk_level(status: str) -> str:
