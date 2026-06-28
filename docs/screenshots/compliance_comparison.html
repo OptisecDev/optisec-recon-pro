@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Compliance Comparison</title>
+<style>
+* { box-sizing:border-box; margin:0; padding:0; }
+body { background:#080808; color:#e0e0e0; font-family:'Courier New',monospace; padding:40px 48px; }
+h1 { color:#00ff88; text-align:center; font-size:22px; letter-spacing:4px; margin-bottom:4px; }
+.sub { text-align:center; color:#444; font-size:12px; margin-bottom:36px; letter-spacing:1px; }
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-bottom:36px; }
+.card { background:#111; border-radius:10px; padding:24px 24px 18px; }
+.fw-name { font-size:12px; letter-spacing:1px; margin-bottom:12px; font-weight:bold; }
+.metrics { display:flex; align-items:center; gap:16px; margin-bottom:12px; }
+.score { font-size:52px; font-weight:900; line-height:1; }
+.grade { font-size:38px; font-weight:900; line-height:1; }
+.risk-badge { font-size:11px; padding:3px 12px; border-radius:20px; letter-spacing:1px; font-weight:bold; }
+.bar-bg { background:#1a1a1a; border-radius:4px; height:7px; margin-bottom:12px; }
+.bar-fill { height:7px; border-radius:4px; }
+.counts { font-size:12px; display:flex; gap:16px; color:#555; }
+table { width:100%; border-collapse:collapse; background:#111; border-radius:10px; overflow:hidden; }
+th { background:#181818; color:#00ff88; padding:13px 18px; text-align:left; font-size:11px; letter-spacing:1.5px; border-bottom:1px solid #1e1e1e; }
+td { padding:14px 18px; border-bottom:1px solid #161616; font-size:13px; }
+tr:last-child td { border-bottom:none; }
+tr:hover td { background:#131313; }
+</style>
+</head>
+<body>
+<h1>OPTISEC — COMPLIANCE COMPARISON</h1>
+<div class="sub">Target: https://example.com &nbsp;·&nbsp; 2026-06-28 23:34 UTC</div>
+<div class="grid">
+<div class="card" style="border-left:4px solid #0080ff;">
+  <div class="fw-name" style="color:#0080ff;">ISO/IEC 27001:2022</div>
+  <div class="metrics">
+    <span class="score" style="color:#0080ff;">66.7%</span>
+    <span class="grade" style="color:#ff8800;">D</span>
+    <span class="risk-badge" style="background:#ff336620;color:#ff3366;border:1px solid #ff336655;">HIGH</span>
+  </div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:66.7%;background:#0080ff;"></div>
+  </div>
+  <div class="counts">
+    <span style="color:#00ff88;">✓ 8 Compliant</span>
+    <span style="color:#ff3366;">✗ 4 Non-Compliant</span>
+    <span style="color:#555;">/ 12 Total</span>
+  </div>
+</div>
+<div class="card" style="border-left:4px solid #00ff88;">
+  <div class="fw-name" style="color:#00ff88;">NIST Cybersecurity Framework 2.0</div>
+  <div class="metrics">
+    <span class="score" style="color:#00ff88;">75.0%</span>
+    <span class="grade" style="color:#ffd700;">C</span>
+    <span class="risk-badge" style="background:#ffd70020;color:#ffd700;border:1px solid #ffd70055;">MEDIUM</span>
+  </div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:75.0%;background:#00ff88;"></div>
+  </div>
+  <div class="counts">
+    <span style="color:#00ff88;">✓ 9 Compliant</span>
+    <span style="color:#ff3366;">✗ 3 Non-Compliant</span>
+    <span style="color:#555;">/ 12 Total</span>
+  </div>
+</div>
+<div class="card" style="border-left:4px solid #ff6b35;">
+  <div class="fw-name" style="color:#ff6b35;">General Data Protection Regulation</div>
+  <div class="metrics">
+    <span class="score" style="color:#ff6b35;">58.3%</span>
+    <span class="grade" style="color:#ff3366;">F</span>
+    <span class="risk-badge" style="background:#ff336620;color:#ff3366;border:1px solid #ff336655;">HIGH</span>
+  </div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:58.3%;background:#ff6b35;"></div>
+  </div>
+  <div class="counts">
+    <span style="color:#00ff88;">✓ 7 Compliant</span>
+    <span style="color:#ff3366;">✗ 5 Non-Compliant</span>
+    <span style="color:#555;">/ 12 Total</span>
+  </div>
+</div>
+<div class="card" style="border-left:4px solid #ff3366;">
+  <div class="fw-name" style="color:#ff3366;">PCI DSS v4.0</div>
+  <div class="metrics">
+    <span class="score" style="color:#ff3366;">70.0%</span>
+    <span class="grade" style="color:#ffd700;">C</span>
+    <span class="risk-badge" style="background:#ffd70020;color:#ffd700;border:1px solid #ffd70055;">MEDIUM</span>
+  </div>
+  <div class="bar-bg">
+    <div class="bar-fill" style="width:70.0%;background:#ff3366;"></div>
+  </div>
+  <div class="counts">
+    <span style="color:#00ff88;">✓ 7 Compliant</span>
+    <span style="color:#ff3366;">✗ 3 Non-Compliant</span>
+    <span style="color:#555;">/ 10 Total</span>
+  </div>
+</div></div>
+<table>
+  <tr><th>FRAMEWORK</th><th>SCORE</th><th>GRADE</th><th>RISK</th><th>COMPLIANT</th><th>NON-COMPLIANT</th><th>TOTAL</th></tr>
+  <tr>
+  <td style="color:#0080ff;font-weight:bold;">ISO/IEC 27001:2022</td>
+  <td><span style="font-size:20px;font-weight:900;color:#0080ff;">66.7%</span></td>
+  <td><span style="font-size:18px;font-weight:900;color:#ff8800;">D</span></td>
+  <td><span class="risk-badge" style="background:#ff336620;color:#ff3366;border:1px solid #ff336655;">HIGH</span></td>
+  <td style="color:#00ff88;font-weight:bold;">8</td>
+  <td style="color:#ff3366;font-weight:bold;">4</td>
+  <td style="color:#555;">12</td>
+</tr><tr>
+  <td style="color:#00ff88;font-weight:bold;">NIST Cybersecurity Framework 2.0</td>
+  <td><span style="font-size:20px;font-weight:900;color:#00ff88;">75.0%</span></td>
+  <td><span style="font-size:18px;font-weight:900;color:#ffd700;">C</span></td>
+  <td><span class="risk-badge" style="background:#ffd70020;color:#ffd700;border:1px solid #ffd70055;">MEDIUM</span></td>
+  <td style="color:#00ff88;font-weight:bold;">9</td>
+  <td style="color:#ff3366;font-weight:bold;">3</td>
+  <td style="color:#555;">12</td>
+</tr><tr>
+  <td style="color:#ff6b35;font-weight:bold;">General Data Protection Regulation</td>
+  <td><span style="font-size:20px;font-weight:900;color:#ff6b35;">58.3%</span></td>
+  <td><span style="font-size:18px;font-weight:900;color:#ff3366;">F</span></td>
+  <td><span class="risk-badge" style="background:#ff336620;color:#ff3366;border:1px solid #ff336655;">HIGH</span></td>
+  <td style="color:#00ff88;font-weight:bold;">7</td>
+  <td style="color:#ff3366;font-weight:bold;">5</td>
+  <td style="color:#555;">12</td>
+</tr><tr>
+  <td style="color:#ff3366;font-weight:bold;">PCI DSS v4.0</td>
+  <td><span style="font-size:20px;font-weight:900;color:#ff3366;">70.0%</span></td>
+  <td><span style="font-size:18px;font-weight:900;color:#ffd700;">C</span></td>
+  <td><span class="risk-badge" style="background:#ffd70020;color:#ffd700;border:1px solid #ffd70055;">MEDIUM</span></td>
+  <td style="color:#00ff88;font-weight:bold;">7</td>
+  <td style="color:#ff3366;font-weight:bold;">3</td>
+  <td style="color:#555;">10</td>
+</tr>
+</table>
+</body></html>
