@@ -24,6 +24,9 @@ from web.auth import (
     verify_password, hash_password, create_access_token,
     generate_api_key, get_current_user,
     require_admin, require_analyst_or_admin,
+    check_rate_limit, record_failed_attempt, clear_attempts,
+    log_auth_event, validate_password_strength,
+    SECRET_KEY, ALGORITHM,
 )
 from web.websocket_manager import ws_manager
 
@@ -67,6 +70,26 @@ app.include_router(ngfw.router)
 app.include_router(threat_feed.router)
 
 
+# ─── Session timeout middleware (sliding 30-min window) ───────────────────────
+
+@app.middleware("http")
+async def session_refresh_middleware(request: Request, call_next):
+    response = await call_next(request)
+    token = request.cookies.get("access_token")
+    if token and response.status_code < 400:
+        try:
+            from jose import jwt as jose_jwt
+            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            new_token = create_access_token(int(payload["sub"]), payload["role"])
+            response.set_cookie(
+                "access_token", new_token,
+                httponly=True, max_age=1800, samesite="lax",
+            )
+        except Exception:
+            pass
+    return response
+
+
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
@@ -79,8 +102,11 @@ async def _ensure_first_admin():
     async with SessionLocal() as db:
         count = (await db.execute(select(func.count()).select_from(User))).scalar()
         if count == 0:
+            import secrets as _secrets
             username = os.environ.get("FIRST_ADMIN_USER", "admin")
-            password = os.environ.get("FIRST_ADMIN_PASSWORD", "admin123")
+            password = os.environ.get("FIRST_ADMIN_PASSWORD") or (
+                _secrets.token_urlsafe(12) + "!A1"  # meets strength requirements
+            )
             email = os.environ.get("FIRST_ADMIN_EMAIL", "admin@optisec.local")
             admin = User(
                 username=username,
@@ -93,6 +119,7 @@ async def _ensure_first_admin():
             db.add(admin)
             await db.commit()
             print(f"[OPTISEC] Initial admin created → {username} / {password}")
+            log_auth_event("INIT_ADMIN", username, "localhost", True, "first admin created")
 
 
 # ─── Exception Handlers ───────────────────────────────────────────────────────
@@ -122,7 +149,6 @@ async def login_page(request: Request, next: str = "/", error: str = ""):
     if token:
         try:
             from jose import jwt as jose_jwt
-            from web.auth import SECRET_KEY, ALGORITHM
             jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return RedirectResponse("/", status_code=302)
         except Exception:
@@ -140,6 +166,18 @@ async def login_submit(
     next: str = Form("/"),
     db: AsyncSession = Depends(get_db),
 ):
+    ip = request.client.host if request.client else "unknown"
+
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        minutes = remaining // 60 + 1
+        log_auth_event("LOGIN", username, ip, False, f"rate_limited remaining={remaining}s")
+        return templates.TemplateResponse(request, "login.html", {
+            "app_name": APP_NAME,
+            "error": f"Too many failed attempts. Try again in {minutes} minute(s).",
+            "next": next,
+        }, status_code=429)
+
     result = await db.execute(
         select(User).where(
             (User.username == username) | (User.email == username),
@@ -149,18 +187,22 @@ async def login_submit(
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(password, user.password_hash):
+        record_failed_attempt(ip)
+        log_auth_event("LOGIN", username, ip, False, "invalid_credentials")
         return templates.TemplateResponse(request, "login.html", {
             "app_name": APP_NAME,
             "error": "Invalid username or password",
             "next": next,
         }, status_code=401)
 
+    clear_attempts(ip)
     user.last_login = datetime.utcnow()
     await db.commit()
+    log_auth_event("LOGIN", user.username, ip, True)
 
     token = create_access_token(user.id, user.role)
     response = RedirectResponse(next or "/", status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=86400, samesite="lax")
+    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax")
     return response
 
 
@@ -179,9 +221,13 @@ async def register_submit(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    if len(password) < 8:
+    ip = request.client.host if request.client else "unknown"
+
+    pw_errors = validate_password_strength(password)
+    if pw_errors:
         return templates.TemplateResponse(request, "register.html", {
-            "app_name": APP_NAME, "error": "Password must be at least 8 characters",
+            "app_name": APP_NAME,
+            "error": "Password must have: " + ", ".join(pw_errors),
         }, status_code=400)
 
     exists = (await db.execute(
@@ -203,10 +249,11 @@ async def register_submit(
     )
     db.add(user)
     await db.commit()
+    log_auth_event("REGISTER", username, ip, True)
 
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=86400, samesite="lax")
+    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax")
     return response
 
 
@@ -222,15 +269,28 @@ async def logout():
 @app.post("/api/auth/login")
 async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
+    ip = request.client.host if request.client else "unknown"
+    username_input = data.get("username", "")
+
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        log_auth_event("API_LOGIN", username_input, ip, False, f"rate_limited remaining={remaining}s")
+        raise HTTPException(429, f"Too many failed attempts. Try again in {remaining} seconds.")
+
     result = await db.execute(
         select(User).where(
-            (User.username == data.get("username", "")) | (User.email == data.get("username", "")),
+            (User.username == username_input) | (User.email == username_input),
             User.is_active == True,
         )
     )
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.get("password", ""), user.password_hash):
+        record_failed_attempt(ip)
+        log_auth_event("API_LOGIN", username_input, ip, False, "invalid_credentials")
         raise HTTPException(401, "Invalid credentials")
+
+    clear_attempts(ip)
+    log_auth_event("API_LOGIN", user.username, ip, True)
     token = create_access_token(user.id, user.role)
     return JSONResponse({
         "access_token": token, "token_type": "bearer",
@@ -244,9 +304,11 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     username = data.get("username", "")
     email = data.get("email", "")
     password = data.get("password", "")
+    ip = request.client.host if request.client else "unknown"
 
-    if len(password) < 8:
-        raise HTTPException(400, "Password must be at least 8 characters")
+    pw_errors = validate_password_strength(password)
+    if pw_errors:
+        raise HTTPException(400, "Password must have: " + ", ".join(pw_errors))
 
     if (await db.execute(select(User).where(
         (User.username == username) | (User.email == email)
@@ -262,6 +324,7 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.commit()
+    log_auth_event("API_REGISTER", username, ip, True)
     return JSONResponse({"id": user.id, "username": user.username,
                          "role": user.role, "api_key": user.api_key})
 

@@ -1,6 +1,11 @@
 import os
+import re
+import time
 import secrets
+import logging
+from collections import defaultdict
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import bcrypt
 from jose import JWTError, jwt
@@ -10,8 +15,56 @@ from sqlalchemy import select
 
 SECRET_KEY = os.environ.get("JWT_SECRET", "optisec-enterprise-key-change-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "30"))
 
+# ─── Auth event logger ─────────────────────────────────────────────────────────
+_log_dir = Path(__file__).parent.parent / "logs"
+_log_dir.mkdir(exist_ok=True)
+
+_auth_logger = logging.getLogger("optisec.auth")
+if not _auth_logger.handlers:
+    _handler = logging.FileHandler(_log_dir / "auth.log")
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    _auth_logger.addHandler(_handler)
+    _auth_logger.setLevel(logging.INFO)
+
+
+def log_auth_event(event: str, username: str, ip: str, success: bool, detail: str = "") -> None:
+    status = "SUCCESS" if success else "FAILURE"
+    msg = f"{status} | {event} | user={username!r} | ip={ip}"
+    if detail:
+        msg += f" | {detail}"
+    _auth_logger.info(msg)
+
+
+# ─── Rate limiting ─────────────────────────────────────────────────────────────
+RATE_LIMIT_MAX = 5
+RATE_LIMIT_WINDOW = 900  # 15 minutes in seconds
+
+_login_attempts: dict = defaultdict(list)  # ip -> [monotonic timestamp, ...]
+
+
+def check_rate_limit(ip: str) -> tuple:
+    """Returns (allowed: bool, seconds_remaining: int)."""
+    now = time.monotonic()
+    timestamps = [t for t in _login_attempts[ip] if now - t < RATE_LIMIT_WINDOW]
+    _login_attempts[ip] = timestamps
+    if len(timestamps) >= RATE_LIMIT_MAX:
+        oldest = min(timestamps)
+        remaining = int(RATE_LIMIT_WINDOW - (now - oldest))
+        return False, max(remaining, 0)
+    return True, 0
+
+
+def record_failed_attempt(ip: str) -> None:
+    _login_attempts[ip].append(time.monotonic())
+
+
+def clear_attempts(ip: str) -> None:
+    _login_attempts.pop(ip, None)
+
+
+# ─── Password utilities ────────────────────────────────────────────────────────
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
@@ -21,8 +74,29 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
-def create_access_token(user_id: int, role: str, expires_hours: int = None) -> str:
-    expire = datetime.utcnow() + timedelta(hours=expires_hours or ACCESS_TOKEN_EXPIRE_HOURS)
+_SPECIAL_CHARS = set('!@#$%^&*(),.?":{}|<>[]_-+=~`/\\;\'')
+
+
+def validate_password_strength(password: str) -> list:
+    """Returns list of human-readable error strings. Empty list = strong enough."""
+    errors = []
+    if len(password) < 8:
+        errors.append("minimum 8 characters")
+    if not re.search(r"[A-Z]", password):
+        errors.append("at least one uppercase letter")
+    if not re.search(r"[a-z]", password):
+        errors.append("at least one lowercase letter")
+    if not re.search(r"\d", password):
+        errors.append("at least one digit (0-9)")
+    if not any(c in _SPECIAL_CHARS for c in password):
+        errors.append("at least one special character (!@#$%^&*…)")
+    return errors
+
+
+# ─── JWT helpers ───────────────────────────────────────────────────────────────
+
+def create_access_token(user_id: int, role: str, expires_minutes: int = None) -> str:
+    expire = datetime.utcnow() + timedelta(minutes=expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
         {"sub": str(user_id), "role": role, "exp": expire},
         SECRET_KEY,
