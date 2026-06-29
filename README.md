@@ -262,6 +262,12 @@ The demo account comes pre-loaded with:
 
 Or hit `/demo` to be logged in automatically with one click.
 
+### Demo Screenshots
+
+| Dashboard (demo account) | Scan History |
+|--------------------------|-------------|
+| ![Demo Dashboard](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/demo_dashboard.png) | ![Demo Scans](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/demo_scans.png) |
+
 ---
 
 ## Quick Start
