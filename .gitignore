@@ -12,6 +12,9 @@ reports/
 # Database
 data/optisec.db
 
+# Runtime state (generated at startup)
+data/*.json
+
 # Virtualenv
 venv/
 
