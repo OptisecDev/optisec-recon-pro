@@ -1,12 +1,17 @@
 """AlienVault OTX live threat feed integration."""
 import hashlib
 import logging
+import time
 from datetime import datetime
 from typing import Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cache: {api_key_prefix: (timestamp, iocs)}
+_CACHE: dict = {}
+_CACHE_TTL = 300  # 5 minutes
 
 _OTX_BASE = "https://otx.alienvault.com/api/v1"
 _HEADERS_BASE = {
@@ -50,6 +55,13 @@ def _session(api_key: str) -> requests.Session:
 
 def fetch_otx_pulses(api_key: str, limit: int = 50) -> list:
     """Fetch latest pulses from AlienVault OTX activity feed and return normalized IOCs."""
+    cache_key = api_key[:8]
+    now = time.time()
+    if cache_key in _CACHE:
+        ts, cached = _CACHE[cache_key]
+        if now - ts < _CACHE_TTL:
+            return cached[:limit]
+
     sess = _session(api_key)
     iocs: list = []
     page = 1
@@ -113,13 +125,16 @@ def fetch_otx_pulses(api_key: str, limit: int = 50) -> list:
                 })
 
                 if len(iocs) >= limit:
-                    return iocs
-
-        if not data.get("next"):
+                    break
+            else:
+                if not data.get("next"):
+                    break
+                page += 1
+                continue
             break
-        page += 1
 
-    return iocs
+    _CACHE[cache_key] = (now, iocs)
+    return iocs[:limit]
 
 
 def _score_indicator(indicator: dict, pulse: dict) -> int:
