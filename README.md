@@ -12,6 +12,7 @@
 ```
 
 <p align="center">
+  <img src="https://img.shields.io/badge/Version-v4.0%20SINGULARITY-ff0055?style=for-the-badge&logo=rocket&logoColor=white" />
   <img src="https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/FastAPI-0.104%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" />
