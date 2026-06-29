@@ -1021,3 +1021,27 @@ async def get_ioc_correlations(
         return JSONResponse(result)
     except Exception as exc:
         raise HTTPException(500, f"Correlation engine error: {exc}")
+
+
+@app.get("/api/correlations/{cluster_id}")
+async def get_correlation_cluster(
+    cluster_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Return full details for a single correlation cluster by its cluster_id."""
+    data = load_cached()
+    if not data:
+        raise HTTPException(404, "No correlation data found — run GET /api/correlations?refresh=true first")
+
+    cluster = next(
+        (c for c in data.get("clusters", []) if c["cluster_id"] == cluster_id),
+        None,
+    )
+    if not cluster:
+        raise HTTPException(404, f"Cluster '{cluster_id}' not found")
+
+    return JSONResponse({
+        "cluster": cluster,
+        "generated_at": data.get("generated_at"),
+        "otx_enabled":  data.get("otx_enabled"),
+    })
