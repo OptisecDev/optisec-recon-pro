@@ -911,6 +911,43 @@ async def nlp_parse(request: Request, user: User = Depends(web_user)):
 
 # ─── Admin API ────────────────────────────────────────────────────────────────
 
+@app.get("/api/admin/auth-log")
+async def admin_auth_log(
+    user: User = Depends(web_user),
+    lines: int = 100,
+):
+    require_admin(user)
+    log_path = Path(__file__).parent.parent / "logs" / "auth.log"
+    if not log_path.exists():
+        return JSONResponse([])
+    with open(log_path, "r") as f:
+        raw = f.readlines()
+    entries = []
+    for line in raw[-min(lines, 500):]:
+        line = line.strip()
+        if not line:
+            continue
+        # Format: "2026-06-29 03:01:05,747 SUCCESS | EVENT | user='x' | ip=y | detail"
+        parts = line.split(" ", 2)
+        timestamp = f"{parts[0]} {parts[1]}" if len(parts) >= 2 else line
+        rest = parts[2] if len(parts) >= 3 else ""
+        fields = [f.strip() for f in rest.split("|")]
+        status = fields[0] if fields else ""
+        event  = fields[1].strip() if len(fields) > 1 else ""
+        user_f = fields[2].replace("user=", "").strip().strip("'") if len(fields) > 2 else ""
+        ip     = fields[3].replace("ip=", "").strip() if len(fields) > 3 else ""
+        detail = fields[4].strip() if len(fields) > 4 else ""
+        entries.append({
+            "timestamp": timestamp,
+            "status": status,
+            "event": event,
+            "user": user_f,
+            "ip": ip,
+            "detail": detail,
+        })
+    return JSONResponse(list(reversed(entries)))
+
+
 @app.get("/api/admin/users")
 async def admin_list_users(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     require_admin(user)

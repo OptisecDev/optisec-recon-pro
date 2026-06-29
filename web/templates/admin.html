@@ -83,6 +83,43 @@
   </div>
 </div>
 
+<div class="card">
+  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div class="card-title">🔐 Auth Log</div>
+      <div class="card-subtitle">Login attempts, registrations, and logouts — newest first</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select id="log-filter" onchange="filterLog()" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px">
+        <option value="">All events</option>
+        <option value="SUCCESS">Success only</option>
+        <option value="FAILURE">Failures only</option>
+        <option value="LOGIN">Login</option>
+        <option value="LOGOUT">Logout</option>
+        <option value="REGISTER">Register</option>
+      </select>
+      <button class="btn btn-secondary btn-sm" onclick="loadAuthLog()">↻ Refresh</button>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table id="auth-log-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Status</th>
+          <th>Event</th>
+          <th>User</th>
+          <th>IP</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody id="auth-log-body">
+        <tr><td colspan="6" style="text-align:center;color:var(--text-dim)">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
 <div class="card" style="max-width:480px">
   <div class="card-header">
     <div class="card-title">🔑 My API Key</div>
@@ -105,6 +142,48 @@
 
 {% block scripts %}
 <script>
+let _allLogEntries = [];
+
+async function loadAuthLog() {
+  const tbody = document.getElementById('auth-log-body');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">Loading…</td></tr>';
+  try {
+    const data = await API.get('/api/admin/auth-log?lines=200');
+    _allLogEntries = Array.isArray(data) ? data : [];
+    renderLog(_allLogEntries);
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--critical)">Failed to load log</td></tr>';
+  }
+}
+
+function renderLog(entries) {
+  const tbody = document.getElementById('auth-log-body');
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">No entries</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries.map(e => {
+    const isSuccess = e.status === 'SUCCESS';
+    const statusBadge = `<span class="badge badge-${isSuccess ? 'info' : 'critical'}">${e.status}</span>`;
+    return `<tr>
+      <td class="mono dim" style="font-size:11px;white-space:nowrap">${e.timestamp}</td>
+      <td>${statusBadge}</td>
+      <td><code style="font-size:11px">${e.event}</code></td>
+      <td class="mono" style="font-size:12px">${e.user || '—'}</td>
+      <td class="mono dim" style="font-size:12px">${e.ip || '—'}</td>
+      <td class="dim" style="font-size:11px">${e.detail || ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+function filterLog() {
+  const filter = document.getElementById('log-filter').value;
+  if (!filter) { renderLog(_allLogEntries); return; }
+  renderLog(_allLogEntries.filter(e => e.status === filter || e.event.includes(filter)));
+}
+
+document.addEventListener('DOMContentLoaded', loadAuthLog);
+
 async function changeRole(userId, role) {
   const r = await API.patch(`/api/admin/users/${userId}`, { role });
   if (r.success) toast(`Role updated to ${role}`, 'success');
