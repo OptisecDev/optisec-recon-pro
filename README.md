@@ -166,11 +166,17 @@ Also shipped in v4.0:
 
 ## Screenshots
 
-### Landing & Login
+### Landing Page
 
-| Landing Page | Login |
-|-------------|-------|
-| ![Landing](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/login.png) | ![Login](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/login.png) |
+| Public Landing |
+|---------------|
+| ![Landing](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/landing.png) |
+
+### Login
+
+| Login |
+|-------|
+| ![Login](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/login.png) |
 
 ### Dashboard
 
