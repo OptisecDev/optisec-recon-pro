@@ -18,6 +18,7 @@
   <img src="https://img.shields.io/github/stars/OptisecDev/optisec-recon-pro?style=for-the-badge&color=yellow&logo=github" />
   <img src="https://img.shields.io/badge/AI%20Powered-Groq%20LLaMA-ff6b35?style=for-the-badge" />
   <img src="https://img.shields.io/badge/Status-Active-00ff88?style=for-the-badge" />
+  <img src="https://img.shields.io/badge/Screenshots-23%20Pages-blueviolet?style=for-the-badge&logo=camera&logoColor=white" />
 </p>
 
 ---
