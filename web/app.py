@@ -45,6 +45,7 @@ from modules.report.pdf_generator import generate_report
 from config import APP_NAME, APP_VERSION, REPORTS_DIR
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed
+from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
 
@@ -994,3 +995,29 @@ async def admin_delete_user(
     await db.delete(target)
     await db.commit()
     return JSONResponse({"success": True})
+
+
+# ── IOC Correlation Engine ────────────────────────────────────────────────────
+
+@app.get("/api/correlations")
+async def get_ioc_correlations(
+    refresh: bool = False,
+    user: User = Depends(get_current_user),
+):
+    """
+    Return IOC correlation clusters.
+    Uses cached results unless ?refresh=true triggers a fresh run.
+    Requires authentication (any role).
+    """
+    if not refresh:
+        cached = load_cached()
+        if cached:
+            return JSONResponse(cached)
+
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: run_correlation(save=True)
+        )
+        return JSONResponse(result)
+    except Exception as exc:
+        raise HTTPException(500, f"Correlation engine error: {exc}")
