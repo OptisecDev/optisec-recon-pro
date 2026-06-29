@@ -1,0 +1,424 @@
+{% extends "base.html" %}
+{% block title %}IOC Correlations — {{ app_name }}{% endblock %}
+{% block page_title %}IOC Correlation Engine{% endblock %}
+
+{% block content %}
+<style>
+/* ── layout ── */
+.cor-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+
+/* ── cluster card ── */
+.cluster-card{background:var(--card);border:1px solid var(--border);border-radius:10px;
+  padding:18px;cursor:pointer;transition:border-color .15s,box-shadow .15s;position:relative}
+.cluster-card:hover{border-color:var(--accent);box-shadow:0 0 0 1px rgba(0,255,136,.15)}
+.cluster-card.sev-CRITICAL{border-left:4px solid var(--red)}
+.cluster-card.sev-HIGH{border-left:4px solid var(--orange)}
+.cluster-card.sev-MEDIUM{border-left:4px solid var(--yellow)}
+.cluster-card.sev-LOW{border-left:4px solid var(--blue)}
+.cluster-card.sev-INFORMATIONAL{border-left:4px solid var(--text-dim)}
+
+/* ── score bar ── */
+.score-track{height:5px;background:var(--card2);border-radius:3px;overflow:hidden;margin:8px 0 10px}
+.score-fill{height:100%;border-radius:3px;transition:width .4s}
+
+/* ── type chips ── */
+.type-chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.type-chip{font-size:9px;padding:2px 7px;border-radius:10px;font-weight:600;border:1px solid}
+.chip-ip{background:rgba(88,166,255,.1);color:#58a6ff;border-color:#58a6ff44}
+.chip-domain{background:rgba(188,140,255,.1);color:#bc8cff;border-color:#bc8cff44}
+.chip-hash{background:rgba(255,136,0,.1);color:#ff8800;border-color:#ff880044}
+.chip-url{background:rgba(255,204,0,.1);color:#ffcc00;border-color:#ffcc0044}
+.chip-cve{background:rgba(255,68,68,.1);color:#ff4444;border-color:#ff444444}
+.chip-other{background:rgba(139,148,158,.1);color:#8b949e;border-color:#8b949e44}
+
+/* ── pattern tags ── */
+.pattern-tag{font-size:9px;padding:2px 7px;border-radius:4px;background:rgba(0,255,136,.07);
+  color:var(--accent);border:1px solid rgba(0,255,136,.2);white-space:nowrap}
+
+/* ── badges ── */
+.sev-badge{font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.5px}
+.sev-badge.CRITICAL{background:rgba(255,68,68,.15);color:#ff4444}
+.sev-badge.HIGH{background:rgba(255,136,0,.15);color:#ff8800}
+.sev-badge.MEDIUM{background:rgba(255,204,0,.15);color:#ffcc00}
+.sev-badge.LOW{background:rgba(88,166,255,.15);color:#58a6ff}
+.sev-badge.INFORMATIONAL{background:rgba(139,148,158,.15);color:#8b949e}
+
+.strat-badge{font-size:9px;padding:2px 7px;border-radius:4px;
+  background:rgba(188,140,255,.1);color:#bc8cff;border:1px solid rgba(188,140,255,.25)}
+
+/* ── modal ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);
+  z-index:200;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--card);border:1px solid var(--border);border-radius:12px;
+  width:100%;max-width:860px;max-height:90vh;overflow-y:auto;position:relative}
+.modal-header{padding:20px 24px 0;display:flex;justify-content:space-between;align-items:flex-start;
+  position:sticky;top:0;background:var(--card);z-index:1;padding-bottom:14px;
+  border-bottom:1px solid var(--border)}
+.modal-close{background:none;border:none;color:var(--text-dim);font-size:20px;
+  cursor:pointer;line-height:1;padding:4px 8px;border-radius:6px}
+.modal-close:hover{color:var(--text);background:var(--card2)}
+.modal-body{padding:20px 24px 24px}
+
+/* ── IOC table inside modal ── */
+.ioc-row{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--card2);
+  border-radius:6px;margin-bottom:5px;border:1px solid var(--border);font-size:11px}
+.ioc-score-col{min-width:36px;text-align:right;font-weight:700;font-size:12px}
+.mini-bar{height:4px;width:50px;background:var(--card);border-radius:2px;overflow:hidden;flex-shrink:0}
+.mini-fill{height:100%;border-radius:2px}
+
+/* ── relationship row ── */
+.rel-row{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--card2);
+  border-radius:6px;margin-bottom:5px;font-size:11px;border:1px solid var(--border)}
+.rel-arrow{color:var(--accent);font-size:10px;flex-shrink:0}
+
+/* ── filter bar ── */
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:20px}
+.filter-bar input,.filter-bar select{background:var(--card);border:1px solid var(--border);
+  color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px}
+.filter-bar input:focus,.filter-bar select:focus{outline:none;border-color:var(--accent)}
+
+/* ── empty state ── */
+.empty-state{text-align:center;padding:60px 20px;color:var(--text-dim)}
+.empty-state .icon{font-size:48px;margin-bottom:12px}
+
+/* ── section label ── */
+.section-label{font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;
+  letter-spacing:.8px;margin:16px 0 8px}
+</style>
+
+<!-- ── Top banner ─────────────────────────────────────────────── -->
+{% set crit_count = data.critical_clusters %}
+{% set banner_color = '#FF444418' if crit_count > 0 else '#FFA72618' if data.high_clusters > 0 else '#00ff8818' %}
+{% set banner_border = '#ff4444' if crit_count > 0 else '#FFA726' if data.high_clusters > 0 else '#00ff88' %}
+<div style="background:{{ banner_color }};border:1px solid {{ banner_border }};border-radius:10px;
+  padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+  <div>
+    <div style="font-size:15px;font-weight:700;color:{{ banner_border }}">
+      {% if crit_count > 0 %}{{ crit_count }} CRITICAL CLUSTER{% if crit_count != 1 %}S{% endif %} DETECTED
+      {% elif data.high_clusters > 0 %}{{ data.high_clusters }} HIGH-SEVERITY CLUSTERS
+      {% else %}IOC Correlation Analysis Complete{% endif %}
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-top:3px">
+      {{ data.unique_iocs }} unique IOCs correlated across {{ data.sources_active|length }} feed sources
+      {% if data.otx_enabled %}&nbsp;·&nbsp;<span style="color:#00ff88">●&nbsp;OTX Live</span>{% endif %}
+    </div>
+  </div>
+  <div style="text-align:right;font-size:11px;color:var(--text-dim)">
+    Generated: {{ data.generated_at[:19] }} UTC<br>
+    <button class="btn btn-secondary btn-sm" onclick="refreshData()" id="refresh-btn" style="margin-top:6px">
+      ↺ Refresh
+    </button>
+  </div>
+</div>
+
+<!-- ── Stats ─────────────────────────────────────────────────── -->
+<div class="stats-grid" style="grid-template-columns:repeat(6,1fr);margin-bottom:24px">
+  <div class="stat-card">
+    <div class="stat-value">{{ data.total_iocs }}</div>
+    <div class="stat-label">Total IOCs</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#58a6ff">{{ data.unique_iocs }}</div>
+    <div class="stat-label">Unique IOCs</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:var(--accent)">{{ data.total_clusters }}</div>
+    <div class="stat-label">Clusters</div>
+  </div>
+  <div class="stat-card critical">
+    <div class="stat-value">{{ data.critical_clusters }}</div>
+    <div class="stat-label">Critical</div>
+  </div>
+  <div class="stat-card high">
+    <div class="stat-value">{{ data.high_clusters }}</div>
+    <div class="stat-label">High</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color:#bc8cff">{{ data.average_score }}</div>
+    <div class="stat-label">Avg Score</div>
+  </div>
+</div>
+
+<!-- ── IOC type breakdown ─────────────────────────────────────── -->
+{% if data.ioc_type_summary %}
+<div class="card" style="margin-bottom:20px;padding:14px 18px">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-size:11px;color:var(--text-dim);font-weight:600">IOC TYPES:</span>
+    {% for itype, cnt in data.ioc_type_summary.items() %}
+    {% set chip_cls = 'chip-ip' if 'ip' in itype else 'chip-domain' if 'domain' in itype else 'chip-hash' if 'hash' in itype else 'chip-url' if 'url' in itype else 'chip-cve' if itype == 'cve' else 'chip-other' %}
+    <span class="type-chip {{ chip_cls }}">{{ itype }}&nbsp;<strong>{{ cnt }}</strong></span>
+    {% endfor %}
+    <span style="margin-left:auto;font-size:11px;color:var(--text-dim)">
+      Sources: {% for s in data.sources_active %}<span style="color:var(--accent)">{{ s }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+    </span>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Filter bar ─────────────────────────────────────────────── -->
+<div class="filter-bar">
+  <input type="text" id="search-input" placeholder="Search clusters…" oninput="applyFilters()" style="flex:1;min-width:180px">
+  <select id="sev-filter" onchange="applyFilters()">
+    <option value="">All Severities</option>
+    <option value="CRITICAL">Critical</option>
+    <option value="HIGH">High</option>
+    <option value="MEDIUM">Medium</option>
+    <option value="LOW">Low</option>
+    <option value="INFORMATIONAL">Informational</option>
+  </select>
+  <select id="strat-filter" onchange="applyFilters()">
+    <option value="">All Strategies</option>
+    <option value="malware_family">Malware Family</option>
+    <option value="adversary">Adversary</option>
+    <option value="network_infrastructure">Network Infra</option>
+  </select>
+  <span id="count-label" style="font-size:12px;color:var(--text-dim)"></span>
+</div>
+
+<!-- ── Cluster grid ────────────────────────────────────────────── -->
+<div class="cor-grid" id="cluster-grid">
+  {% for c in data.clusters %}
+  {% set score = c.threat_score %}
+  {% set sev = c.severity %}
+  {% set score_color = 'var(--red)' if score >= 90 else 'var(--orange)' if score >= 70 else 'var(--yellow)' if score >= 50 else 'var(--blue)' %}
+  <div class="cluster-card sev-{{ sev }}"
+       data-name="{{ c.name|lower }}"
+       data-sev="{{ sev }}"
+       data-strat="{{ c.strategy }}"
+       data-id="{{ c.cluster_id }}"
+       onclick="openDetail('{{ c.cluster_id }}')">
+
+    <!-- header row -->
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
+      <div style="font-size:13px;font-weight:600;line-height:1.3;word-break:break-word">{{ c.name }}</div>
+      <span class="sev-badge {{ sev }}">{{ sev }}</span>
+    </div>
+
+    <!-- score bar -->
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:22px;font-weight:700;color:{{ score_color }}">{{ score }}</span>
+      <div style="flex:1">
+        <div class="score-track">
+          <div class="score-fill" style="width:{{ score }}%;background:{{ score_color }}"></div>
+        </div>
+        <div style="font-size:9px;color:var(--text-dim)">Threat Score</div>
+      </div>
+      <span class="strat-badge">{{ c.strategy|replace('_',' ') }}</span>
+    </div>
+
+    <!-- IOC type chips -->
+    <div class="type-chips">
+      {% for itype, cnt in c.ioc_types.items() %}
+      {% set chip_cls = 'chip-ip' if 'ip' in itype else 'chip-domain' if 'domain' in itype else 'chip-hash' if 'hash' in itype else 'chip-url' if 'url' in itype else 'chip-cve' if itype == 'cve' else 'chip-other' %}
+      <span class="type-chip {{ chip_cls }}">{{ itype }}&thinsp;{{ cnt }}</span>
+      {% endfor %}
+    </div>
+
+    <!-- patterns -->
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">
+      {% for p in c.patterns[:3] %}
+      <span class="pattern-tag">{{ p }}</span>
+      {% endfor %}
+      {% if c.patterns|length > 3 %}
+      <span class="pattern-tag" style="color:var(--text-dim)">+{{ c.patterns|length - 3 }}</span>
+      {% endif %}
+    </div>
+
+    <!-- footer -->
+    <div style="display:flex;justify-content:space-between;align-items:center;font-size:10px;color:var(--text-dim);border-top:1px solid var(--border);padding-top:8px">
+      <span>{{ c.ioc_count }} IOC{% if c.ioc_count != 1 %}s{% endif %}
+        {% if c.relationships|length > 0 %}&nbsp;·&nbsp;{{ c.relationships|length }} link{% if c.relationships|length != 1 %}s{% endif %}{% endif %}
+      </span>
+      <span>{% for s in c.sources[:2] %}{{ s }}{% if not loop.last %}, {% endif %}{% endfor %}{% if c.sources|length > 2 %}&nbsp;+{{ c.sources|length - 2 }}{% endif %}</span>
+    </div>
+  </div>
+  {% else %}
+  <div class="empty-state" style="grid-column:1/-1">
+    <div class="icon">🔗</div>
+    <div>No correlation data available.</div>
+    <button class="btn btn-primary" style="margin-top:16px" onclick="refreshData()">Run Correlation Now</button>
+  </div>
+  {% endfor %}
+</div>
+
+<div id="no-match" style="display:none;text-align:center;padding:40px;color:var(--text-dim)">
+  No clusters match the current filters.
+</div>
+
+<!-- ── Detail modal ────────────────────────────────────────────── -->
+<div class="modal-overlay" id="detail-modal" onclick="closeModal(event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <div id="m-title" style="font-size:16px;font-weight:700"></div>
+        <div id="m-meta" style="font-size:11px;color:var(--text-dim);margin-top:3px"></div>
+      </div>
+      <button class="modal-close" onclick="document.getElementById('detail-modal').classList.remove('open')">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body">
+      <div style="text-align:center;padding:40px;color:var(--text-dim)">Loading…</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Cluster data baked in from server ────────────────────────────
+const CLUSTERS = {{ data.clusters | tojson }};
+
+// ── Filters ──────────────────────────────────────────────────────
+function applyFilters() {
+  const q    = document.getElementById('search-input').value.toLowerCase();
+  const sev  = document.getElementById('sev-filter').value;
+  const strat = document.getElementById('strat-filter').value;
+  let visible = 0;
+
+  document.querySelectorAll('.cluster-card').forEach(el => {
+    const matchQ    = !q    || el.dataset.name.includes(q);
+    const matchSev  = !sev  || el.dataset.sev  === sev;
+    const matchStrat = !strat || el.dataset.strat === strat;
+    const show = matchQ && matchSev && matchStrat;
+    el.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+
+  document.getElementById('no-match').style.display = visible === 0 ? '' : 'none';
+  document.getElementById('count-label').textContent = `${visible} cluster${visible !== 1 ? 's' : ''}`;
+}
+
+// initialise count label
+document.addEventListener('DOMContentLoaded', () => applyFilters());
+
+// ── Refresh ───────────────────────────────────────────────────────
+async function refreshData() {
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '↺ Running…';
+  try {
+    const r = await fetch('/api/correlations?refresh=true');
+    if (r.ok) { location.reload(); }
+    else {
+      const e = await r.json().catch(() => ({detail:'Unknown error'}));
+      alert('Error: ' + (e.detail || r.status));
+    }
+  } catch(e) { alert('Network error: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = '↺ Refresh'; }
+}
+
+// ── Score color helper ────────────────────────────────────────────
+function scoreColor(s) {
+  if (s >= 90) return 'var(--red)';
+  if (s >= 70) return 'var(--orange)';
+  if (s >= 50) return 'var(--yellow)';
+  return 'var(--blue)';
+}
+
+function iocTypeClass(t) {
+  if (t.includes('ip') || t === 'cidr') return 'chip-ip';
+  if (t.includes('domain') || t === 'hostname') return 'chip-domain';
+  if (t.includes('hash')) return 'chip-hash';
+  if (t.includes('url') || t === 'uri') return 'chip-url';
+  if (t === 'cve') return 'chip-cve';
+  return 'chip-other';
+}
+
+// ── Modal ─────────────────────────────────────────────────────────
+function openDetail(clusterId) {
+  const cluster = CLUSTERS.find(c => c.cluster_id === clusterId);
+  if (!cluster) return;
+
+  document.getElementById('m-title').textContent = cluster.name;
+  const sevColor = {'CRITICAL':'var(--red)','HIGH':'var(--orange)','MEDIUM':'var(--yellow)',
+                    'LOW':'var(--blue)','INFORMATIONAL':'var(--text-dim)'}[cluster.severity] || 'var(--accent)';
+  document.getElementById('m-meta').innerHTML =
+    `<span class="sev-badge ${cluster.severity}">${cluster.severity}</span>&nbsp;` +
+    `<span class="strat-badge">${cluster.strategy.replace(/_/g,' ')}</span>&nbsp;` +
+    `Score: <strong style="color:${sevColor}">${cluster.threat_score}</strong>&nbsp;·&nbsp;` +
+    `${cluster.ioc_count} IOC${cluster.ioc_count !== 1 ? 's' : ''}` +
+    (cluster.adversary ? `&nbsp;·&nbsp;Actor: <strong style="color:var(--orange)">${cluster.adversary}</strong>` : '');
+
+  let html = '';
+
+  // Patterns
+  html += `<div class="section-label">Detected Patterns</div>`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:16px">`;
+  cluster.patterns.forEach(p => {
+    html += `<span class="pattern-tag">${p}</span>`;
+  });
+  html += `</div>`;
+
+  // IOC type breakdown
+  html += `<div class="section-label">IOC Type Breakdown</div>`;
+  html += `<div class="type-chips" style="margin-bottom:16px">`;
+  Object.entries(cluster.ioc_types).forEach(([t, cnt]) => {
+    html += `<span class="type-chip ${iocTypeClass(t)}">${t}&thinsp;<strong>${cnt}</strong></span>`;
+  });
+  html += `</div>`;
+
+  // IOC list
+  html += `<div class="section-label">Indicators of Compromise (${cluster.ioc_count})</div>`;
+  if (cluster.iocs && cluster.iocs.length > 0) {
+    cluster.iocs.forEach(ioc => {
+      const sc = ioc.threat_score || ioc.confidence || 70;
+      const col = scoreColor(sc);
+      html += `
+      <div class="ioc-row">
+        <span class="ioc-score-col" style="color:${col}">${sc}</span>
+        <div class="mini-bar"><div class="mini-fill" style="width:${sc}%;background:${col}"></div></div>
+        <span class="type-chip ${iocTypeClass(ioc.type)}" style="flex-shrink:0">${ioc.type}</span>
+        <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(ioc.value)}">${escHtml(ioc.value)}</code>
+        <span style="color:var(--orange);font-size:10px;white-space:nowrap;min-width:80px">${escHtml(ioc.malware || '')}</span>
+        <span style="color:var(--text-dim);font-size:9px;white-space:nowrap">${ioc.source || ''}</span>
+      </div>`;
+    });
+  } else {
+    html += `<div style="color:var(--text-dim);font-size:12px;padding:8px">No IOC details available.</div>`;
+  }
+
+  // Relationships
+  if (cluster.relationships && cluster.relationships.length > 0) {
+    html += `<div class="section-label" style="margin-top:20px">Cross-Type Relationships (${cluster.relationships.length})</div>`;
+    cluster.relationships.slice(0, 30).forEach(rel => {
+      html += `
+      <div class="rel-row">
+        <span class="type-chip ${iocTypeClass(rel.source_type)}" style="flex-shrink:0">${rel.source_type}</span>
+        <code style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px" title="${escHtml(rel.source_val)}">${escHtml(rel.source_val)}</code>
+        <span class="rel-arrow">──${escHtml(rel.relation)}──▶</span>
+        <span class="type-chip ${iocTypeClass(rel.target_type)}" style="flex-shrink:0">${rel.target_type}</span>
+        <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px" title="${escHtml(rel.target_val)}">${escHtml(rel.target_val)}</code>
+      </div>`;
+    });
+    if (cluster.relationships.length > 30) {
+      html += `<div style="font-size:11px;color:var(--text-dim);padding:4px 0">… and ${cluster.relationships.length - 30} more.</div>`;
+    }
+  }
+
+  // Sources
+  html += `<div class="section-label" style="margin-top:20px">Intelligence Sources</div>`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:6px">`;
+  cluster.sources.forEach(s => {
+    html += `<span style="font-size:11px;padding:3px 9px;border-radius:5px;background:rgba(0,255,136,.08);
+      color:var(--accent);border:1px solid rgba(0,255,136,.2)">${s}</span>`;
+  });
+  html += `</div>`;
+
+  document.getElementById('modal-body').innerHTML = html;
+  document.getElementById('detail-modal').classList.add('open');
+}
+
+function closeModal(event) {
+  if (event.target === document.getElementById('detail-modal'))
+    document.getElementById('detail-modal').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('detail-modal').classList.remove('open');
+});
+
+function escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

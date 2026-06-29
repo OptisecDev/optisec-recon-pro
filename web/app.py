@@ -44,7 +44,7 @@ from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
 from config import APP_NAME, APP_VERSION, REPORTS_DIR
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
-from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed
+from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -69,6 +69,7 @@ app.include_router(darkweb.router)
 app.include_router(autonomous_rt.router)
 app.include_router(ngfw.router)
 app.include_router(threat_feed.router)
+app.include_router(correlations_router.router)
 
 
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────
@@ -1002,7 +1003,7 @@ async def admin_delete_user(
 @app.get("/api/correlations")
 async def get_ioc_correlations(
     refresh: bool = False,
-    user: User = Depends(get_current_user),
+    user: User = Depends(web_user),
 ):
     """
     Return IOC correlation clusters.
@@ -1026,7 +1027,7 @@ async def get_ioc_correlations(
 @app.get("/api/correlations/{cluster_id}")
 async def get_correlation_cluster(
     cluster_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(web_user),
 ):
     """Return full details for a single correlation cluster by its cluster_id."""
     data = load_cached()
