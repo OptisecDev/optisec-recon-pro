@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}API Documentation — {{ app_name }}{% endblock %}
+{% block page_title %}API Documentation{% endblock %}
+
+{% block content %}
+
+<!-- Header -->
+<div class="api-hero">
+  <div class="api-hero-left">
+    <div class="api-hero-title">🔌 OPTISEC REST API</div>
+    <div class="api-hero-sub">v{{ version }} · OpenAPI 3.0 · JSON · WebSocket</div>
+    <div class="api-hero-desc">
+      Programmatic access to all security intelligence features.
+      Authenticate once, integrate everywhere.
+    </div>
+  </div>
+  <div class="api-hero-right">
+    <a href="/docs" target="_blank" class="btn btn-primary" style="font-size:14px;padding:12px 24px">
+      🚀 Swagger UI
+    </a>
+    <a href="/redoc" target="_blank" class="btn btn-secondary" style="font-size:14px;padding:12px 24px">
+      📖 ReDoc
+    </a>
+    <a href="/openapi.json" target="_blank" class="btn btn-secondary" style="font-size:14px;padding:12px 24px">
+      📄 OpenAPI JSON
+    </a>
+  </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="api-stats-row">
+  <div class="api-stat">
+    <div class="api-stat-val">{{ endpoint_count }}</div>
+    <div class="api-stat-label">Endpoints</div>
+  </div>
+  <div class="api-stat">
+    <div class="api-stat-val">{{ tag_count }}</div>
+    <div class="api-stat-label">API Groups</div>
+  </div>
+  <div class="api-stat">
+    <div class="api-stat-val">JWT</div>
+    <div class="api-stat-label">Auth Method</div>
+  </div>
+  <div class="api-stat">
+    <div class="api-stat-val">WS</div>
+    <div class="api-stat-label">Real-time</div>
+  </div>
+  <div class="api-stat">
+    <div class="api-stat-val">AR/EN</div>
+    <div class="api-stat-label">NLP Language</div>
+  </div>
+</div>
+
+<div class="grid-2" style="gap:20px;margin-bottom:20px">
+
+  <!-- Authentication Guide -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">🔑 المصادقة — Authentication</div>
+    </div>
+    <div style="font-size:13px;line-height:1.8">
+      <p style="color:var(--text-dim);margin-bottom:12px">
+        All API endpoints require a valid JWT token. Obtain one via:
+      </p>
+      <div class="api-code-block">
+        <div class="api-code-label">POST /api/auth/login</div>
+        <pre>curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"Optisec123!"}'</pre>
+      </div>
+      <div class="api-code-block" style="margin-top:12px">
+        <div class="api-code-label">Response</div>
+        <pre>{
+  "access_token": "eyJhbGci...",
+  "token_type": "bearer",
+  "user": {"id":1,"username":"admin","role":"admin"}
+}</pre>
+      </div>
+      <div class="api-code-block" style="margin-top:12px">
+        <div class="api-code-label">Use the token</div>
+        <pre>curl http://localhost:8000/api/scans \
+  -H "Authorization: Bearer eyJhbGci..."</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Start -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">⚡ Quick Start — Launch a Scan</div>
+    </div>
+    <div style="font-size:13px;line-height:1.8">
+      <div class="api-step">
+        <span class="api-step-num">1</span>
+        <span>Login → get token</span>
+      </div>
+      <div class="api-step">
+        <span class="api-step-num">2</span>
+        <span>Launch scan</span>
+      </div>
+      <div class="api-code-block">
+        <div class="api-code-label">POST /api/scan</div>
+        <pre>{
+  "target": "tesla.com",
+  "scan_types": ["xss","sqli","subdomain"]
+}</pre>
+      </div>
+      <div class="api-step" style="margin-top:10px">
+        <span class="api-step-num">3</span>
+        <span>Poll for results</span>
+      </div>
+      <div class="api-code-block">
+        <div class="api-code-label">GET /api/scan/{scan_id}</div>
+        <pre>{"status":"running","progress":58,...}</pre>
+      </div>
+      <div class="api-step" style="margin-top:10px">
+        <span class="api-step-num">4</span>
+        <span>Or use WebSocket for live updates</span>
+      </div>
+      <div class="api-code-block">
+        <div class="api-code-label">ws://localhost:8000/ws/{scan_id}</div>
+        <pre>{"type":"progress","step":"xss","progress":58}</pre>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Endpoint Groups -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">📚 API Groups</div>
+      <div class="card-subtitle">Click any group to open in Swagger UI</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <input type="text" id="api-search" placeholder="Search endpoints..." style="width:240px"
+        oninput="filterEndpoints(this.value)"/>
+    </div>
+  </div>
+
+  <div id="endpoint-groups">
+    {% for group in api_groups %}
+    <div class="api-group" data-name="{{ group.name|lower }}">
+      <div class="api-group-header" onclick="toggleGroup(this)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="api-group-icon">{{ group.icon }}</span>
+          <div>
+            <div class="api-group-name">{{ group.name }}</div>
+            <div class="api-group-desc">{{ group.description }}</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge badge-info">{{ group.endpoints|length }} endpoints</span>
+          <span class="api-group-toggle">▼</span>
+        </div>
+      </div>
+      <div class="api-group-body" style="display:none">
+        {% for ep in group.endpoints %}
+        <div class="api-endpoint-row" data-path="{{ ep.path|lower }}" data-summary="{{ ep.summary|lower }}">
+          <span class="api-method api-method-{{ ep.method|lower }}">{{ ep.method }}</span>
+          <code class="api-path">{{ ep.path }}</code>
+          <span class="api-summary">{{ ep.summary }}</span>
+          <a href="/docs#/{{ group.name|urlencode }}/{{ ep.operation_id }}"
+             target="_blank" class="btn btn-secondary btn-sm api-try-btn">Try ↗</a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Roles Table -->
+<div class="grid-2" style="gap:20px">
+  <div class="card">
+    <div class="card-header"><div class="card-title">👥 Roles & Permissions</div></div>
+    <table>
+      <thead>
+        <tr>
+          <th>Role</th>
+          <th>Launch Scans</th>
+          <th>View All Scans</th>
+          <th>Manage Users</th>
+          <th>API Key</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="badge badge-critical">admin</span></td>
+          <td style="color:var(--accent)">✓</td>
+          <td style="color:var(--accent)">✓</td>
+          <td style="color:var(--accent)">✓</td>
+          <td style="color:var(--accent)">✓</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-high">analyst</span></td>
+          <td style="color:var(--accent)">✓</td>
+          <td style="color:var(--text-dim)">Own only</td>
+          <td style="color:var(--red)">✗</td>
+          <td style="color:var(--accent)">✓</td>
+        </tr>
+        <tr>
+          <td><span class="badge badge-info">viewer</span></td>
+          <td style="color:var(--red)">✗</td>
+          <td style="color:var(--text-dim)">Own only</td>
+          <td style="color:var(--red)">✗</td>
+          <td style="color:var(--accent)">✓</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><div class="card-title">🔄 WebSocket — Real-time Scan</div></div>
+    <div style="font-size:13px;line-height:1.9;color:var(--text-dim)">
+      <p>Connect to <code style="color:var(--accent)">ws://host/ws/{scan_id}</code> to receive live events:</p>
+      <div class="api-code-block" style="margin-top:8px">
+        <pre>// Progress update
+{"type":"progress","step":"xss","progress":58,"status":"running"}
+
+// Completed
+{"type":"done","progress":100,"status":"done","results":{...}}
+
+// Error
+{"type":"error","error":"Connection refused"}</pre>
+      </div>
+      <p style="margin-top:8px">Events fire after each module completes.
+      The connection closes automatically when the scan finishes.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Your API Key -->
+{% if user.api_key %}
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">🗝️ Your API Key</div>
+    <button class="btn btn-secondary btn-sm" onclick="regenerateKey()">↻ Regenerate</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <code style="flex:1;background:var(--bg);padding:10px 14px;border-radius:6px;border:1px solid var(--border);
+                 font-size:13px;color:var(--accent);letter-spacing:0.5px;word-break:break-all" id="api-key-display">
+      {{ user.api_key }}
+    </code>
+    <button class="btn btn-secondary btn-sm" onclick="copyKey()">📋 Copy</button>
+  </div>
+  <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">
+    Use as: <code style="color:var(--accent)">Authorization: Bearer {{ user.api_key[:16] }}...</code>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleGroup(header) {
+  const body = header.nextElementSibling;
+  const toggle = header.querySelector('.api-group-toggle');
+  const open = body.style.display === 'none';
+  body.style.display = open ? 'block' : 'none';
+  toggle.textContent = open ? '▲' : '▼';
+}
+
+function filterEndpoints(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.api-group').forEach(group => {
+    let groupVisible = false;
+    group.querySelectorAll('.api-endpoint-row').forEach(row => {
+      const match = !q
+        || row.dataset.path.includes(q)
+        || row.dataset.summary.includes(q)
+        || group.dataset.name.includes(q);
+      row.style.display = match ? 'flex' : 'none';
+      if (match) groupVisible = true;
+    });
+    group.style.display = groupVisible ? 'block' : 'none';
+    if (q && groupVisible) {
+      const body = group.querySelector('.api-group-body');
+      if (body) body.style.display = 'block';
+    }
+  });
+}
+
+async function copyKey() {
+  const key = document.getElementById('api-key-display').textContent.trim();
+  await navigator.clipboard.writeText(key);
+  const btn = event.target;
+  btn.textContent = '✓ Copied!';
+  setTimeout(() => btn.textContent = '📋 Copy', 2000);
+}
+
+async function regenerateKey() {
+  if (!confirm('Regenerate API key? The current key will stop working immediately.')) return;
+  const data = await API.post('/api/auth/api-key/regenerate', {});
+  if (data.api_key) {
+    document.getElementById('api-key-display').textContent = data.api_key;
+    alert('New API key generated successfully!');
+  }
+}
+</script>
+{% endblock %}

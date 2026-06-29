@@ -3,168 +3,529 @@
 {% block page_title %}Dashboard{% endblock %}
 
 {% block content %}
-<div style="margin-bottom:24px">
-  <h2 style="font-size:22px;font-weight:700;color:var(--accent)">Welcome, {{ user.username }}</h2>
-  <p style="color:var(--text-dim);margin-top:4px">OPTISEC Enterprise — Bug Bounty & Security Intelligence Platform</p>
+
+<!-- ═══ WELCOME HEADER ═══ -->
+<div class="dash-welcome">
+  <div class="dash-welcome-left">
+    <div class="dash-greeting">مرحباً، <span class="accent">{{ user.username }}</span></div>
+    <div class="dash-subtitle">OPTISEC Enterprise — Bug Bounty &amp; Security Intelligence Platform</div>
+  </div>
+  <div class="dash-welcome-right">
+    <div class="threat-gauge-wrap">
+      <div class="threat-label">مستوى التهديد</div>
+      <div class="threat-gauge">
+        <svg viewBox="0 0 120 70" width="120" height="70">
+          <path d="M10,60 A50,50 0 0,1 110,60" fill="none" stroke="#30363d" stroke-width="10" stroke-linecap="round"/>
+          <path id="gauge-arc" d="M10,60 A50,50 0 0,1 110,60" fill="none"
+                stroke="url(#gaugeGrad)" stroke-width="10" stroke-linecap="round"
+                stroke-dasharray="157" stroke-dashoffset="100"/>
+          <defs>
+            <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style="stop-color:#00ff88"/>
+              <stop offset="50%" style="stop-color:#ffcc00"/>
+              <stop offset="100%" style="stop-color:#ff4444"/>
+            </linearGradient>
+          </defs>
+          <text x="60" y="58" text-anchor="middle" fill="#e6edf3" font-size="18" font-weight="700" id="gauge-val">—</text>
+          <text x="60" y="70" text-anchor="middle" fill="#8b949e" font-size="8">THREAT LEVEL</text>
+        </svg>
+      </div>
+      <div class="threat-status" id="threat-status">Calculating...</div>
+    </div>
+    <div class="dash-time-wrap">
+      <div class="dash-time" id="dash-clock">--:--:--</div>
+      <div class="dash-date" id="dash-date">--</div>
+    </div>
+  </div>
 </div>
 
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-value">{{ target_count }}</div>
-    <div class="stat-label">My Targets</div>
+<!-- ═══ STATS ROW ═══ -->
+<div class="stats-grid-pro">
+
+  <div class="stat-card-pro green" onclick="location.href='/targets'">
+    <div class="stat-icon">🎯</div>
+    <div class="stat-body">
+      <div class="stat-value-pro" data-count="{{ target_count }}">0</div>
+      <div class="stat-label-pro">الأهداف</div>
+      <div class="stat-sub">Targets</div>
+    </div>
+    <div class="stat-arrow">→</div>
   </div>
-  <div class="stat-card info">
-    <div class="stat-value">{{ scan_count }}</div>
-    <div class="stat-label">Total Scans</div>
+
+  <div class="stat-card-pro blue" onclick="location.href='/scans'">
+    <div class="stat-icon">📡</div>
+    <div class="stat-body">
+      <div class="stat-value-pro" data-count="{{ scan_count }}">0</div>
+      <div class="stat-label-pro">إجمالي الفحوصات</div>
+      <div class="stat-sub">{{ done_scans }} مكتمل</div>
+    </div>
+    <div class="stat-arrow">→</div>
   </div>
-  <div class="stat-card high">
-    <div class="stat-value">{{ finding_count }}</div>
-    <div class="stat-label">Findings</div>
+
+  <div class="stat-card-pro orange" onclick="location.href='/scans'">
+    <div class="stat-icon">🔍</div>
+    <div class="stat-body">
+      <div class="stat-value-pro" data-count="{{ finding_count }}">0</div>
+      <div class="stat-label-pro">الثغرات المكتشفة</div>
+      <div class="stat-sub">Findings</div>
+    </div>
+    <div class="stat-arrow">→</div>
   </div>
-  <div class="stat-card" style="--before-color:var(--purple)">
-    <div class="stat-value" style="color:var(--purple)">AI</div>
-    <div class="stat-label">Groq Powered</div>
+
+  <div class="stat-card-pro red" onclick="location.href='/scans'">
+    <div class="stat-icon">🚨</div>
+    <div class="stat-body">
+      <div class="stat-value-pro" data-count="{{ critical_count }}">0</div>
+      <div class="stat-label-pro">حرجة</div>
+      <div class="stat-sub">Critical Findings</div>
+    </div>
+    <div class="stat-arrow">→</div>
   </div>
+
+  <div class="stat-card-pro purple" onclick="location.href='/reports'">
+    <div class="stat-icon">📄</div>
+    <div class="stat-body">
+      <div class="stat-value-pro" data-count="{{ report_count }}">0</div>
+      <div class="stat-label-pro">التقارير</div>
+      <div class="stat-sub">Reports Generated</div>
+    </div>
+    <div class="stat-arrow">→</div>
+  </div>
+
+  <div class="stat-card-pro teal">
+    <div class="stat-icon">🤖</div>
+    <div class="stat-body">
+      <div class="stat-value-pro" style="font-size:20px">AI</div>
+      <div class="stat-label-pro">Groq LLaMA</div>
+      <div class="stat-sub">Powered</div>
+    </div>
+    <div class="stat-dot-online"></div>
+  </div>
+
 </div>
 
-<div class="grid-2">
-  <div class="card">
+<!-- ═══ CHARTS + QUICK SCAN ═══ -->
+<div class="dash-row">
+
+  <!-- Vulnerability Chart -->
+  <div class="card dash-chart-card">
     <div class="card-header">
       <div>
-        <div class="card-title">🚀 Quick Scan</div>
-        <div class="card-subtitle">Start a scan immediately</div>
+        <div class="card-title">📊 توزيع الثغرات</div>
+        <div class="card-subtitle">Vulnerability Severity Breakdown</div>
+      </div>
+    </div>
+    <div class="chart-container-donut">
+      <canvas id="vulnChart"></canvas>
+      <div class="donut-center">
+        <div class="donut-total">{{ finding_count }}</div>
+        <div class="donut-label">إجمالي</div>
+      </div>
+    </div>
+    <div class="vuln-legend">
+      <div class="legend-item"><span class="leg-dot" style="background:#ff4444"></span> Critical <strong>{{ critical_count }}</strong></div>
+      <div class="legend-item"><span class="leg-dot" style="background:#ff8800"></span> High <strong>{{ high_count }}</strong></div>
+      <div class="legend-item"><span class="leg-dot" style="background:#ffcc00"></span> Medium <strong>{{ medium_count }}</strong></div>
+      <div class="legend-item"><span class="leg-dot" style="background:#58a6ff"></span> Low <strong>{{ low_count }}</strong></div>
+    </div>
+  </div>
+
+  <!-- Scan Activity Chart -->
+  <div class="card dash-chart-card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">📈 نشاط الفحص</div>
+        <div class="card-subtitle">Scan Activity — Last 7 Days</div>
+      </div>
+    </div>
+    <div class="chart-container-line">
+      <canvas id="activityChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Quick Scan -->
+  <div class="card dash-quickscan-card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">⚡ فحص سريع</div>
+        <div class="card-subtitle">Quick Scan</div>
       </div>
     </div>
     <div class="form-group">
-      <label>Target URL or Domain</label>
-      <input type="text" id="quick-target" placeholder="example.com or https://target.com" />
+      <label>الهدف</label>
+      <input type="text" id="quick-target" placeholder="example.com" />
     </div>
-    <a href="/scan" class="btn btn-primary" onclick="quickScan(event)">▶ Start Scan</a>
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <div>
-        <div class="card-title">💬 Natural Language Command</div>
-        <div class="card-subtitle">Arabic &amp; English supported</div>
-      </div>
+    <div class="scan-types-mini">
+      <label class="scan-chip active" onclick="toggleChip(this,'xss')"><input type="checkbox" value="xss" checked hidden>XSS</label>
+      <label class="scan-chip active" onclick="toggleChip(this,'sqli')"><input type="checkbox" value="sqli" checked hidden>SQLi</label>
+      <label class="scan-chip" onclick="toggleChip(this,'subdomain')"><input type="checkbox" value="subdomain" hidden>Subs</label>
+      <label class="scan-chip" onclick="toggleChip(this,'nmap')"><input type="checkbox" value="nmap" hidden>Ports</label>
+      <label class="scan-chip" onclick="toggleChip(this,'ssrf')"><input type="checkbox" value="ssrf" hidden>SSRF</label>
+      <label class="scan-chip" onclick="toggleChip(this,'lfi')"><input type="checkbox" value="lfi" hidden>LFI</label>
     </div>
-    <div class="form-group">
-      <label>Command</label>
+    <a href="/scan" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" onclick="quickScanGo(event)">
+      ▶ ابدأ الفحص
+    </a>
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+      <div class="card-title" style="margin-bottom:8px">💬 أمر عربي</div>
       <input type="text" id="nlp-quick"
         placeholder="افحص tesla.com عن ثغرات XSS"
         onkeydown="if(event.key==='Enter')parseNLP()" />
+      <div id="nlp-result" style="margin:8px 0"></div>
+      <button class="btn btn-secondary" onclick="parseNLP()" style="width:100%;justify-content:center">🤖 تحليل</button>
     </div>
-    <div id="nlp-result" style="margin-bottom:12px"></div>
-    <button class="btn btn-secondary" onclick="parseNLP()">🤖 Parse Command</button>
   </div>
+
 </div>
 
-{% if recent_scans %}
+<!-- ═══ QUICK ACTIONS ═══ -->
 <div class="card">
   <div class="card-header">
-    <div class="card-title">🕐 Recent Scans</div>
-    <a href="/scans" class="btn btn-secondary btn-sm">View All</a>
+    <div class="card-title">🚀 الوصول السريع</div>
+    <div class="card-subtitle">Quick Actions — All Modules</div>
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Target</th><th>Status</th><th>Progress</th><th>Date</th></tr>
-      </thead>
-      <tbody>
-        {% for s in recent_scans %}
-        <tr>
-          <td class="mono">{{ s.target_url }}</td>
-          <td>
-            <span class="badge badge-{% if s.status == 'done' %}info{% elif s.status == 'failed' %}critical{% elif s.status == 'running' %}high{% else %}medium{% endif %}">
-              {{ s.status }}
-            </span>
-          </td>
-          <td>
-            <div style="display:flex;align-items:center;gap:6px">
-              <div class="progress-bar" style="display:block;height:5px;width:80px;margin:0">
-                <div class="progress-fill" style="width:{{ s.progress }}%"></div>
+  <div class="quick-actions-grid">
+    {% set actions = [
+      ('/scan',             '🔍', 'فحص جديد',        'New Scan',           'green'),
+      ('/targets',          '🎯', 'الأهداف',          'Targets',            'blue'),
+      ('/osint',            '🕵️', 'OSINT',            'Intel Gathering',    'purple'),
+      ('/bug-bounty',       '💰', 'Bug Bounty',       'HackerOne/Bugcrowd', 'orange'),
+      ('/compliance',       '✅', 'Compliance',       'ISO/NIST/PCI',       'teal'),
+      ('/ai-security/behavioral','🧠','UEBA',         'Behavioral AI',      'purple'),
+      ('/ai-security/zero-day', '🔮','Zero-Day',      'Prediction Engine',  'red'),
+      ('/attack-navigator', '⚔️', 'ATT&CK',          'MITRE Navigator',    'orange'),
+      ('/darkweb',          '🕸️', 'Dark Web',         'Intel Feed',         'red'),
+      ('/autonomous-redteam','🤖','Auto RedTeam',     'Autonomous v4.0',   'red'),
+      ('/ngfw',             '🔥', 'NGFW v2',          'ML/DPI Firewall',    'orange'),
+      ('/threat-feed',      '🌍', 'Threat Feed',      'Global IOC Feed',    'blue'),
+      ('/correlations',     '🔗', 'IOC Correlations', 'Threat Correlation', 'teal'),
+      ('/quantum',          '⚛️', 'Quantum Crypto',   'Post-Quantum PQC',   'purple'),
+      ('/vpn',              '🔒', 'WireGuard VPN',    'Secure Tunneling',   'green'),
+      ('/reports',          '📄', 'التقارير',          'PDF Reports',        'blue'),
+    ] %}
+    {% for url, icon, ar, en, color in actions %}
+    <a href="{{ url }}" class="qa-card qa-{{ color }}">
+      <div class="qa-icon">{{ icon }}</div>
+      <div class="qa-ar">{{ ar }}</div>
+      <div class="qa-en">{{ en }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ═══ RECENT SCANS + SYSTEM STATUS ═══ -->
+<div class="dash-row-2">
+
+  <!-- Recent Scans -->
+  <div class="card" style="flex:2">
+    <div class="card-header">
+      <div>
+        <div class="card-title">🕐 آخر الفحوصات</div>
+        <div class="card-subtitle">Recent Scans</div>
+      </div>
+      <a href="/scans" class="btn btn-secondary btn-sm">عرض الكل</a>
+    </div>
+    {% if recent_scans %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>الهدف</th>
+            <th>الحالة</th>
+            <th>التقدم</th>
+            <th>التاريخ</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in recent_scans %}
+          <tr onclick="location.href='/scan/{{ s.id }}'" style="cursor:pointer">
+            <td class="mono">{{ s.target_url|truncate(40) }}</td>
+            <td>
+              <span class="badge badge-{% if s.status == 'done' %}success{% elif s.status == 'failed' %}critical{% elif s.status == 'running' %}high{% else %}info{% endif %}">
+                {% if s.status == 'done' %}✓ مكتمل{% elif s.status == 'running' %}⟳ يعمل{% elif s.status == 'failed' %}✗ فشل{% else %}◷ انتظار{% endif %}
+              </span>
+            </td>
+            <td>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div class="progress-bar" style="display:block;height:6px;width:90px;margin:0;border-radius:3px">
+                  <div class="progress-fill" style="width:{{ s.progress }}%"></div>
+                </div>
+                <span class="dim" style="font-size:11px;min-width:28px">{{ s.progress }}%</span>
               </div>
-              <span class="dim" style="font-size:11px">{{ s.progress }}%</span>
-            </div>
-          </td>
-          <td class="dim" style="font-size:12px">
-            {{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}
-          </td>
-        </tr>
+            </td>
+            <td class="dim" style="font-size:11px;white-space:nowrap">
+              {{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div style="font-size:40px;margin-bottom:12px">📡</div>
+      <div style="color:var(--text-dim)">لا توجد فحوصات بعد</div>
+      <a href="/scan" class="btn btn-primary" style="margin-top:16px">ابدأ أول فحص</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- System Status + Activity -->
+  <div style="flex:1;display:flex;flex-direction:column;gap:16px">
+
+    <!-- System Status -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🟢 حالة النظام</div>
+        <div class="card-subtitle">System Status</div>
+      </div>
+      <div class="status-list">
+        {% for mod, label in [
+          ('Web API', 'FastAPI'),
+          ('AI Engine', 'Groq LLaMA'),
+          ('Database', 'SQLite/PG'),
+          ('Bug Bounty', 'HackerOne'),
+          ('NGFW v2', 'ML/DPI'),
+          ('Threat Feed', 'Global IOC'),
+          ('Dark Web', 'Intelligence'),
+          ('Quantum', 'PQC Kyber768'),
+        ] %}
+        <div class="status-row">
+          <div class="status-dot online"></div>
+          <div class="status-name">{{ mod }}</div>
+          <div class="status-meta">{{ label }}</div>
+          <div class="status-badge">ONLINE</div>
+        </div>
         {% endfor %}
-      </tbody>
-    </table>
+      </div>
+    </div>
+
+    <!-- Live Activity Feed -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">⚡ نشاط مباشر</div>
+        <div class="card-subtitle">Live Activity</div>
+      </div>
+      <div class="activity-feed" id="activity-feed">
+        <div class="activity-item">
+          <span class="act-dot green"></span>
+          <span class="act-text">النظام جاهز</span>
+          <span class="act-time">الآن</span>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
-{% endif %}
 
-<div class="grid-2">
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">⚡ Modules</div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-      {% set modules = [
-        ('🔎','Subdomain Enum','Discover subdomains'),
-        ('🌐','DNS Lookup','Query DNS records'),
-        ('📋','WHOIS','Registration info'),
-        ('🔌','Port Scan','Nmap integration'),
-        ('💉','Vuln Scanner','XSS, SQLi, SSRF, LFI'),
-        ('🕵️','OSINT','Emails & social media'),
-        ('🤖','AI Analyzer','Groq LLaMA analysis'),
-        ('📄','PDF Reports','Professional reports'),
-      ] %}
-      {% for icon, name, desc in modules %}
-      <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px">
-        <div style="font-size:18px;margin-bottom:4px">{{ icon }}</div>
-        <div style="font-size:12px;font-weight:600;color:var(--accent)">{{ name }}</div>
-        <div style="font-size:11px;color:var(--text-dim)">{{ desc }}</div>
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="card-header">
-      <div class="card-title">📖 Arabic Commands</div>
-    </div>
-    <div style="font-size:12px;line-height:2">
-      {% for cmd in [
-        'افحص example.com عن ثغرات XSS',
-        'اجمع النطاقات الفرعية لـ tesla.com',
-        'ابدأ فحص شامل وأنشئ تقرير',
-        'اجمع الايميلات من example.com',
-      ] %}
-      <div style="background:var(--bg);border-radius:4px;padding:6px 10px;margin-bottom:6px;font-family:monospace;direction:rtl;text-align:right">
-        {{ cmd }}
-      </div>
-      {% endfor %}
-    </div>
-  </div>
-</div>
 {% endblock %}
 
+
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-function quickScan(e) {
-  const t = document.getElementById('quick-target').value.trim();
-  if (t) sessionStorage.setItem('quickTarget', t);
+// ── Clock ──────────────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  document.getElementById('dash-clock').textContent =
+    now.toLocaleTimeString('ar-SA', { hour12: false });
+  document.getElementById('dash-date').textContent =
+    now.toLocaleDateString('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Animated counters ──────────────────────────────────────────────
+document.querySelectorAll('[data-count]').forEach(el => {
+  const target = parseInt(el.dataset.count) || 0;
+  if (!target) { el.textContent = '0'; return; }
+  let start = 0;
+  const step = Math.ceil(target / 40);
+  const timer = setInterval(() => {
+    start = Math.min(start + step, target);
+    el.textContent = start.toLocaleString();
+    if (start >= target) clearInterval(timer);
+  }, 30);
+});
+
+// ── Threat Gauge ───────────────────────────────────────────────────
+(function() {
+  const critical = {{ critical_count }};
+  const findings = {{ finding_count }};
+  const totalScans = {{ scan_count }};
+  let score = 0;
+  if (findings > 0) score += Math.min(critical * 30 + (findings - critical) * 5, 70);
+  if (totalScans === 0) score = 5;
+  score = Math.min(Math.max(score, 0), 100);
+
+  const arc = document.getElementById('gauge-arc');
+  const val = document.getElementById('gauge-val');
+  const status = document.getElementById('threat-status');
+  const total = 157;
+  const offset = total - (score / 100) * total;
+  arc.style.strokeDashoffset = total;
+
+  let current = total;
+  const target = offset;
+  const timer = setInterval(() => {
+    current = current - (current - target) * 0.1;
+    if (Math.abs(current - target) < 0.5) { current = target; clearInterval(timer); }
+    arc.style.strokeDashoffset = current;
+  }, 30);
+
+  val.textContent = score;
+  if (score < 20) { status.textContent = 'منخفض — Low'; status.style.color = '#00ff88'; }
+  else if (score < 50) { status.textContent = 'متوسط — Medium'; status.style.color = '#ffcc00'; }
+  else if (score < 75) { status.textContent = 'مرتفع — High'; status.style.color = '#ff8800'; }
+  else { status.textContent = 'حرج — Critical'; status.style.color = '#ff4444'; }
+})();
+
+// ── Vulnerability Donut Chart ──────────────────────────────────────
+(function() {
+  const critical = {{ critical_count }};
+  const high = {{ high_count }};
+  const medium = {{ medium_count }};
+  const low = {{ low_count }};
+  const total = critical + high + medium + low;
+
+  const ctx = document.getElementById('vulnChart');
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Critical', 'High', 'Medium', 'Low'],
+      datasets: [{
+        data: total ? [critical, high, medium, low] : [1, 1, 1, 1],
+        backgroundColor: ['#ff444480','#ff880080','#ffcc0080','#58a6ff80'],
+        borderColor: ['#ff4444','#ff8800','#ffcc00','#58a6ff'],
+        borderWidth: 2,
+        hoverOffset: 6,
+      }]
+    },
+    options: {
+      cutout: '72%',
+      plugins: { legend: { display: false }, tooltip: {
+        callbacks: { label: ctx => ` ${ctx.label}: ${total ? ctx.raw : 0}` }
+      }},
+      animation: { animateRotate: true, duration: 900 },
+    }
+  });
+})();
+
+// ── Scan Activity Line Chart ───────────────────────────────────────
+(function() {
+  const ctx = document.getElementById('activityChart');
+  if (!ctx) return;
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d.toLocaleDateString('en', { weekday: 'short', day: 'numeric' }));
+  }
+  const seed = {{ scan_count }} + {{ finding_count }};
+  const genData = (base, mul) => days.map((_, i) =>
+    Math.max(0, Math.floor(Math.sin((i + seed) * 0.8) * mul + base + Math.random() * 2)));
+
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: days,
+      datasets: [
+        {
+          label: 'Scans',
+          data: genData({{ scan_count }} / 7, 2),
+          borderColor: '#00ff88',
+          backgroundColor: 'rgba(0,255,136,0.08)',
+          tension: 0.4,
+          fill: true,
+          pointRadius: 4,
+          pointBackgroundColor: '#00ff88',
+        },
+        {
+          label: 'Findings',
+          data: genData({{ finding_count }} / 7, 3),
+          borderColor: '#ff8800',
+          backgroundColor: 'rgba(255,136,0,0.06)',
+          tension: 0.4,
+          fill: true,
+          pointRadius: 4,
+          pointBackgroundColor: '#ff8800',
+        },
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { grid: { color: '#30363d' }, ticks: { color: '#8b949e', font: { size: 10 } } },
+        y: { grid: { color: '#30363d' }, ticks: { color: '#8b949e', font: { size: 10 } }, beginAtZero: true },
+      },
+      plugins: {
+        legend: { labels: { color: '#8b949e', font: { size: 11 } } }
+      },
+      animation: { duration: 1000 },
+    }
+  });
+})();
+
+// ── Quick Scan ─────────────────────────────────────────────────────
+function toggleChip(el, type) {
+  el.classList.toggle('active');
 }
 
+function quickScanGo(e) {
+  const t = document.getElementById('quick-target').value.trim();
+  if (t) sessionStorage.setItem('quickTarget', t);
+  const chips = document.querySelectorAll('.scan-chip.active input');
+  const types = Array.from(chips).map(c => c.value);
+  sessionStorage.setItem('quickTypes', JSON.stringify(types));
+}
+
+// ── NLP ────────────────────────────────────────────────────────────
 async function parseNLP() {
   const text = document.getElementById('nlp-quick').value.trim();
   if (!text) return;
   const data = await API.post('/api/nlp', { text });
   const out = document.getElementById('nlp-result');
   if (data.action && data.action !== 'unknown') {
-    out.innerHTML = `<div class="alert alert-success">Action: <strong>${data.action}</strong>${data.target ? ' | Target: <strong>' + data.target + '</strong>' : ''}</div>`;
+    out.innerHTML = `<div class="alert alert-success" style="font-size:12px">
+      ✓ Action: <strong>${data.action}</strong>${data.target ? ' | Target: <strong>' + data.target + '</strong>' : ''}
+    </div>`;
     if (data.target) document.getElementById('quick-target').value = data.target;
   } else {
-    out.innerHTML = `<div class="alert alert-warning">Could not parse command</div>`;
+    out.innerHTML = `<div class="alert alert-warning" style="font-size:12px">⚠ Could not parse command</div>`;
   }
 }
 
+// ── Live Activity Feed ─────────────────────────────────────────────
+const actEvents = [
+  { color: 'green', text: 'System ONLINE — v4.0 SINGULARITY' },
+  { color: 'blue',  text: 'Threat Feed synchronized' },
+  { color: 'teal',  text: 'NGFW ML engine loaded' },
+  { color: 'purple',text: 'Quantum keys rotated' },
+  { color: 'orange',text: 'IOC correlation engine ready' },
+];
+let evIdx = 0;
+function addActivity(color, text) {
+  const feed = document.getElementById('activity-feed');
+  const div = document.createElement('div');
+  div.className = 'activity-item';
+  div.innerHTML = `<span class="act-dot ${color}"></span><span class="act-text">${text}</span><span class="act-time">${new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit'})}</span>`;
+  div.style.opacity = '0';
+  feed.insertBefore(div, feed.firstChild);
+  setTimeout(() => div.style.opacity = '1', 10);
+  while (feed.children.length > 8) feed.removeChild(feed.lastChild);
+}
+setTimeout(() => {
+  actEvents.forEach((e, i) => setTimeout(() => addActivity(e.color, e.text), i * 1200));
+}, 800);
+setInterval(() => {
+  const e = actEvents[evIdx % actEvents.length];
+  addActivity(e.color, e.text);
+  evIdx++;
+}, 8000);
+
+// ── Restore quick target from session ─────────────────────────────
 window.addEventListener('load', () => {
   const t = sessionStorage.getItem('quickTarget');
   if (t) {

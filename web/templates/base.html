@@ -9,10 +9,18 @@
 </head>
 <body>
 
+{% set lic = get_license() %}
+
 <nav class="sidebar">
   <div class="sidebar-logo">
     <h1>🛡️ OPTISEC</h1>
     <div class="version" style="color:#00ff88;font-weight:700">v4.0 SINGULARITY</div>
+    <a href="/license" class="lic-sidebar-badge lic-tier-{{ lic.tier }}" title="License: {{ lic.tier_label }}">
+      {{ lic.tier_label }}
+      {% if lic.tier != 'free' and lic.days_left < 30 %}
+        <span class="lic-expiry-warn">{{ lic.days_left }}d</span>
+      {% endif %}
+    </a>
   </div>
   <div class="sidebar-nav">
     <div class="nav-section">Main</div>
@@ -40,6 +48,7 @@
     <div class="nav-section">Bug Bounty</div>
     <a href="/bug-bounty" class="nav-item {% if active == 'bug_bounty' %}active{% endif %}">
       <span class="icon">🎯</span><span>Bounty Platform</span>
+      {% if not lic.has_feature('bug_bounty') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/cve-pipeline" class="nav-item {% if active == 'cve' %}active{% endif %}">
       <span class="icon">📋</span><span>CVE Pipeline</span>
@@ -48,60 +57,86 @@
     <div class="nav-section">Compliance</div>
     <a href="/compliance" class="nav-item {% if active == 'compliance' %}active{% endif %}">
       <span class="icon">✅</span><span>Compliance Checker</span>
+      {% if not lic.has_feature('compliance') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
 
     <div class="nav-section">AI Security</div>
     <a href="/ai-security/behavioral" class="nav-item {% if active == 'behavioral' %}active{% endif %}">
       <span class="icon">🧠</span><span>Behavioral UEBA</span>
+      {% if not lic.has_feature('behavioral_ueba') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/ai-security/zero-day" class="nav-item {% if active == 'zero_day' %}active{% endif %}">
       <span class="icon">🔮</span><span>Zero-Day Predict</span>
+      {% if not lic.has_feature('zero_day_predict') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/ai-security/attack-patterns" class="nav-item {% if active == 'attack_patterns' %}active{% endif %}">
       <span class="icon">⚔️</span><span>Attack Patterns</span>
+      {% if not lic.has_feature('attack_patterns') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/ai-security/red-team" class="nav-item {% if active == 'red_team' %}active{% endif %}">
       <span class="icon">🔴</span><span>AI Red Team</span>
+      {% if not lic.has_feature('ai_red_team') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
 
     <div class="nav-section" style="color:#FF6B6B;font-weight:700">SINGULARITY v4.0</div>
     <a href="/attack-navigator" class="nav-item {% if active == 'attack_navigator' %}active{% endif %}">
       <span class="icon">🎯</span><span>ATT&CK Navigator</span>
+      {% if not lic.has_feature('attack_navigator') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/darkweb" class="nav-item {% if active == 'darkweb' %}active{% endif %}">
       <span class="icon">🕸️</span><span>Dark Web Intel</span>
+      {% if not lic.has_feature('osint_darkweb') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/autonomous-redteam" class="nav-item {% if active == 'autonomous_rt' %}active{% endif %}">
       <span class="icon">🤖</span><span>Autonomous RedTeam</span>
+      {% if not lic.has_feature('autonomous_redteam') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/ngfw" class="nav-item {% if active == 'ngfw' %}active{% endif %}">
       <span class="icon">🔥</span><span>NGFW v2 (ML/DPI)</span>
+      {% if not lic.has_feature('ngfw') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/threat-feed" class="nav-item {% if active == 'threat_feed' %}active{% endif %}">
       <span class="icon">🌍</span><span>Global Threat Feed</span>
+      {% if not lic.has_feature('threat_feed') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/correlations" class="nav-item {% if active == 'correlations' %}active{% endif %}">
       <span class="icon">🔗</span><span>IOC Correlations</span>
+      {% if not lic.has_feature('ioc_correlations') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
 
     <div class="nav-section">Defense</div>
     <a href="/firewall" class="nav-item {% if active == 'firewall' %}active{% endif %}">
       <span class="icon">🛡️</span><span>AI Firewall</span>
+      {% if not lic.has_feature('firewall') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/vpn" class="nav-item {% if active == 'vpn' %}active{% endif %}">
       <span class="icon">🔒</span><span>WireGuard VPN</span>
+      {% if not lic.has_feature('vpn') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/quantum" class="nav-item {% if active == 'quantum' %}active{% endif %}">
       <span class="icon">⚛️</span><span>Quantum Crypto</span>
+      {% if not lic.has_feature('quantum') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/federation" class="nav-item {% if active == 'federation' %}active{% endif %}">
       <span class="icon">🌐</span><span>Federated Scan</span>
+      {% if not lic.has_feature('federation') %}<span class="nav-lock">🔒</span>{% endif %}
+    </a>
+
+    <div class="nav-section">Developer</div>
+    <a href="/api-docs" class="nav-item {% if active == 'api_docs' %}active{% endif %}">
+      <span class="icon">🔌</span><span>API Docs</span>
+    </a>
+    <a href="/docs" target="_blank" class="nav-item">
+      <span class="icon">🚀</span><span>Swagger UI ↗</span>
     </a>
 
     {% if user and user.role == 'admin' %}
     <div class="nav-section">Admin</div>
     <a href="/admin" class="nav-item {% if active == 'admin' %}active{% endif %}">
       <span class="icon">⚙️</span><span>Admin Panel</span>
+    </a>
+    <a href="/license" class="nav-item {% if active == 'license' %}active{% endif %}">
+      <span class="icon">🪪</span><span>License</span>
     </a>
     {% endif %}
   </div>
@@ -120,10 +155,25 @@
 </nav>
 
 <div class="main">
+  {% if user and user.username == 'demo' %}
+  <div class="demo-banner">
+    <span>🎮 وضع الديمو</span>
+    <span class="demo-banner-sep">—</span>
+    <span>أنت تستخدم حساب الديمو. بعض الميزات محدودة.</span>
+    <a href="/register" class="demo-banner-cta">أنشئ حسابك المجاني ←</a>
+    <a href="/logout" class="demo-banner-exit">خروج ✕</a>
+  </div>
+  {% endif %}
   <div class="topbar">
     <div class="topbar-title">{% block page_title %}{% endblock %}</div>
     <div class="topbar-right">
-      <div class="nlp-bar" style="min-width:320px;margin:0">
+      <!-- License status pill in topbar -->
+      <a href="/license" class="lic-topbar-pill lic-tier-{{ lic.tier }}" title="License Management">
+        <span class="lic-tier-dot-sm"></span>
+        {{ lic.tier_label }}
+        {% if lic.tier != 'free' %}· {{ lic.days_left }}d{% endif %}
+      </a>
+      <div class="nlp-bar" style="min-width:300px;margin:0">
         <span style="color:var(--accent);font-size:16px">💬</span>
         <input id="nlp-input" type="text"
           placeholder="افحص example.com عن ثغرات XSS | Scan target for XSS"
@@ -131,7 +181,7 @@
         <button class="btn btn-primary btn-sm" onclick="runNLPCommand(null)">Go</button>
       </div>
       {% if user %}
-      <div style="font-size:11px;color:var(--text-dim);margin-left:12px;white-space:nowrap">
+      <div style="font-size:11px;color:var(--text-dim);margin-left:8px;white-space:nowrap">
         {{ user.email }}
       </div>
       {% endif %}

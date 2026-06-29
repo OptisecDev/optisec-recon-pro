@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block title %}License — {{ app_name }}{% endblock %}
+{% block page_title %}License Management{% endblock %}
+
+{% block content %}
+
+<!-- ═══ STATUS HERO ═══ -->
+<div class="lic-hero lic-hero-{{ lic.tier }}">
+  <div class="lic-hero-left">
+    <div class="lic-tier-badge">
+      <span class="lic-tier-dot"></span>
+      {{ lic.tier_label }}
+    </div>
+    <div class="lic-hero-title">
+      {% if lic.tier == 'free' %}OPTISEC — نسخة مجانية{% elif lic.tier == 'pro' %}OPTISEC PRO{% else %}OPTISEC ENTERPRISE{% endif %}
+    </div>
+    <div class="lic-hero-sub">
+      {% if lic.tier == 'free' %}
+        مرخص لـ: تجربة مجانية
+      {% else %}
+        مرخص لـ: <strong>{{ lic.issued_to }}</strong> ({{ lic.email }})
+      {% endif %}
+    </div>
+  </div>
+  <div class="lic-hero-right">
+    <div class="lic-stat">
+      <div class="lic-stat-val {% if lic.days_left < 30 and lic.tier != 'free' %}text-red{% endif %}">
+        {% if lic.tier == 'free' %}∞{% else %}{{ lic.days_left }}{% endif %}
+      </div>
+      <div class="lic-stat-label">يوم متبقي</div>
+    </div>
+    <div class="lic-stat">
+      <div class="lic-stat-val">
+        {% if lic.max_targets == -1 %}∞{% else %}{{ lic.max_targets }}{% endif %}
+      </div>
+      <div class="lic-stat-label">أقصى أهداف</div>
+    </div>
+    <div class="lic-stat">
+      <div class="lic-stat-val">
+        {% if lic.max_scans_day == -1 %}∞{% else %}{{ lic.max_scans_day }}{% endif %}
+      </div>
+      <div class="lic-stat-label">فحص/يوم</div>
+    </div>
+    {% if lic.tier != 'free' %}
+    <div class="lic-stat">
+      <div class="lic-stat-val">{{ lic.expires_at[:10] }}</div>
+      <div class="lic-stat-label">تاريخ الانتهاء</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ═══ ACTIVATE + DEACTIVATE ═══ -->
+<div class="grid-2" style="margin-bottom:20px">
+
+  <!-- Activate -->
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <div class="card-title">🔑 تفعيل الترخيص</div>
+        <div class="card-subtitle">Activate License Key</div>
+      </div>
+    </div>
+    {% if flash_msg %}
+    <div class="alert alert-{{ flash_type }}" style="margin-bottom:12px">{{ flash_msg }}</div>
+    {% endif %}
+    <form method="POST" action="/license/activate" id="activate-form">
+      <div class="form-group">
+        <label>مفتاح الترخيص</label>
+        <input type="text" name="key" id="license-key-input"
+               placeholder="OPS4-PRO-eyJ0aWVyIjoicH..."
+               style="font-family:monospace;letter-spacing:0.5px"
+               value="{{ prefill_key or '' }}"
+               required />
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+          Format: OPS4-{TIER}-{encoded_payload}.{signature}
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">
+        ✓ تفعيل المفتاح
+      </button>
+    </form>
+    {% if lic.tier != 'free' %}
+    <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <form method="POST" action="/license/deactivate"
+            onsubmit="return confirm('إلغاء الترخيص وتحويله للنسخة المجانية؟')">
+        <button type="submit" class="btn btn-danger btn-sm" style="width:100%;justify-content:center">
+          ✗ إلغاء الترخيص الحالي
+        </button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Current Key Info -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">📋 معلومات الترخيص الحالي</div>
+    </div>
+    <div class="info-list">
+      <div class="info-row">
+        <span class="info-label">النوع</span>
+        <span class="lic-badge lic-badge-{{ lic.tier }}">{{ lic.tier_label }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">مرخص لـ</span>
+        <span class="info-value">{{ lic.issued_to }}</span>
+      </div>
+      {% if lic.email %}
+      <div class="info-row">
+        <span class="info-label">البريد</span>
+        <span class="info-value">{{ lic.email }}</span>
+      </div>
+      {% endif %}
+      <div class="info-row">
+        <span class="info-label">تاريخ الإصدار</span>
+        <span class="info-value">{{ lic.issued_at[:10] }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">الانتهاء</span>
+        <span class="info-value {% if lic.days_left < 30 and lic.tier != 'free' %}text-red{% endif %}">
+          {% if lic.tier == 'free' %}لا تنتهي{% else %}{{ lic.expires_at[:10] }} ({{ lic.days_left }} يوم){% endif %}
+        </span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">الأهداف</span>
+        <span class="info-value">{% if lic.max_targets == -1 %}غير محدود{% else %}{{ lic.max_targets }}{% endif %}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">فحص/يوم</span>
+        <span class="info-value">{% if lic.max_scans_day == -1 %}غير محدود{% else %}{{ lic.max_scans_day }}{% endif %}</span>
+      </div>
+      {% if lic.key != 'FREE' %}
+      <div class="info-row" style="align-items:flex-start">
+        <span class="info-label">المفتاح</span>
+        <code style="font-size:10px;color:var(--accent);word-break:break-all;text-align:right;direction:ltr">
+          {{ lic.key[:40] }}...
+        </code>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══ FEATURE MATRIX ═══ -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🔒 مقارنة المميزات</div>
+      <div class="card-subtitle">Feature Comparison — All Tiers</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table class="lic-table">
+      <thead>
+        <tr>
+          <th style="width:40%">الميزة / Feature</th>
+          <th class="text-center">
+            <span class="lic-badge lic-badge-free">FREE</span>
+          </th>
+          <th class="text-center">
+            <span class="lic-badge lic-badge-pro">PRO <small>$149/mo</small></span>
+          </th>
+          <th class="text-center">
+            <span class="lic-badge lic-badge-enterprise">ENTERPRISE</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for feat_id, feat_label in features %}
+        <tr class="{% if lic.has_feature(feat_id) %}lic-row-active{% endif %}">
+          <td>
+            <div style="font-size:13px;font-weight:500;color:var(--text)">{{ feat_label }}</div>
+            <div style="font-size:10px;color:var(--text-dim);font-family:monospace">{{ feat_id }}</div>
+          </td>
+          <td class="text-center">
+            {% if feat_id in free_features %}
+              <span class="lic-check">✓</span>
+            {% else %}
+              <span class="lic-cross">—</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if feat_id in pro_features or feat_id in free_features %}
+              <span class="lic-check">✓</span>
+            {% else %}
+              <span class="lic-cross">—</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <span class="lic-check">✓</span>
+          </td>
+        </tr>
+        {% endfor %}
+        <!-- Limits row -->
+        <tr>
+          <td><strong>الأهداف القصوى</strong></td>
+          <td class="text-center dim">3</td>
+          <td class="text-center dim">50</td>
+          <td class="text-center dim">∞</td>
+        </tr>
+        <tr>
+          <td><strong>فحص يومي</strong></td>
+          <td class="text-center dim">10</td>
+          <td class="text-center dim">500</td>
+          <td class="text-center dim">∞</td>
+        </tr>
+        <tr>
+          <td><strong>المستخدمون</strong></td>
+          <td class="text-center dim">1</td>
+          <td class="text-center dim">5</td>
+          <td class="text-center dim">∞</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if user.role == 'admin' %}
+<!-- ═══ KEY GENERATOR (Admin only) ═══ -->
+<div class="card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">⚙️ مولّد المفاتيح — للمطورين فقط</div>
+      <div class="card-subtitle">License Key Generator (Admin)</div>
+    </div>
+    <span class="badge badge-critical">ADMIN ONLY</span>
+  </div>
+  <div class="grid-3" style="gap:12px;margin-bottom:16px">
+    <div class="form-group" style="margin:0">
+      <label>النوع / Tier</label>
+      <select id="gen-tier">
+        <option value="pro">PRO</option>
+        <option value="enterprise">ENTERPRISE</option>
+        <option value="free">FREE</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>الاسم / Issued To</label>
+      <input type="text" id="gen-name" placeholder="Company Name" value="{{ user.username }}" />
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>البريد / Email</label>
+      <input type="text" id="gen-email" placeholder="admin@company.com" value="{{ user.email }}" />
+    </div>
+  </div>
+  <div class="grid-2" style="gap:12px;margin-bottom:16px">
+    <div class="form-group" style="margin:0">
+      <label>المدة (أيام) / Duration</label>
+      <select id="gen-days">
+        <option value="30">30 يوم</option>
+        <option value="90">90 يوم</option>
+        <option value="365" selected>سنة كاملة</option>
+        <option value="730">سنتان</option>
+        <option value="3650">10 سنوات</option>
+      </select>
+    </div>
+    <div style="display:flex;align-items:flex-end">
+      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateKey()">
+        🔑 توليد مفتاح
+      </button>
+    </div>
+  </div>
+  <div id="gen-result" style="display:none">
+    <label>المفتاح المُولَّد / Generated Key</label>
+    <div style="display:flex;gap:8px;align-items:center">
+      <code id="gen-key-display"
+            style="flex:1;background:var(--bg);padding:12px 16px;border-radius:6px;border:1px solid var(--accent);
+                   font-size:12px;color:var(--accent);word-break:break-all;direction:ltr;display:block"></code>
+      <button class="btn btn-secondary" onclick="copyGenKey()">📋 نسخ</button>
+      <button class="btn btn-primary" onclick="fillKey()">✓ تفعيل</button>
+    </div>
+    <div id="gen-meta" style="margin-top:8px;font-size:12px;color:var(--text-dim)"></div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if user.role == 'admin' %}
+async function generateKey() {
+  const tier  = document.getElementById('gen-tier').value;
+  const name  = document.getElementById('gen-name').value.trim();
+  const email = document.getElementById('gen-email').value.trim();
+  const days  = document.getElementById('gen-days').value;
+  if (!name || !email) { alert('الرجاء إدخال الاسم والبريد الإلكتروني'); return; }
+
+  const res = await fetch('/api/license/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tier, issued_to: name, email, days: parseInt(days) }),
+  });
+  const data = await res.json();
+  if (data.key) {
+    document.getElementById('gen-result').style.display = 'block';
+    document.getElementById('gen-key-display').textContent = data.key;
+    const exp = new Date();
+    exp.setDate(exp.getDate() + parseInt(days));
+    document.getElementById('gen-meta').innerHTML =
+      `Tier: <strong>${tier.toUpperCase()}</strong> ·
+       Expires: <strong>${exp.toISOString().slice(0,10)}</strong> ·
+       Duration: <strong>${days} days</strong>`;
+  } else {
+    alert('Error: ' + (data.error || 'unknown'));
+  }
+}
+
+function copyGenKey() {
+  const key = document.getElementById('gen-key-display').textContent;
+  navigator.clipboard.writeText(key).then(() => {
+    event.target.textContent = '✓ تم النسخ';
+    setTimeout(() => event.target.textContent = '📋 نسخ', 2000);
+  });
+}
+
+function fillKey() {
+  const key = document.getElementById('gen-key-display').textContent;
+  document.getElementById('license-key-input').value = key;
+  document.getElementById('activate-form').scrollIntoView({ behavior: 'smooth' });
+}
+{% endif %}
+</script>
+{% endblock %}

@@ -4,7 +4,7 @@ import asyncio
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -12,6 +12,8 @@ from fastapi import (
     FastAPI, Request, Form, HTTPException, BackgroundTasks,
     Depends, WebSocket, WebSocketDisconnect,
 )
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -20,6 +22,14 @@ from sqlalchemy import select, func
 
 from web.database import get_db, init_db, SessionLocal
 from web.models import User, Target, Scan, Finding, Report
+from web.schemas import (
+    LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
+    APIKeyResponse, ScanRequest, ScanLaunchResponse, ScanStatusResponse,
+    ScanListItem, FindingResponse, NLPRequest, NLPResponse,
+    AIAnalyzeRequest, AIAnalyzeResponse, TargetCreate, TargetResponse,
+    HeadersScanRequest, PortsScanRequest, SSLScanRequest,
+    ReportRequest, ReportResponse, UserDetail, UserPatch, ErrorResponse,
+)
 from web.auth import (
     verify_password, hash_password, create_access_token,
     generate_api_key, get_current_user,
@@ -29,6 +39,10 @@ from web.auth import (
     SECRET_KEY, ALGORITHM,
 )
 from web.websocket_manager import ws_manager
+from web.license import (
+    get_license, reload_license, activate_license, deactivate_license,
+    generate_license_key, FEATURE_LABELS, TIER_FEATURES,
+)
 
 from modules.recon.subdomains import enumerate_subdomains
 from modules.recon.dns_lookup import dns_lookup
@@ -49,9 +63,356 @@ from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
 
-app = FastAPI(title=APP_NAME, version=APP_VERSION)
+# ─── OpenAPI Tags ─────────────────────────────────────────────────────────────
+
+OPENAPI_TAGS = [
+    {
+        "name": "Authentication",
+        "description": (
+            "Obtain JWT tokens and manage API keys. "
+            "All protected endpoints require `Authorization: Bearer <token>` "
+            "or a valid `access_token` cookie."
+        ),
+    },
+    {
+        "name": "Scans",
+        "description": (
+            "Launch and monitor security scans. Supports 13 modules: "
+            "subdomain enumeration, DNS, WHOIS, Nmap, SSL, headers, ports, "
+            "XSS, SQLi, SSRF, LFI, open-redirect, and OSINT. "
+            "Real-time progress available via WebSocket `/ws/{scan_id}`."
+        ),
+    },
+    {
+        "name": "Targets",
+        "description": "Manage the list of targets associated with your account.",
+    },
+    {
+        "name": "Findings",
+        "description": "Query vulnerability findings produced by completed scans.",
+    },
+    {
+        "name": "NLP",
+        "description": (
+            "Natural-language command parser supporting Arabic and English. "
+            "Submit commands like `افحص tesla.com عن ثغرات XSS` and receive "
+            "structured action + target data."
+        ),
+    },
+    {
+        "name": "AI Analysis",
+        "description": (
+            "Groq LLaMA-powered security analysis. Submit a scan ID to receive "
+            "a detailed markdown threat report."
+        ),
+    },
+    {
+        "name": "Reports",
+        "description": "Generate and download PDF security reports for completed scans.",
+    },
+    {
+        "name": "Quick Utilities",
+        "description": "Fast one-shot checks: HTTP headers, SSL certificate, port scan.",
+    },
+    {
+        "name": "Admin",
+        "description": "User management and audit logs. **Admin role required.**",
+    },
+    {
+        "name": "ai-security",
+        "description": (
+            "AI-powered security modules: Behavioral UEBA, Zero-Day prediction, "
+            "Attack Pattern analysis, and AI Red Team engagements."
+        ),
+    },
+    {
+        "name": "bug-bounty",
+        "description": (
+            "Bug bounty platform integrations: HackerOne, Bugcrowd, Intigriti. "
+            "Browse programs, submit reports, and manage CVE pipeline."
+        ),
+    },
+    {
+        "name": "compliance",
+        "description": "Automated compliance checking against ISO 27001, NIST, PCI-DSS, GDPR, HIPAA.",
+    },
+    {
+        "name": "osint",
+        "description": (
+            "OSINT intelligence modules: phone lookup, IP geolocation, domain recon, "
+            "national ID (Iraq), vehicle plates, username search, device fingerprinting, "
+            "and cell tower triangulation."
+        ),
+    },
+    {
+        "name": "firewall",
+        "description": "AI-powered application firewall — manage rules, whitelist/blacklist IPs.",
+    },
+    {
+        "name": "vpn",
+        "description": "WireGuard VPN peer management and key generation.",
+    },
+    {
+        "name": "quantum",
+        "description": "Post-Quantum Cryptography (PQC) using Kyber-768 key encapsulation.",
+    },
+    {
+        "name": "federation",
+        "description": "Federated scan coordination across multiple OPTISEC nodes.",
+    },
+    {
+        "name": "attack_navigator",
+        "description": "MITRE ATT&CK Navigator — browse techniques, map detections, track APT profiles.",
+    },
+    {
+        "name": "darkweb",
+        "description": "Dark web intelligence feed — leaked credentials, threat actor mentions, IOCs.",
+    },
+    {
+        "name": "autonomous_redteam",
+        "description": (
+            "Autonomous Red Team engine (v4.0 SINGULARITY) — AI-driven attack sessions, "
+            "payload library, and automated report generation."
+        ),
+    },
+    {
+        "name": "ngfw",
+        "description": "Next-Generation Firewall v2 with ML-based DPI and anomaly detection.",
+    },
+    {
+        "name": "threat_feed",
+        "description": "Global threat intelligence feed — IOCs, CVEs, active campaigns.",
+    },
+    {
+        "name": "correlations",
+        "description": "IOC correlation engine — cluster and link indicators across multiple sources.",
+    },
+]
+
+# ─── FastAPI App ──────────────────────────────────────────────────────────────
+
+app = FastAPI(
+    title=APP_NAME,
+    version=APP_VERSION,
+    description="""
+## 🛡️ OPTISEC Recon Pro — Enterprise Security Intelligence Platform
+
+A comprehensive **Bug Bounty & Penetration Testing** platform with AI-powered analysis,
+built for security professionals and enterprise SOC teams.
+
+---
+
+### Authentication
+
+All API endpoints require authentication. Two methods are supported:
+
+| Method | Header / Cookie |
+|--------|----------------|
+| **JWT Token** | `Authorization: Bearer <token>` |
+| **Session Cookie** | `access_token=<token>` (set automatically on web login) |
+
+Obtain a token via `POST /api/auth/login`.
+
+---
+
+### Rate Limiting
+
+Login endpoints are rate-limited to **5 failed attempts** before a 15-minute lockout.
+API endpoints are not currently rate-limited but require a valid token.
+
+---
+
+### Roles
+
+| Role | Capabilities |
+|------|-------------|
+| `admin` | Full access — user management, all scans |
+| `analyst` | Launch scans, view all findings |
+| `viewer` | Read-only access to own scans |
+
+---
+
+### WebSocket — Real-time Scan Progress
+
+Connect to `ws://host/ws/{scan_id}` after launching a scan to receive live progress events:
+
+```json
+{ "type": "progress", "step": "xss", "progress": 58, "status": "running" }
+```
+
+---
+
+### Arabic NLP Support
+
+The `/api/nlp` endpoint accepts commands in **Arabic or English**:
+
+```
+افحص tesla.com عن ثغرات XSS
+اجمع النطاقات الفرعية لـ example.com
+ابدأ فحص شامل وأنشئ تقرير
+```
+""",
+    contact={
+        "name": "OPTISEC Security Team",
+        "email": "ahssanali84.syber@gmail.com",
+    },
+    license_info={
+        "name": "Proprietary — All Rights Reserved",
+    },
+    openapi_tags=OPENAPI_TAGS,
+    docs_url=None,
+    redoc_url=None,
+)
+
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.globals["get_license"] = get_license
+
+
+# ─── Custom Swagger UI (OPTISEC Dark Theme) ───────────────────────────────────
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger(request: Request):
+    token = request.cookies.get("access_token", "")
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{APP_NAME} — API Docs</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <style>
+    :root {{
+      --accent: #00ff88;
+      --bg: #0d1117;
+      --card: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+    }}
+    body {{ background: var(--bg) !important; margin: 0; font-family: 'Segoe UI', sans-serif; }}
+    .swagger-ui {{ background: var(--bg) !important; }}
+    .swagger-ui .topbar {{ background: #161b22 !important; border-bottom: 1px solid #30363d; padding: 10px 20px; }}
+    .swagger-ui .topbar .topbar-wrapper {{ gap: 16px; }}
+    .swagger-ui .topbar .topbar-wrapper .link {{ display: none; }}
+    .swagger-ui .topbar::before {{
+      content: '🛡️ OPTISEC API Docs';
+      color: #00ff88;
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }}
+    .swagger-ui .info {{ background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin-bottom: 20px; }}
+    .swagger-ui .info .title {{ color: var(--accent) !important; font-size: 28px; }}
+    .swagger-ui .info p, .swagger-ui .info li {{ color: var(--text) !important; }}
+    .swagger-ui .info table th, .swagger-ui .info table td {{ color: var(--text) !important; background: #1c2333 !important; border-color: var(--border) !important; }}
+    .swagger-ui .info h2, .swagger-ui .info h3, .swagger-ui .info h4 {{ color: var(--accent) !important; }}
+    .swagger-ui .info code {{ background: #0d1117; color: #00ff88; padding: 2px 6px; border-radius: 4px; }}
+    .swagger-ui .scheme-container {{ background: var(--card) !important; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }}
+    .swagger-ui select {{ background: var(--bg) !important; color: var(--text) !important; border-color: var(--border) !important; }}
+    .swagger-ui .opblock-tag {{ background: var(--card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; margin-bottom: 8px !important; }}
+    .swagger-ui .opblock-tag:hover {{ background: #1c2333 !important; }}
+    .swagger-ui .opblock-tag-section h3 {{ color: var(--text) !important; font-size: 16px !important; }}
+    .swagger-ui .opblock-tag-section p {{ color: #8b949e !important; }}
+    .swagger-ui .opblock {{ background: var(--card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; margin-bottom: 6px !important; }}
+    .swagger-ui .opblock.opblock-get    {{ border-left: 3px solid #58a6ff !important; }}
+    .swagger-ui .opblock.opblock-post   {{ border-left: 3px solid #00ff88 !important; }}
+    .swagger-ui .opblock.opblock-delete {{ border-left: 3px solid #ff4444 !important; }}
+    .swagger-ui .opblock.opblock-patch  {{ border-left: 3px solid #ffcc00 !important; }}
+    .swagger-ui .opblock.opblock-put    {{ border-left: 3px solid #ff8800 !important; }}
+    .swagger-ui .opblock .opblock-summary {{ background: transparent !important; }}
+    .swagger-ui .opblock .opblock-summary-method {{ border-radius: 4px !important; font-size: 12px !important; min-width: 60px !important; font-weight: 700 !important; }}
+    .swagger-ui .opblock.opblock-get    .opblock-summary-method {{ background: #58a6ff !important; color: #000 !important; }}
+    .swagger-ui .opblock.opblock-post   .opblock-summary-method {{ background: #00ff88 !important; color: #000 !important; }}
+    .swagger-ui .opblock.opblock-delete .opblock-summary-method {{ background: #ff4444 !important; }}
+    .swagger-ui .opblock.opblock-patch  .opblock-summary-method {{ background: #ffcc00 !important; color: #000 !important; }}
+    .swagger-ui .opblock .opblock-summary-path {{ color: var(--text) !important; font-family: 'Fira Code', monospace; }}
+    .swagger-ui .opblock .opblock-summary-description {{ color: #8b949e !important; }}
+    .swagger-ui .opblock-body-inner, .swagger-ui .opblock-section {{ background: #1c2333 !important; }}
+    .swagger-ui .tab li {{ color: #8b949e !important; }}
+    .swagger-ui .tab li.active, .swagger-ui .tab li:hover {{ color: var(--accent) !important; }}
+    .swagger-ui textarea, .swagger-ui input[type=text], .swagger-ui input[type=email] {{
+      background: var(--bg) !important; color: var(--text) !important;
+      border-color: var(--border) !important; border-radius: 6px !important;
+    }}
+    .swagger-ui .btn {{ border-radius: 6px !important; font-weight: 600 !important; }}
+    .swagger-ui .btn.execute {{ background: var(--accent) !important; color: #000 !important; border: none !important; }}
+    .swagger-ui .btn.authorize {{ background: transparent !important; color: var(--accent) !important; border-color: var(--accent) !important; }}
+    .swagger-ui .response-col_status {{ color: var(--accent) !important; font-weight: 700 !important; }}
+    .swagger-ui .response-col_description {{ color: var(--text) !important; }}
+    .swagger-ui .responses-table .response {{ background: #1c2333 !important; border-color: var(--border) !important; }}
+    .swagger-ui .model-box {{ background: var(--bg) !important; border-color: var(--border) !important; border-radius: 6px !important; }}
+    .swagger-ui .model .property {{ color: var(--text) !important; }}
+    .swagger-ui .model .property-type {{ color: #bc8cff !important; }}
+    .swagger-ui .model-title {{ color: var(--accent) !important; }}
+    .swagger-ui section.models {{ background: var(--card) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; }}
+    .swagger-ui section.models h4 {{ color: var(--text) !important; }}
+    .swagger-ui .loading-container {{ background: var(--bg) !important; }}
+    .swagger-ui .markdown p, .swagger-ui .markdown li {{ color: var(--text) !important; }}
+    .swagger-ui .markdown code {{ background: #0d1117 !important; color: #00ff88 !important; }}
+    .swagger-ui .markdown h1,.swagger-ui .markdown h2,.swagger-ui .markdown h3 {{ color: var(--accent) !important; }}
+    .swagger-ui .markdown table th {{ background: #1c2333 !important; color: var(--text) !important; }}
+    .swagger-ui .markdown table td {{ color: var(--text) !important; }}
+    .swagger-ui .markdown hr {{ border-color: var(--border) !important; }}
+    .swagger-ui span.token.string {{ color: #a5d6ff !important; }}
+    .swagger-ui span.token.number {{ color: #79c0ff !important; }}
+    .swagger-ui span.token.boolean {{ color: #ff8800 !important; }}
+    .swagger-ui span.token.property {{ color: var(--accent) !important; }}
+    .swagger-ui .microlight {{ background: var(--bg) !important; color: var(--text) !important; border-radius: 6px !important; }}
+    .swagger-ui .highlight-code {{ background: var(--bg) !important; }}
+    .swagger-ui .arrow {{ filter: invert(0.6); }}
+  </style>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+window.onload = () => {{
+  SwaggerUIBundle({{
+    url: '/openapi.json',
+    dom_id: '#swagger-ui',
+    presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+    layout: 'BaseLayout',
+    docExpansion: 'none',
+    defaultModelsExpandDepth: 1,
+    persistAuthorization: true,
+    tryItOutEnabled: false,
+    requestInterceptor: req => {{
+      const cookie = '{token}';
+      if (cookie) req.headers['Cookie'] = 'access_token=' + cookie;
+      return req;
+    }},
+    onComplete: () => {{
+      const auth = document.querySelector('.auth-wrapper');
+      if (auth) {{
+        const hint = document.createElement('div');
+        hint.style = 'color:#8b949e;font-size:12px;margin-top:8px;padding:8px 12px;background:#1c2333;border-radius:6px';
+        hint.innerHTML = '💡 Use <code style="color:#00ff88">POST /api/auth/login</code> to get your token, then click Authorize above.';
+        auth.appendChild(hint);
+      }}
+    }},
+  }});
+}};
+</script>
+</body>
+</html>""")
+
+
+@app.get("/redoc", include_in_schema=False)
+async def custom_redoc():
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>{APP_NAME} — API Reference</title>
+  <style>body{{margin:0;background:#0d1117}}</style>
+</head>
+<body>
+  <redoc spec-url='/openapi.json'
+    theme='{{"colors":{{"primary":{{"main":"#00ff88"}}}},"rightPanel":{{"backgroundColor":"#161b22"}},"sidebar":{{"backgroundColor":"#161b22"}}}}'
+  ></redoc>
+  <script src="https://cdn.jsdelivr.net/npm/redoc@latest/bundles/redoc.standalone.js"></script>
+</body>
+</html>""")
 
 # ─── Feature Routers ──────────────────────────────────────────────────────────
 app.include_router(bug_bounty.router)
@@ -98,6 +459,7 @@ async def session_refresh_middleware(request: Request, call_next):
 async def startup():
     await init_db()
     await _ensure_first_admin()
+    await _ensure_demo_account()
 
 
 async def _ensure_first_admin():
@@ -124,11 +486,94 @@ async def _ensure_first_admin():
             log_auth_event("INIT_ADMIN", username, "localhost", True, "first admin created")
 
 
+_DEMO_TARGETS = [
+    ("tesla.com",     "Tesla Inc."),
+    ("google.com",    "Google LLC"),
+    ("microsoft.com", "Microsoft Corp"),
+    ("apple.com",     "Apple Inc."),
+    ("amazon.com",    "Amazon AWS"),
+]
+_DEMO_FINDINGS = [
+    ("XSS",           "high",     "https://tesla.com/search?q=test", "q",      "<script>alert(1)</script>"),
+    ("SQLi",          "critical", "https://tesla.com/api/user",      "id",     "' OR 1=1--"),
+    ("SSRF",          "high",     "https://tesla.com/fetch",         "url",    "http://169.254.169.254/"),
+    ("Open Redirect", "medium",   "https://tesla.com/redirect",      "next",   "//evil.com"),
+    ("XSS",           "medium",   "https://google.com/search",       "q",      "\"><img src=x onerror=alert(1)>"),
+    ("LFI",           "critical", "https://google.com/page",         "file",   "../../etc/passwd"),
+    ("SQLi",          "high",     "https://microsoft.com/api/login", "user",   "admin'--"),
+    ("XSS",           "low",      "https://apple.com/feedback",      "msg",    "<b>test</b>"),
+]
+
+async def _ensure_demo_account():
+    async with SessionLocal() as db:
+        demo = (await db.execute(
+            select(User).where(User.username == "demo")
+        )).scalar_one_or_none()
+        if demo:
+            return
+
+        demo = User(
+            username="demo",
+            email="demo@optisec.local",
+            password_hash=hash_password("Demo@optisec1"),
+            role="analyst",
+            api_key=generate_api_key(),
+            is_active=True,
+        )
+        db.add(demo)
+        await db.flush()
+
+        targets = []
+        for url, name in _DEMO_TARGETS:
+            t = Target(user_id=demo.id, url=url, name=name)
+            db.add(t)
+            targets.append(t)
+        await db.flush()
+
+        import random, uuid as _uuid
+        from datetime import timedelta
+        statuses = ["done", "done", "done", "failed", "done"]
+        scan_ids = []
+        for i, (t, (url, _)) in enumerate(zip(targets, _DEMO_TARGETS)):
+            s = Scan(
+                id=f"demo_{_uuid.uuid4().hex[:16]}",
+                user_id=demo.id,
+                target_id=t.id,
+                target_url=url,
+                scan_types=["xss", "sqli", "subdomain", "dns"],
+                status=statuses[i],
+                progress=100 if statuses[i] == "done" else 37,
+                results={"demo": True},
+                created_at=datetime.utcnow() - timedelta(days=i),
+            )
+            db.add(s)
+            scan_ids.append((s.id, t.id))
+        await db.flush()
+
+        for i, (vtype, sev, url, param, payload) in enumerate(_DEMO_FINDINGS):
+            scan_id, target_id = scan_ids[i % len(scan_ids)]
+            db.add(Finding(
+                scan_id=scan_id, target_id=target_id,
+                vuln_type=vtype, severity=sev,
+                url=url, parameter=param,
+                payload=payload,
+                evidence=f"Demo finding — {vtype} detected at parameter '{param}'",
+            ))
+
+        await db.commit()
+        print("[OPTISEC] Demo account created → demo / Demo@optisec1")
+
+
 # ─── Exception Handlers ───────────────────────────────────────────────────────
 
 @app.exception_handler(HTTPException)
 async def on_http_exception(request: Request, exc: HTTPException):
     if exc.status_code == 401 and not request.url.path.startswith("/api/"):
+        # Show landing page for root path; login redirect for everything else
+        if request.url.path == "/":
+            return templates.TemplateResponse(request, "landing.html", {
+                "app_name": APP_NAME, "version": APP_VERSION,
+            })
         return RedirectResponse(f"/login?next={request.url.path}", status_code=302)
     if exc.status_code == 403 and not request.url.path.startswith("/api/"):
         return templates.TemplateResponse(request, "error.html", {
@@ -141,6 +586,38 @@ async def on_http_exception(request: Request, exc: HTTPException):
 
 async def web_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     return await get_current_user(request, db)
+
+
+async def optional_user(request: Request, db: AsyncSession = Depends(get_db)) -> Optional[User]:
+    try:
+        return await get_current_user(request, db)
+    except Exception:
+        return None
+
+
+# ─── Demo Route ───────────────────────────────────────────────────────────────
+
+@app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
+async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
+    """One-click demo login — creates session for demo user."""
+    user = (await db.execute(
+        select(User).where(User.username == "demo", User.is_active == True)
+    )).scalar_one_or_none()
+    if not user:
+        return RedirectResponse("/login?error=Demo+account+not+available", status_code=302)
+    user.last_login = datetime.utcnow()
+    await db.commit()
+    token = create_access_token(user.id, user.role)
+    response = RedirectResponse("/", status_code=302)
+    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax")
+    return response
+
+
+@app.get("/landing", response_class=HTMLResponse, include_in_schema=False)
+async def landing_page(request: Request):
+    return templates.TemplateResponse(request, "landing.html", {
+        "app_name": APP_NAME, "version": APP_VERSION,
+    })
 
 
 # ─── Auth Routes ──────────────────────────────────────────────────────────────
@@ -279,7 +756,21 @@ async def logout(request: Request):
 
 # ─── API Auth ─────────────────────────────────────────────────────────────────
 
-@app.post("/api/auth/login")
+@app.post(
+    "/api/auth/login",
+    tags=["Authentication"],
+    summary="Obtain JWT access token",
+    description=(
+        "Authenticate with username/email and password. Returns a JWT bearer token "
+        "valid for **30 minutes**. Include as `Authorization: Bearer <token>` on all "
+        "subsequent API requests, or it will be set automatically via cookie on web login."
+    ),
+    responses={
+        200: {"description": "Token issued successfully", "model": LoginResponse},
+        401: {"description": "Invalid credentials", "model": ErrorResponse},
+        429: {"description": "Rate limited — too many failed attempts", "model": ErrorResponse},
+    },
+)
 async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
     ip = request.client.host if request.client else "unknown"
@@ -311,7 +802,20 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     })
 
 
-@app.post("/api/auth/register")
+@app.post(
+    "/api/auth/register",
+    tags=["Authentication"],
+    summary="Register new user account",
+    description=(
+        "Create a new user account. The **first registered user** automatically receives "
+        "`admin` role; all subsequent accounts start as `viewer`. "
+        "Password must have ≥8 characters, at least one uppercase letter, digit, and special character."
+    ),
+    responses={
+        200: {"description": "Account created", "model": RegisterResponse},
+        400: {"description": "Validation error or duplicate user", "model": ErrorResponse},
+    },
+)
 async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
     username = data.get("username", "")
@@ -342,7 +846,19 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
                          "role": user.role, "api_key": user.api_key})
 
 
-@app.post("/api/auth/api-key/regenerate")
+@app.post(
+    "/api/auth/api-key/regenerate",
+    tags=["Authentication"],
+    summary="Regenerate API key",
+    description=(
+        "Invalidates the current 64-character API key and issues a new one. "
+        "The old key stops working immediately."
+    ),
+    responses={
+        200: {"description": "New API key", "model": APIKeyResponse},
+        401: {"description": "Not authenticated", "model": ErrorResponse},
+    },
+)
 async def regenerate_api_key(
     user: User = Depends(web_user),
     db: AsyncSession = Depends(get_db),
@@ -355,6 +871,61 @@ async def regenerate_api_key(
 
 # ─── Web Pages ────────────────────────────────────────────────────────────────
 
+@app.get("/api-docs", response_class=HTMLResponse, include_in_schema=False)
+async def api_docs_page(request: Request, user: User = Depends(web_user)):
+    import json as _json
+    # Parse openapi.json to build endpoint groups for the UI
+    from fastapi.openapi.utils import get_openapi as _get_openapi
+    spec = _get_openapi(
+        title=app.title, version=app.version, description=app.description,
+        routes=app.routes, tags=app.openapi_tags,
+    )
+    paths = spec.get("paths", {})
+
+    tag_endpoints: dict = {}
+    for path, methods in paths.items():
+        for method, info in methods.items():
+            if method in ("get", "post", "delete", "patch", "put"):
+                for tag in (info.get("tags") or ["Other"]):
+                    tag_endpoints.setdefault(tag, []).append({
+                        "method": method.upper(),
+                        "path": path,
+                        "summary": info.get("summary", path),
+                        "operation_id": info.get("operationId", ""),
+                    })
+
+    tag_icons = {
+        "Authentication": "🔑", "Scans": "📡", "Targets": "🎯",
+        "Findings": "🔍", "NLP": "💬", "AI Analysis": "🤖",
+        "Reports": "📄", "Quick Utilities": "⚡", "Admin": "⚙️",
+        "ai-security": "🧠", "bug-bounty": "💰", "compliance": "✅",
+        "osint": "🕵️", "firewall": "🛡️", "vpn": "🔒", "quantum": "⚛️",
+        "federation": "🌐", "attack_navigator": "⚔️", "darkweb": "🕸️",
+        "autonomous_redteam": "🤖", "ngfw": "🔥", "threat_feed": "🌍",
+        "correlations": "🔗", "Other": "📌",
+    }
+    tag_descs = {t["name"]: t.get("description", "") for t in (app.openapi_tags or [])}
+
+    api_groups = []
+    for tag, eps in sorted(tag_endpoints.items()):
+        api_groups.append({
+            "name": tag,
+            "icon": tag_icons.get(tag, "📌"),
+            "description": tag_descs.get(tag, "")[:120],
+            "endpoints": eps,
+        })
+
+    return templates.TemplateResponse(request, "api_docs.html", {
+        "app_name": APP_NAME,
+        "version": APP_VERSION,
+        "active": "api_docs",
+        "user": user,
+        "api_groups": api_groups,
+        "endpoint_count": sum(len(v) for v in tag_endpoints.values()),
+        "tag_count": len(tag_endpoints),
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     target_count = (await db.execute(
@@ -366,9 +937,32 @@ async def index(request: Request, user: User = Depends(web_user), db: AsyncSessi
     finding_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan).where(Scan.user_id == user.id)
     )).scalar()
+    critical_count = (await db.execute(
+        select(func.count()).select_from(Finding).join(Scan)
+        .where(Scan.user_id == user.id, Finding.severity == "critical")
+    )).scalar()
+    high_count = (await db.execute(
+        select(func.count()).select_from(Finding).join(Scan)
+        .where(Scan.user_id == user.id, Finding.severity == "high")
+    )).scalar()
+    medium_count = (await db.execute(
+        select(func.count()).select_from(Finding).join(Scan)
+        .where(Scan.user_id == user.id, Finding.severity == "medium")
+    )).scalar()
+    low_count = (await db.execute(
+        select(func.count()).select_from(Finding).join(Scan)
+        .where(Scan.user_id == user.id, Finding.severity == "low")
+    )).scalar()
+    report_count = (await db.execute(
+        select(func.count()).select_from(Report).where(Report.user_id == user.id)
+    )).scalar()
+    done_scans = (await db.execute(
+        select(func.count()).select_from(Scan)
+        .where(Scan.user_id == user.id, Scan.status == "done")
+    )).scalar()
     recent_scans = (await db.execute(
         select(Scan).where(Scan.user_id == user.id)
-        .order_by(Scan.created_at.desc()).limit(5)
+        .order_by(Scan.created_at.desc()).limit(8)
     )).scalars().all()
 
     return templates.TemplateResponse(request, "index.html", {
@@ -377,6 +971,12 @@ async def index(request: Request, user: User = Depends(web_user), db: AsyncSessi
         "target_count": target_count,
         "scan_count": scan_count,
         "finding_count": finding_count,
+        "critical_count": critical_count,
+        "high_count": high_count,
+        "medium_count": medium_count,
+        "low_count": low_count,
+        "report_count": report_count,
+        "done_scans": done_scans,
         "recent_scans": recent_scans,
     })
 
@@ -400,7 +1000,16 @@ async def targets_page(request: Request, user: User = Depends(web_user), db: Asy
     })
 
 
-@app.post("/targets/add")
+@app.post(
+    "/targets/add",
+    tags=["Targets"],
+    summary="Add a new target",
+    description="Add a domain or URL to your target list. Requires **analyst** or **admin** role.",
+    responses={
+        200: {"description": "Target created", "model": TargetResponse},
+        403: {"description": "Insufficient role", "model": ErrorResponse},
+    },
+)
 async def target_add(
     url: str = Form(...),
     name: str = Form(""),
@@ -419,7 +1028,17 @@ async def target_add(
     }})
 
 
-@app.delete("/targets/{target_id}")
+@app.delete(
+    "/targets/{target_id}",
+    tags=["Targets"],
+    summary="Delete a target",
+    description="Permanently remove a target. Only the owning user (or admin) can delete.",
+    responses={
+        200: {"description": "Target deleted"},
+        404: {"description": "Target not found", "model": ErrorResponse},
+        403: {"description": "Insufficient role", "model": ErrorResponse},
+    },
+)
 async def target_delete(
     target_id: int,
     user: User = Depends(web_user),
@@ -496,7 +1115,24 @@ async def admin_panel(request: Request, user: User = Depends(web_user), db: Asyn
 
 # ─── Scan API ─────────────────────────────────────────────────────────────────
 
-@app.post("/api/scan")
+@app.post(
+    "/api/scan",
+    tags=["Scans"],
+    summary="Launch a security scan",
+    description=(
+        "Start a background security scan against a target. Returns a `scan_id` immediately. "
+        "Poll `GET /api/scan/{scan_id}` for status, or connect to `ws://host/ws/{scan_id}` "
+        "for real-time progress events.\n\n"
+        "**Available scan modules:** `subdomain`, `dns`, `whois`, `nmap`, `ssl`, `headers`, "
+        "`ports`, `xss`, `sqli`, `ssrf`, `lfi`, `redirect`, `osint`\n\n"
+        "Leave `scan_types` empty to run **all modules**. Requires **analyst** or **admin** role."
+    ),
+    responses={
+        200: {"description": "Scan launched", "model": ScanLaunchResponse},
+        400: {"description": "Missing target", "model": ErrorResponse},
+        403: {"description": "Insufficient role", "model": ErrorResponse},
+    },
+)
 async def run_scan(
     background_tasks: BackgroundTasks,
     request: Request,
@@ -533,7 +1169,21 @@ async def run_scan(
     return JSONResponse({"scan_id": scan_id})
 
 
-@app.get("/api/scan/{scan_id}")
+@app.get(
+    "/api/scan/{scan_id}",
+    tags=["Scans"],
+    summary="Get scan status and results",
+    description=(
+        "Returns current status, progress percentage, and all available module results "
+        "for the given scan. Results are populated incrementally as each module completes. "
+        "Poll every 2–5 seconds, or use WebSocket for push-based updates."
+    ),
+    responses={
+        200: {"description": "Scan details", "model": ScanStatusResponse},
+        404: {"description": "Scan not found", "model": ErrorResponse},
+        403: {"description": "Access denied", "model": ErrorResponse},
+    },
+)
 async def get_scan_status(
     scan_id: str,
     user: User = Depends(web_user),
@@ -553,7 +1203,16 @@ async def get_scan_status(
     })
 
 
-@app.get("/api/scans")
+@app.get(
+    "/api/scans",
+    tags=["Scans"],
+    summary="List recent scans",
+    description=(
+        "Returns the 50 most recent scans for the authenticated user. "
+        "Admins see all scans across all users."
+    ),
+    responses={200: {"description": "List of scans"}},
+)
 async def list_scans(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     query = select(Scan).order_by(Scan.created_at.desc()).limit(50)
     if user.role != "admin":
@@ -566,7 +1225,17 @@ async def list_scans(user: User = Depends(web_user), db: AsyncSession = Depends(
     } for s in scans])
 
 
-@app.get("/api/findings")
+@app.get(
+    "/api/findings",
+    tags=["Findings"],
+    summary="List vulnerability findings",
+    description=(
+        "Returns up to 200 most recent findings for the authenticated user's scans, "
+        "ordered by discovery date (newest first). Each finding includes type, severity, "
+        "affected URL, parameter, payload used, and evidence."
+    ),
+    responses={200: {"description": "List of findings"}},
+)
 async def list_findings(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     findings = (await db.execute(
         select(Finding).join(Scan).where(Scan.user_id == user.id)
@@ -764,7 +1433,16 @@ async def ws_scan(websocket: WebSocket, scan_id: str, db: AsyncSession = Depends
 
 # ─── Scanner Upgrade APIs ─────────────────────────────────────────────────────
 
-@app.post("/api/scan/ssl")
+@app.post(
+    "/api/scan/ssl",
+    tags=["Quick Utilities"],
+    summary="Analyze SSL/TLS certificate",
+    description=(
+        "Check SSL/TLS configuration for a domain: certificate validity, expiry, "
+        "cipher suites, protocol versions (TLS 1.0/1.1 deprecated check), and HSTS."
+    ),
+    responses={200: {"description": "SSL analysis results"}},
+)
 async def scan_ssl(request: Request, user: User = Depends(web_user)):
     data = await request.json()
     target = data.get("target", "").strip()
@@ -775,7 +1453,17 @@ async def scan_ssl(request: Request, user: User = Depends(web_user)):
     return JSONResponse(result)
 
 
-@app.post("/api/scan/headers")
+@app.post(
+    "/api/scan/headers",
+    tags=["Quick Utilities"],
+    summary="Check HTTP security headers",
+    description=(
+        "Fetch HTTP response headers and grade them against security best practices. "
+        "Checks for: `Content-Security-Policy`, `X-Frame-Options`, `HSTS`, "
+        "`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`."
+    ),
+    responses={200: {"description": "Header analysis results"}},
+)
 async def scan_headers(request: Request, user: User = Depends(web_user)):
     data = await request.json()
     target = data.get("target", "").strip()
@@ -788,7 +1476,16 @@ async def scan_headers(request: Request, user: User = Depends(web_user)):
     return JSONResponse(result)
 
 
-@app.post("/api/scan/ports")
+@app.post(
+    "/api/scan/ports",
+    tags=["Quick Utilities"],
+    summary="Quick port scan",
+    description=(
+        "Run a fast port scan using Nmap. Optionally specify a comma-separated list of ports. "
+        "Defaults to top-1000 common ports. Returns open ports with service detection."
+    ),
+    responses={200: {"description": "Port scan results"}},
+)
 async def scan_ports(request: Request, user: User = Depends(web_user)):
     data = await request.json()
     target = data.get("target", "").strip()
@@ -801,7 +1498,20 @@ async def scan_ports(request: Request, user: User = Depends(web_user)):
 
 # ─── Report API ───────────────────────────────────────────────────────────────
 
-@app.post("/api/report")
+@app.post(
+    "/api/report",
+    tags=["Reports"],
+    summary="Generate PDF report",
+    description=(
+        "Generate a professional PDF security report for a completed scan. "
+        "Includes executive summary, vulnerability table, OSINT findings, "
+        "and remediation recommendations. Download via `GET /reports/download/{filename}`."
+    ),
+    responses={
+        200: {"description": "Report generated"},
+        500: {"description": "Report generation failed", "model": ErrorResponse},
+    },
+)
 async def create_report(
     request: Request,
     user: User = Depends(web_user),
@@ -850,7 +1560,17 @@ async def download_report(filename: str, user: User = Depends(web_user)):
 
 # ─── OSINT & AI API ──────────────────────────────────────────────────────────
 
-@app.post("/api/osint")
+@app.post(
+    "/api/osint",
+    tags=["NLP"],
+    summary="Full OSINT domain recon",
+    description=(
+        "Run all OSINT modules concurrently against a domain: email discovery, "
+        "social media profiles, DNS records, WHOIS, and subdomain enumeration. "
+        "Returns all results in a single response."
+    ),
+    responses={200: {"description": "Aggregated OSINT results"}},
+)
 async def run_osint(request: Request, user: User = Depends(web_user)):
     data = await request.json()
     domain = data.get("domain", "").strip()
@@ -878,7 +1598,21 @@ async def run_osint(request: Request, user: User = Depends(web_user)):
     })
 
 
-@app.post("/api/ai/analyze")
+@app.post(
+    "/api/ai/analyze",
+    tags=["AI Analysis"],
+    summary="AI-powered security analysis (Groq LLaMA)",
+    description=(
+        "Submit scan findings to Groq LLaMA for deep security analysis. "
+        "Returns a structured markdown report including: threat assessment, "
+        "CVE mapping, attack chain reconstruction, and prioritized remediation steps. "
+        "Requires `GROQ_API_KEY` environment variable to be set."
+    ),
+    responses={
+        200: {"description": "AI analysis report"},
+        500: {"description": "AI engine error (check GROQ_API_KEY)", "model": ErrorResponse},
+    },
+)
 async def ai_analyze(request: Request, user: User = Depends(web_user)):
     data = await request.json()
     try:
@@ -892,7 +1626,23 @@ async def ai_analyze(request: Request, user: User = Depends(web_user)):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
-@app.post("/api/nlp")
+@app.post(
+    "/api/nlp",
+    tags=["NLP"],
+    summary="Parse natural-language security command",
+    description=(
+        "Parse an Arabic or English free-text command into a structured action + target. "
+        "First tries Groq AI (if `GROQ_API_KEY` is set); falls back to local rule-based parser.\n\n"
+        "**Example inputs:**\n"
+        "- `افحص tesla.com عن ثغرات XSS`\n"
+        "- `Scan example.com for SQL injection`\n"
+        "- `اجمع النطاقات الفرعية لـ google.com`\n"
+        "- `Generate report for last scan`"
+    ),
+    responses={
+        200: {"description": "Parsed command", "model": NLPResponse},
+    },
+)
 async def nlp_parse(request: Request, user: User = Depends(web_user)):
     data = await request.json()
     text = data.get("text", "")
@@ -913,7 +1663,20 @@ async def nlp_parse(request: Request, user: User = Depends(web_user)):
 
 # ─── Admin API ────────────────────────────────────────────────────────────────
 
-@app.get("/api/admin/auth-log")
+@app.get(
+    "/api/admin/auth-log",
+    tags=["Admin"],
+    summary="Authentication audit log",
+    description=(
+        "Returns the last N authentication events (login, logout, register, API key use). "
+        "Each entry includes timestamp, event type, username, IP, and outcome. "
+        "**Admin role required.**"
+    ),
+    responses={
+        200: {"description": "List of auth log entries"},
+        403: {"description": "Admin role required", "model": ErrorResponse},
+    },
+)
 async def admin_auth_log(
     user: User = Depends(web_user),
     lines: int = 100,
@@ -950,7 +1713,16 @@ async def admin_auth_log(
     return JSONResponse(list(reversed(entries)))
 
 
-@app.get("/api/admin/users")
+@app.get(
+    "/api/admin/users",
+    tags=["Admin"],
+    summary="List all platform users",
+    description="Returns all registered users with role, status, and login timestamps. **Admin role required.**",
+    responses={
+        200: {"description": "User list"},
+        403: {"description": "Admin role required", "model": ErrorResponse},
+    },
+)
 async def admin_list_users(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     require_admin(user)
     users = (await db.execute(select(User).order_by(User.created_at))).scalars().all()
@@ -962,7 +1734,20 @@ async def admin_list_users(user: User = Depends(web_user), db: AsyncSession = De
     } for u in users])
 
 
-@app.patch("/api/admin/users/{user_id}")
+@app.patch(
+    "/api/admin/users/{user_id}",
+    tags=["Admin"],
+    summary="Update user role or status",
+    description=(
+        "Change a user's `role` (admin/analyst/viewer) or `is_active` flag. "
+        "Cannot demote the last admin. **Admin role required.**"
+    ),
+    responses={
+        200: {"description": "User updated"},
+        404: {"description": "User not found", "model": ErrorResponse},
+        403: {"description": "Admin role required", "model": ErrorResponse},
+    },
+)
 async def admin_update_user(
     user_id: int, request: Request,
     user: User = Depends(web_user),
@@ -981,7 +1766,20 @@ async def admin_update_user(
     return JSONResponse({"success": True, "role": target.role, "is_active": target.is_active})
 
 
-@app.delete("/api/admin/users/{user_id}")
+@app.delete(
+    "/api/admin/users/{user_id}",
+    tags=["Admin"],
+    summary="Delete user account",
+    description=(
+        "Permanently delete a user and all associated data (targets, scans, findings). "
+        "Cannot delete the last admin account. **Admin role required.**"
+    ),
+    responses={
+        200: {"description": "User deleted"},
+        400: {"description": "Cannot delete last admin", "model": ErrorResponse},
+        404: {"description": "User not found", "model": ErrorResponse},
+    },
+)
 async def admin_delete_user(
     user_id: int,
     user: User = Depends(web_user),
@@ -996,6 +1794,129 @@ async def admin_delete_user(
     await db.delete(target)
     await db.commit()
     return JSONResponse({"success": True})
+
+
+# ─── License Routes ───────────────────────────────────────────────────────────
+
+@app.get("/license", response_class=HTMLResponse, include_in_schema=False)
+async def license_page(request: Request, user: User = Depends(web_user),
+                       msg: str = "", msg_type: str = ""):
+    lic = get_license()
+    features_list = list(FEATURE_LABELS.items())
+    free_features = set(TIER_FEATURES["free"])
+    pro_features  = set(TIER_FEATURES["pro"])
+    return templates.TemplateResponse(request, "license.html", {
+        "app_name": APP_NAME, "version": APP_VERSION,
+        "active": "license", "user": user,
+        "lic": lic,
+        "features": features_list,
+        "free_features": free_features,
+        "pro_features": pro_features,
+        "flash_msg": msg,
+        "flash_type": msg_type or "info",
+        "prefill_key": "",
+    })
+
+
+@app.post("/license/activate", response_class=HTMLResponse, include_in_schema=False)
+async def license_activate_form(
+    request: Request,
+    key: str = Form(...),
+    user: User = Depends(web_user),
+):
+    require_admin(user)
+    success, message, new_lic = activate_license(key.strip())
+    lic = get_license()
+    features_list = list(FEATURE_LABELS.items())
+    return templates.TemplateResponse(request, "license.html", {
+        "app_name": APP_NAME, "version": APP_VERSION,
+        "active": "license", "user": user,
+        "lic": lic,
+        "features": features_list,
+        "free_features": set(TIER_FEATURES["free"]),
+        "pro_features":  set(TIER_FEATURES["pro"]),
+        "flash_msg": message,
+        "flash_type": "success" if success else "error",
+        "prefill_key": "" if success else key,
+    })
+
+
+@app.post("/license/deactivate", include_in_schema=False)
+async def license_deactivate_form(request: Request, user: User = Depends(web_user)):
+    require_admin(user)
+    deactivate_license()
+    return RedirectResponse("/license?msg=تم+إلغاء+الترخيص+والعودة+للنسخة+المجانية&msg_type=warning",
+                            status_code=302)
+
+
+@app.post(
+    "/api/license/activate",
+    tags=["Admin"],
+    summary="Activate license key (API)",
+    description="Activate a new OPTISEC license key. **Admin role required.**",
+)
+async def api_license_activate(request: Request, user: User = Depends(web_user)):
+    require_admin(user)
+    data = await request.json()
+    key = data.get("key", "").strip()
+    if not key:
+        raise HTTPException(400, "License key is required")
+    success, message, lic = activate_license(key)
+    if not success:
+        raise HTTPException(422, message)
+    return JSONResponse({
+        "success": True,
+        "message": message,
+        "tier": lic.tier,
+        "issued_to": lic.issued_to,
+        "expires_at": lic.expires_at,
+        "days_left": lic.days_left,
+    })
+
+
+@app.post(
+    "/api/license/generate",
+    tags=["Admin"],
+    summary="Generate license key",
+    description="Generate a signed license key. **Admin role required.** Dev/testing use.",
+)
+async def api_license_generate(request: Request, user: User = Depends(web_user)):
+    require_admin(user)
+    data = await request.json()
+    try:
+        key = generate_license_key(
+            tier=data.get("tier", "pro"),
+            issued_to=data.get("issued_to", ""),
+            email=data.get("email", ""),
+            days=int(data.get("days", 365)),
+        )
+        return JSONResponse({"key": key})
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get(
+    "/api/license/status",
+    tags=["Admin"],
+    summary="Current license status",
+    description="Returns the active license tier, features, and limits.",
+)
+async def api_license_status(user: User = Depends(web_user)):
+    lic = get_license()
+    return JSONResponse({
+        "tier": lic.tier,
+        "tier_label": lic.tier_label,
+        "issued_to": lic.issued_to,
+        "email": lic.email,
+        "issued_at": lic.issued_at,
+        "expires_at": lic.expires_at,
+        "days_left": lic.days_left,
+        "expired": lic.expired,
+        "max_targets": lic.max_targets,
+        "max_scans_day": lic.max_scans_day,
+        "max_users": lic.max_users,
+        "features": lic.features,
+    })
 
 
 # ── IOC Correlation Engine ────────────────────────────────────────────────────
