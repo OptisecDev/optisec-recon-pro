@@ -5,17 +5,14 @@ from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from pathlib import Path
 
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
+from web.shared_templates import templates
 from config import APP_NAME, OTX_API_KEY
 
-BASE_DIR = Path(__file__).parent.parent
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 router = APIRouter(prefix="/threat-feed", tags=["threat_feed"])
 logger = logging.getLogger(__name__)
 

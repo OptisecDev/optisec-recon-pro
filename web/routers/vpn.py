@@ -2,17 +2,15 @@
 
 from fastapi import APIRouter, Request, Depends, Response
 from fastapi.responses import HTMLResponse, PlainTextResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from pathlib import Path
 
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user, require_admin
+from web.shared_templates import templates
 from config import APP_NAME
 
-BASE_DIR = Path(__file__).parent.parent
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 router = APIRouter(prefix="/vpn", tags=["vpn"])
 
 
