@@ -258,7 +258,18 @@ async def register_submit(
 
 
 @app.get("/logout")
-async def logout():
+async def logout(request: Request):
+    ip = request.client.host if request.client else "unknown"
+    token = request.cookies.get("access_token")
+    username = "unknown"
+    if token:
+        try:
+            from jose import jwt as jose_jwt
+            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username = payload.get("sub", "unknown")
+        except Exception:
+            pass
+    log_auth_event("LOGOUT", username, ip, True)
     response = RedirectResponse("/login", status_code=302)
     response.delete_cookie("access_token")
     return response
