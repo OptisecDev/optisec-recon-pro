@@ -242,6 +242,12 @@ Also shipped in v4.0:
 |------------------|------------|
 | ![Targets](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/targets.png) | ![Admin](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/admin.png) |
 
+### API Docs & License
+
+| API Documentation | License Management |
+|------------------|-------------------|
+| ![API Docs](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/api_docs.png) | ![License](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/license.png) |
+
 ---
 
 ## Try the Demo
