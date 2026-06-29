@@ -64,21 +64,71 @@ Powered by **FastAPI** (async), **SQLAlchemy 2.0**, **Groq LLaMA AI**, and a mod
 
 ## Screenshots
 
-| Dashboard | ATT&CK Navigator |
-|-----------|-----------------|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![ATT&CK Navigator](docs/screenshots/attack_navigator.png) |
+### Login & Dashboard
 
-| Compliance Report | Dark Web Intel |
-|-------------------|----------------|
-| ![Compliance](docs/screenshots/compliance_comparison.png) | ![Dark Web](docs/screenshots/darkweb.png) |
+| Login | Dashboard |
+|-------|-----------|
+| ![Login](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/login.png) | ![Dashboard](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/dashboard.png) |
 
-| Zero-Day Prediction | AI Red Team |
+### Reconnaissance & Scanning
+
+| Scan | Scan History |
+|------|-------------|
+| ![Scan](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/scan.png) | ![Scans](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/scans.png) |
+
+### Threat Intelligence
+
+| ATT&CK Navigator | Global Threat Feed |
+|-----------------|-------------------|
+| ![ATT&CK Navigator](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/attack_navigator.png) | ![Threat Feed](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/threat_feed.png) |
+
+| IOC Correlations | Dark Web Intel |
+|-----------------|----------------|
+| ![Correlations](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/correlations.png) | ![Dark Web](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/darkweb.png) |
+
+### AI Security
+
+| Zero-Day Prediction | Kill-Chain Correlation |
+|---------------------|----------------------|
+| ![Zero-Day](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/zero_day.png) | ![Attack Patterns](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/attack_patterns.png) |
+
+| Behavioral Analytics | AI Red Team |
 |---------------------|-------------|
-| ![Zero-Day](docs/screenshots/zero_day.png) | ![Red Team](docs/screenshots/red_team.png) |
+| ![Behavioral](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/behavioral.png) | ![Red Team](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/red_team.png) |
 
-| Quantum Encryption | Global Threat Feed |
-|--------------------|-------------------|
-| ![Quantum](docs/screenshots/quantum.png) | ![Threat Feed](docs/screenshots/threat_feed.png) |
+### Autonomous Red Team
+
+| Autonomous Red Team |
+|--------------------|
+| ![Autonomous Red Team](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/autonomous_redteam.png) |
+
+### Compliance & Security
+
+| Compliance Checker | AI Firewall |
+|-------------------|-------------|
+| ![Compliance](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/compliance.png) | ![Firewall](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/firewall.png) |
+
+| NGFW v2 | Bug Bounty |
+|---------|-----------|
+| ![NGFW](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/ngfw.png) | ![Bug Bounty](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/bug_bounty.png) |
+
+### Infrastructure
+
+| Post-Quantum Cryptography | WireGuard VPN |
+|--------------------------|---------------|
+| ![Quantum](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/quantum.png) | ![VPN](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/vpn.png) |
+
+### OSINT & Reports
+
+| OSINT Intelligence | Reports |
+|-------------------|---------|
+| ![OSINT](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/osint.png) | ![Reports](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/reports.png) |
+
+### Administration
+
+| Targets | Admin Panel |
+|---------|------------|
+| ![Targets](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/targets.png) | ![Admin](https://raw.githubusercontent.com/OptisecDev/optisec-recon-pro/master/docs/screenshots/admin.png) |
 
 ---
 
