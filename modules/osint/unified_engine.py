@@ -27,8 +27,8 @@ logger = logging.getLogger("osint.unified")
 _TOOL_TIMEOUTS: dict[str, int] = {
     "amass":        60,
     "theharvester": 150,
-    "maigret":      60,
-    "holehe":       45,
+    "maigret":      120,
+    "holehe":        45,
 }
 
 # ── Binary resolution: system PATH + venv bin + ~/bin ────────────────────────
@@ -231,7 +231,9 @@ async def _run_theharvester(target: str, target_type: str) -> dict:
 
 def _parse_maigret(out: str) -> list[dict]:
     results = []
-    # Try JSON first
+    seen: set[str] = set()
+
+    # Try JSON first (when -J json flag is used)
     try:
         data = json.loads(out)
         if isinstance(data, dict):
@@ -254,19 +256,44 @@ def _parse_maigret(out: str) -> list[dict]:
     except (json.JSONDecodeError, AttributeError):
         pass
 
-    # Fallback: text output
+    # Text output parser — maigret uses "[+] Platform: URL" format
+    # Lines may be prefixed with progress info like "on N: [+] ..."
     for line in out.splitlines():
-        if "[+]" in line:
-            parts = line.split()
-            url = next((p for p in parts if p.startswith("http")), "")
-            results.append({"type": "profile", "url": url, "raw": line.strip(), "status": "found"})
+        if "[+]" not in line:
+            continue
+        # Strip ANSI codes and progress prefix
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", line)
+        clean = re.sub(r"^.*?\[\+\]", "[+]", clean).strip()
+        # "[+] Platform: URL"
+        m = re.match(r"\[\+\]\s+([^:]+):\s*(https?://\S+)?", clean)
+        if m:
+            platform = m.group(1).strip()
+            url = (m.group(2) or "").strip()
+            # Skip maigret status lines that aren't actual platforms
+            if not url or "sites database" in platform.lower():
+                continue
+            key = platform.lower()
+            if key not in seen:
+                seen.add(key)
+                results.append({
+                    "type": "profile",
+                    "platform": platform,
+                    "url": url,
+                    "status": "found",
+                })
     return results
 
 
 async def _run_maigret(username: str) -> dict:
     return await _run_tool(
         "maigret",
-        ["maigret", username, "--timeout", "15", "--no-color"],
+        # --top-sites 500 limits to 500 most popular sites for speed
+        # --no-color avoids ANSI codes in output
+        # --no-progressbar keeps stdout clean for parsing
+        # --no-recursion: don't chase extracted IDs (avoids cascading searches)
+        # --top-sites 100: limit to 100 most popular sites for speed
+        ["maigret", username, "--timeout", "10", "--no-color",
+         "--no-progressbar", "--no-recursion", "--top-sites", "100"],
         _TOOL_TIMEOUTS["maigret"],
         _parse_maigret,
     )
