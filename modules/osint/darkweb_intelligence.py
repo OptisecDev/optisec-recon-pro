@@ -420,3 +420,70 @@ async def _query_psbdmp(target: str) -> dict:
         return {"source": "psbdmp", "available": True, "target": target, "pastes": [], "error": str(exc)}
 
     return {"source": "psbdmp", "available": True, "target": target, "pastes": pastes, "error": None}
+
+
+# ── 6. GitHub Exposed Secrets ─────────────────────────────────────────────────
+# GitHub Code Search API (https://docs.github.com/en/rest/search#search-code)
+# looking for the target domain alongside common secret-bearing keywords.
+# Works unauthenticated at a low rate limit (10 req/min) — GITHUB_TOKEN
+# raises that ceiling. Intended for a pen tester auditing their own/
+# authorized domain's accidental credential exposure on GitHub.
+
+_GITHUB_SECRET_KEYWORDS = ("password", "api_key", "secret", "token")
+_GITHUB_MAX_RESULTS_PER_KEYWORD = 10
+
+
+def _github_headers() -> dict:
+    headers = {"Accept": "application/vnd.github.v3.text-match+json", "User-Agent": _USER_AGENT}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+    return headers
+
+
+async def _github_search_one(session: aiohttp.ClientSession, domain: str, keyword: str) -> tuple[list[dict], str | None]:
+    params = {"q": f"{domain} {keyword}", "per_page": _GITHUB_MAX_RESULTS_PER_KEYWORD}
+    async with session.get(GITHUB_CODE_SEARCH_URL, params=params) as resp:
+        if resp.status in (401, 403):
+            return [], f"GitHub API returned {resp.status} (rate-limited or auth required — set GITHUB_TOKEN)"
+        resp.raise_for_status()
+        data = await resp.json()
+
+    findings = [
+        {
+            "keyword": keyword,
+            "repository": (item.get("repository") or {}).get("full_name"),
+            "path": item.get("path"),
+            "html_url": item.get("html_url"),
+            "snippets": [(m.get("fragment") or "")[:200] for m in item.get("text_matches") or []],
+        }
+        for item in (data or {}).get("items", []) or []
+    ]
+    return findings, None
+
+
+async def _query_github_secrets(domain: str) -> dict:
+    """
+    Search GitHub code for `domain` alongside common secret-bearing
+    keywords (password/api_key/secret/token), to surface accidentally
+    committed credentials referencing the target.
+
+    Returns {source, available, target, exposures, error}. Never raises;
+    a per-keyword rate-limit/auth failure is recorded in `error` but doesn't
+    drop findings already gathered from the other keywords.
+    """
+    exposures: list[dict] = []
+    last_error: str | None = None
+    try:
+        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT, headers=_github_headers()) as session:
+            for keyword in _GITHUB_SECRET_KEYWORDS:
+                try:
+                    found, err = await _github_search_one(session, domain, keyword)
+                    exposures.extend(found)
+                    if err:
+                        last_error = err
+                except aiohttp.ClientError as exc:
+                    last_error = str(exc)
+    except aiohttp.ClientError as exc:
+        return {"source": "github_secrets", "available": True, "target": domain, "exposures": [], "error": str(exc)}
+
+    return {"source": "github_secrets", "available": True, "target": domain, "exposures": exposures, "error": last_error}
