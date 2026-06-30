@@ -15,19 +15,40 @@ import json
 import logging
 import re
 import shutil
+import sys
 import time
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("osint.unified")
 
 # ── Per-tool timeouts (seconds) ───────────────────────────────────────────────
 _TOOL_TIMEOUTS: dict[str, int] = {
-    "amass":        180,
-    "theharvester": 120,
-    "maigret":       90,
-    "holehe":        60,
+    "amass":        60,
+    "theharvester": 90,
+    "maigret":      60,
+    "holehe":       45,
 }
+
+# ── Binary resolution: system PATH + venv bin + ~/bin ────────────────────────
+# - pip tools (maigret, holehe, theHarvester) live in the venv bin dir
+# - Go/system binaries (amass) may live in ~/bin which isn't always in PATH
+_VENV_BIN  = Path(sys.executable).parent
+_USER_BIN  = Path.home() / "bin"
+_EXTRA_DIRS = [_VENV_BIN, _USER_BIN]
+
+
+def _find_binary(name: str) -> str | None:
+    """Return full path to binary: system PATH → venv bin → ~/bin."""
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in _EXTRA_DIRS:
+        p = d / name
+        if p.is_file():
+            return str(p)
+    return None
 
 # ── Simple in-memory rate limiter ─────────────────────────────────────────────
 _rate_store: dict[str, list[float]] = defaultdict(list)
@@ -76,14 +97,16 @@ async def _run_tool(
     Run an external command, capture stdout/stderr, parse output.
     Never raises — errors are captured in the returned dict.
     """
-    if not shutil.which(cmd[0]):
+    binary = _find_binary(cmd[0])
+    if not binary:
         logger.debug("[%s] binary not found: %s", name, cmd[0])
         return {
             "source": name,
             "available": False,
-            "error": f"{cmd[0]} not installed or not in PATH",
+            "error": f"{cmd[0]} not installed or not in PATH/venv",
             "results": [],
         }
+    cmd = [binary] + cmd[1:]
 
     logger.info("[%s] running: %s", name, " ".join(cmd))
     try:
@@ -154,7 +177,7 @@ async def _run_amass(domain: str) -> dict:
     return await _run_tool(
         "amass",
         # -passive avoids active DNS brute-force; -timeout in minutes
-        ["amass", "enum", "-passive", "-d", domain, "-timeout", "2"],
+        ["amass", "enum", "-passive", "-d", domain, "-timeout", "1"],
         _TOOL_TIMEOUTS["amass"],
         _parse_amass,
     )
