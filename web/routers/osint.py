@@ -210,23 +210,74 @@ async def osint_domain(request: Request, user: User = Depends(_user)):
 
 _VALID_TARGET_TYPES = {"domain", "email", "username", "ip", "auto"}
 
+_SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
+_SEVERITY_RANK = {sev: i for i, sev in enumerate(_SEVERITY_ORDER)}
+_SEVERITY_AR = {
+    "critical": "حرجة",
+    "high": "عالية",
+    "medium": "متوسطة",
+    "low": "منخفضة",
+    "info": "معلوماتية",
+}
+_TYPE_AR = {
+    "subdomain": "نطاق فرعي",
+    "email": "بريد إلكتروني",
+    "account": "حساب مسجل",
+    "profile": "ملف شخصي عام",
+    "whois_record": "بيانات تسجيل النطاق (WHOIS)",
+    "dmarc_status": "سجل DMARC",
+    "spf_status": "سجل SPF",
+    "dns_record": "سجل DNS",
+}
+
+
+def _build_executive_summary(entities: list[dict], target: str) -> str:
+    """
+    One-sentence Arabic summary of the most security-relevant finding, for
+    a non-technical reader skimming the top of the report.
+
+    Picks the single highest-severity entity (critical > high > ... > info)
+    and names it; if nothing rises above low/info, says so explicitly
+    rather than manufacturing urgency.
+    """
+    if not entities:
+        return f"لم يتم العثور على أي نتائج لـ {target}."
+
+    worst = min(entities, key=lambda e: _SEVERITY_RANK.get(e.get("severity"), 4))
+    worst_rank = _SEVERITY_RANK.get(worst.get("severity"), 4)
+
+    if worst_rank >= _SEVERITY_RANK["low"]:
+        return f"تم تحليل {len(entities)} كيان لـ {target} دون رصد مخاطر عالية أو حرجة."
+
+    severity_ar = _SEVERITY_AR.get(worst.get("severity"), worst.get("severity", ""))
+    type_ar = _TYPE_AR.get(worst.get("type"), worst.get("type") or "نتيجة")
+    return (
+        f"تم رصد {len(entities)} كيان لـ {target}، أبرزها {type_ar} "
+        f"بخطورة {severity_ar} ({worst.get('value', '')})."
+    )
+
 
 @router.post(
     "/api/osint/unified-search",
     summary="Unified OSINT Engine v5.0",
     description=(
-        "Run all applicable OSINT tools in parallel: "
-        "**Amass** (subdomain enumeration), "
+        "Run all applicable OSINT sources in parallel: "
+        "**Amass**, **crt.sh**, **Wayback Machine**, full **DNS**, and "
+        "**WHOIS** (subdomain/registration intel), "
         "**theHarvester** (emails/hosts), "
         "**Maigret** (username across 500+ sites), "
         "**Holehe** (email account checker). "
-        "Tools are dispatched based on `target_type`. "
+        "Sources are dispatched based on `target_type`. "
         "Use `auto` to let the engine detect the type automatically. "
-        "Each tool runs with an independent timeout so a slow/failing tool "
-        "never blocks the others.\n\n"
-        "**Note:** External binaries must be installed separately — "
-        "Amass requires a Go binary; theHarvester, Maigret, and Holehe "
-        "are Python packages (`pip install theHarvester maigret holehe`)."
+        "Each source runs with an independent timeout so a slow/failing "
+        "one never blocks the others.\n\n"
+        "Results are deduplicated/correlated across sources and scored for "
+        "confidence and severity before being returned as `entities`; the "
+        "untouched per-source output is still available under "
+        "`raw_sources` for advanced users.\n\n"
+        "**Note:** Amass/theHarvester/Maigret/Holehe require their binaries "
+        "to be installed separately (`pip install theHarvester maigret "
+        "holehe`); crt.sh/Wayback/DNS/WHOIS need no installation."
     ),
 )
 async def osint_unified_search(request: Request, user: User = Depends(_user)):
@@ -249,9 +300,53 @@ async def osint_unified_search(request: Request, user: User = Depends(_user)):
     )
 
     from modules.osint.unified_engine import search_unified
-    result = await search_unified(target, target_type, rate_key=f"user:{user.id}")
+    from modules.osint.confidence_engine import calculate_confidence, classify_severity
+    from modules.osint.correlation_engine import build_entity_graph
 
-    if result.get("error") == "rate_limited":
-        raise HTTPException(429, result.get("message", "Rate limit exceeded"))
+    raw_result = await search_unified(target, target_type, rate_key=f"user:{user.id}")
 
-    return JSONResponse(result)
+    if raw_result.get("error") == "rate_limited":
+        raise HTTPException(429, raw_result.get("message", "Rate limit exceeded"))
+
+    raw_sources = raw_result.get("sources", [])
+    entity_graph = build_entity_graph(raw_sources)
+
+    severity_breakdown = dict.fromkeys(_SEVERITY_ORDER, 0)
+    entities: list[dict] = []
+    for entity in entity_graph.values():
+        entity["confidence"] = calculate_confidence(entity, raw_sources)
+        severity = classify_severity(entity)
+        entity["severity"] = severity
+        severity_breakdown[severity] = severity_breakdown.get(severity, 0) + 1
+        entities.append(entity)
+
+    entities.sort(key=lambda e: (_SEVERITY_RANK.get(e["severity"], 4), -e["confidence"]))
+
+    return JSONResponse({
+        "target": raw_result["target"],
+        "target_type": raw_result["target_type"],
+        "elapsed_seconds": raw_result["elapsed_seconds"],
+        "summary": {
+            "total_findings": raw_result.get("total_results", 0),
+            "unique_entities": len(entities),
+            "severity_breakdown": severity_breakdown,
+            "executive_summary": _build_executive_summary(entities, target),
+        },
+        "entities": entities,
+        "raw_sources": raw_sources,
+    })
+
+
+@router.get(
+    "/api/osint/sources-status",
+    summary="OSINT source availability",
+    description=(
+        "Report every OSINT source's availability (binary installed / "
+        "library reachable), whether it requires an API key, and when it "
+        "was last invoked in this process — lets the UI show which "
+        "sources will actually run before a search is launched."
+    ),
+)
+async def osint_sources_status(user: User = Depends(_user)):
+    from modules.osint.unified_engine import get_sources_status
+    return JSONResponse({"sources": get_sources_status()})
