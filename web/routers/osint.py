@@ -394,6 +394,59 @@ async def osint_network_scan(request: Request, user: User = Depends(_user)):
     return JSONResponse(result)
 
 
+@router.post(
+    "/api/osint/darkweb-scan",
+    summary="Dark Web & Breach Intelligence — Phase 2B",
+    description=(
+        "Breach/leak/threat-actor exposure scan via official APIs and free "
+        "legal indexes only — **never** dark web scraping. Queries HIBP, "
+        "IntelligenceX, BreachDirectory, Leak-Lookup, psbdmp.ws, GitHub "
+        "Code Search and AlienVault OTX. Most sources are optional and "
+        "require their own key (`HIBP_API_KEY`, `INTELX_API_KEY`, "
+        "`RAPIDAPI_KEY`, `LEAKLOOKUP_API_KEY`, `GITHUB_TOKEN`, "
+        "`OTX_API_KEY`); an unconfigured source degrades to "
+        "`available: false` rather than failing the whole scan. "
+        "`target` may be an email or a domain — set `include_pastes`/"
+        "`include_github` to false to skip those sources."
+    ),
+)
+async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
+    data = await request.json()
+    target = data.get("target", "").strip()
+    if not target:
+        raise HTTPException(400, "target is required")
+    include_pastes = bool(data.get("include_pastes", True))
+    include_github = bool(data.get("include_github", True))
+
+    logger.info(
+        "darkweb_scan request user=%s target=%r include_pastes=%s include_github=%s ip=%s",
+        user.username, target, include_pastes, include_github,
+        request.client.host if request.client else "unknown",
+    )
+
+    from modules.osint.darkweb_intelligence import gather_darkweb_intelligence
+    result = await gather_darkweb_intelligence(target, include_pastes=include_pastes, include_github=include_github)
+    exposure = result["exposure"]
+
+    return JSONResponse({
+        "target": result["target"],
+        "target_type": result["target_type"],
+        "breaches": result["breaches"],
+        "pastes": result["pastes"],
+        "github_exposures": result["github_exposures"],
+        "threat_actors": result["threat_actors"],
+        "darkweb_exposure_score": exposure["score"],
+        "exposure_level": exposure["exposure_level"],
+        "recommendations": exposure["recommendations"],
+        "sources": {
+            "intelx": result["intelx"],
+            "breachdirectory": result["breachdirectory"],
+            "leaklookup": result["leaklookup"],
+            "threat_actor_detail": result["threat_actor_detail"],
+        },
+    })
+
+
 @router.get(
     "/api/osint/sources-status",
     summary="OSINT source availability",

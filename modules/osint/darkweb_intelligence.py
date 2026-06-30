@@ -640,3 +640,85 @@ def calculate_darkweb_exposure_score(results: dict) -> dict:
         "breakdown": breakdown,
         "recommendations": _build_darkweb_recommendations(breakdown),
     }
+
+
+# ── 9. Orchestrator ─────────────────────────────────────────────────────────────
+
+async def gather_darkweb_intelligence(
+    target: str,
+    include_pastes: bool = True,
+    include_github: bool = True,
+) -> dict:
+    """
+    Run every dark web / breach intelligence source for `target` in
+    parallel, flatten the results into {breaches, pastes, github_exposures,
+    threat_actors}, and score the combined exposure.
+
+    `target` may be an email (HIBP's per-account breach/paste lookups run
+    directly against it) or a domain (HIBP's domain lookup + GitHub secret
+    search run against it). IntelligenceX/BreachDirectory/Leak-Lookup/
+    threat-actor lookups accept either shape.
+
+    Returns: {target, target_type, breaches, pastes, github_exposures,
+    threat_actors, intelx, breachdirectory, leaklookup, threat_actor_detail,
+    exposure}. `exposure` carries the {score, exposure_level, breakdown,
+    recommendations} from calculate_darkweb_exposure_score(). Never raises.
+    """
+    target = target.strip()
+    is_email = _is_email(target)
+    domain = _email_domain(target)
+    target_type = "email" if is_email else "domain"
+
+    labels: list[str] = []
+    tasks: list = []
+
+    def _add(label: str, coro) -> None:
+        labels.append(label)
+        tasks.append(coro)
+
+    _add("intelx", _query_intelx(target))
+    _add("breachdirectory", _query_breachdirectory(target))
+    _add("leaklookup", _query_leaklookup(target))
+    _add("threat_actors", _query_threat_actors(target))
+    if is_email:
+        _add("hibp_email", _query_hibp_email(target))
+        if include_pastes:
+            _add("hibp_pastes", _query_hibp_pastes(target))
+    else:
+        _add("hibp_domain", _query_hibp_domain(target))
+    if include_pastes:
+        _add("psbdmp", _query_psbdmp(target))
+    if include_github:
+        _add("github_secrets", _query_github_secrets(domain))
+
+    raw = await asyncio.gather(*tasks, return_exceptions=True)
+    by_source = {label: _exc_to_error(r, label) for label, r in zip(labels, raw)}
+
+    breaches: list[dict] = list((by_source.get("hibp_email") or {}).get("breaches") or [])
+    for alias, names in ((by_source.get("hibp_domain") or {}).get("breached_accounts") or {}).items():
+        for name in names or []:
+            # /breacheddomain doesn't expose per-breach verification status,
+            # unlike /breachedaccount — so these can't contribute "verified
+            # breach" points to the exposure score below.
+            breaches.append({"name": name, "title": name, "alias": alias, "verified": None})
+
+    pastes: list[dict] = list((by_source.get("hibp_pastes") or {}).get("pastes") or [])
+    pastes.extend((by_source.get("psbdmp") or {}).get("pastes") or [])
+
+    github_exposures = (by_source.get("github_secrets") or {}).get("exposures") or []
+    threat_actor_detail = by_source.get("threat_actors") or {}
+    threat_actors = threat_actor_detail.get("threat_actors") or []
+
+    flat = {"breaches": breaches, "pastes": pastes,
+            "github_exposures": github_exposures, "threat_actors": threat_actors}
+
+    return {
+        "target": target, "target_type": target_type,
+        "breaches": breaches, "pastes": pastes,
+        "github_exposures": github_exposures, "threat_actors": threat_actors,
+        "intelx": by_source.get("intelx"),
+        "breachdirectory": by_source.get("breachdirectory"),
+        "leaklookup": by_source.get("leaklookup"),
+        "threat_actor_detail": threat_actor_detail,
+        "exposure": calculate_darkweb_exposure_score(flat),
+    }

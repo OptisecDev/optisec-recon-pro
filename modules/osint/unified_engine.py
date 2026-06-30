@@ -44,6 +44,7 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "dns_full":      15,
     "whois":         15,
     "network_intel": 25,
+    "darkweb_intel": 30,
 }
 
 # ── Binary resolution: system PATH + venv bin + ~/bin ────────────────────────
@@ -83,6 +84,10 @@ _SOURCE_REQUIRES_API_KEY: dict[str, bool] = {
     # handshake) — SHODAN_API_KEY/CENSYS_* only enrich results, never gate
     # whether the source runs at all.
     "network_intel": False,
+    # Works keyless too (psbdmp.ws + GitHub Code Search are free) — the
+    # HIBP/IntelX/BreachDirectory/Leak-Lookup/OTX sources it also queries
+    # each degrade individually to available=False without their own key.
+    "darkweb_intel": False,
 }
 # Binary name to probe for each subprocess-based source (case differs from
 # its `source` label, e.g. theHarvester's binary is camelCased).
@@ -124,7 +129,7 @@ def get_sources_status() -> list[dict]:
             "requires_api_key": _SOURCE_REQUIRES_API_KEY.get(name, False),
             "last_used": _iso(_last_used.get(name)),
         })
-    for name in ("crtsh", "wayback", "dns_full", "whois", "network_intel"):
+    for name in ("crtsh", "wayback", "dns_full", "whois", "network_intel", "darkweb_intel"):
         statuses.append({
             "source": name,
             "available": True,
@@ -552,6 +557,51 @@ async def _run_network_intel(target: str) -> dict:
     )
 
 
+# ── Dark Web & Breach Intelligence (HIBP/IntelX/BreachDirectory/...) ─────────
+# No installation required — modules/osint/darkweb_intelligence.py queries
+# official breach/leak APIs (HIBP, IntelligenceX, BreachDirectory,
+# Leak-Lookup, psbdmp.ws, GitHub Code Search, AlienVault OTX). Most sources
+# are optional and degrade to available=False without their own key.
+# GitHub Code Search is skipped here (include_github=False) to keep this
+# general-purpose search fast; it still runs on the dedicated
+# POST /api/osint/darkweb-scan endpoint.
+
+def _darkweb_intel_to_findings(data: dict) -> list[dict]:
+    """Reframe gather_darkweb_intelligence()'s output as unified-engine
+    findings ({type, value, ...}) so it flows through the same confidence/
+    correlation/severity pipeline as every other source."""
+    findings: list[dict] = []
+    for b in data.get("breaches") or []:
+        name = b.get("name") or b.get("title")
+        if name:
+            findings.append({
+                "type": "breach", "value": name,
+                # A breach is serious either way; verified ones get top severity.
+                "severity": "critical" if b.get("verified") else "high",
+                "verified": b.get("verified"), "breach_date": b.get("breach_date"),
+                "data_classes": b.get("data_classes"),
+            })
+    for p in data.get("pastes") or []:
+        ident = p.get("id") or p.get("url")
+        if ident:
+            findings.append({"type": "paste", "value": str(ident), "severity": "medium", "date": p.get("date")})
+    for actor in data.get("threat_actors") or []:
+        findings.append({"type": "threat_actor", "value": actor, "severity": "critical"})
+    return findings
+
+
+async def _fetch_darkweb_intel(target: str) -> list[dict]:
+    from modules.osint.darkweb_intelligence import gather_darkweb_intelligence
+    data = await gather_darkweb_intelligence(target, include_pastes=True, include_github=False)
+    return _darkweb_intel_to_findings(data)
+
+
+async def _run_darkweb_intel(target: str) -> dict:
+    return await _run_async_source(
+        "darkweb_intel", _fetch_darkweb_intel(target), _TOOL_TIMEOUTS["darkweb_intel"]
+    )
+
+
 # ── Amass ─────────────────────────────────────────────────────────────────────
 # NOTE: Amass is a Go binary — not installable via pip.
 # Install: go install github.com/owasp-amass/amass/v4/...@master
@@ -822,12 +872,13 @@ async def search_unified(
             _run_dns_full(target),
             _run_whois(target),
             _run_network_intel(target),
+            _run_darkweb_intel(target),
         ]
-        labels += ["amass", "theharvester", "crtsh", "wayback", "dns_full", "whois", "network_intel"]
+        labels += ["amass", "theharvester", "crtsh", "wayback", "dns_full", "whois", "network_intel", "darkweb_intel"]
 
     elif target_type == "email":
-        tasks += [_run_holehe(target), _run_theharvester(target, target_type)]
-        labels += ["holehe", "theharvester"]
+        tasks += [_run_holehe(target), _run_theharvester(target, target_type), _run_darkweb_intel(target)]
+        labels += ["holehe", "theharvester", "darkweb_intel"]
 
     elif target_type == "username":
         tasks += [_run_maigret(target)]

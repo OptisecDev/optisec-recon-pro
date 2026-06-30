@@ -37,6 +37,10 @@ SOURCE_RELIABILITY: dict[str, int] = {
     "dns_full": 90,
     "whois": 85,
     "network_intel": 85,
+    # Breach/paste/threat-actor hits come from official APIs (HIBP, OTX,
+    # psbdmp.ws) reporting on data they've already indexed, not a guess ->
+    # high, on par with network_intel.
+    "darkweb_intel": 85,
     "amass": 80,
     "theharvester": 70,
     "holehe": 70,
