@@ -16,6 +16,7 @@ External tool installation notes:
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 import sys
@@ -45,7 +46,27 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "whois":         15,
     "network_intel": 25,
     "darkweb_intel": 30,
+    # Free-tier direct-API sources (VirusTotal/AbuseIPDB/FullHunt/LeakCheck/
+    # SecurityTrails/URLScan/Google Safe Browsing) — single HTTP round trips,
+    # kept short so a slow/rate-limited provider never blocks the others.
+    "virustotal": 15,
+    "abuseipdb": 15,
+    "fullhunt": 20,
+    "leakcheck": 15,
 }
+
+# ── Free-tier direct-API source keys (all optional) ───────────────────────────
+# Each source below degrades to available=False with a clear "requires API
+# key" message when its key is unset — never raises, never silently no-ops.
+VT_API_KEY = os.environ.get("VT_API_KEY", "")
+ABUSEIPDB_API_KEY = os.environ.get("ABUSEIPDB_API_KEY", "")
+FULLHUNT_API_KEY = os.environ.get("FULLHUNT_API_KEY", "")
+# LeakCheck works keyless via its public endpoint; LEAKCHECK_API_KEY only
+# upgrades to the richer authenticated v2 endpoint.
+LEAKCHECK_API_KEY = os.environ.get("LEAKCHECK_API_KEY", "")
+
+_FREE_SOURCE_USER_AGENT = "OPTISEC-Recon-Pro-FreeIntel/1.0"
+
 
 # ── Binary resolution: system PATH + venv bin + ~/bin ────────────────────────
 # - pip tools (maigret, holehe, theHarvester) live in the venv bin dir
@@ -599,6 +620,384 @@ async def _fetch_darkweb_intel(target: str) -> list[dict]:
 async def _run_darkweb_intel(target: str) -> dict:
     return await _run_async_source(
         "darkweb_intel", _fetch_darkweb_intel(target), _TOOL_TIMEOUTS["darkweb_intel"]
+    )
+
+
+# ── Free-tier direct-API sources (VirusTotal/AbuseIPDB/FullHunt/LeakCheck/
+#    SecurityTrails/URLScan/Google Safe Browsing) ─────────────────────────────
+# Every source below queries a provider's free tier directly — no external
+# binary, no scraping. Keyed sources degrade to available=False with a clear
+# message when their key is unset; URLScan and LeakCheck's public endpoint
+# work fully keyless.
+
+async def _run_query_source(name: str, coro, to_findings, timeout: int) -> dict[str, Any]:
+    """
+    Run one of the _query_*() direct-API source functions, convert its raw
+    response into unified-engine findings via `to_findings`, and report both
+    the findings and the raw response (`detail`) — UI cards and
+    sources-status want the structured payload, the confidence/correlation/
+    severity pipeline only wants the findings list.
+
+    Mirrors _run_async_source's contract (never raises, hard timeout) but
+    additionally honors the source's own `available`/`error` rather than
+    always reporting available=True, since these sources can be legitimately
+    unavailable (no API key configured).
+    """
+    _mark_used(name)
+    try:
+        data = await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning("[%s] timed out after %ds", name, timeout)
+        return {"source": name, "available": True, "error": f"timed out after {timeout}s", "results": []}
+    except Exception as exc:
+        logger.error("[%s] unexpected error: %s", name, exc)
+        return {"source": name, "available": True, "error": str(exc), "results": []}
+
+    findings = to_findings(data)
+    logger.info("[%s] parsed %d results", name, len(findings))
+    return {
+        "source": name,
+        "available": data.get("available", True),
+        "results": findings,
+        "error": data.get("error"),
+        "detail": data,
+    }
+
+
+# ── 1. VirusTotal (free public API v3) ────────────────────────────────────────
+# https://docs.virustotal.com/reference/overview — free tier: 500 requests/
+# day, 4 requests/minute. Sign up: https://www.virustotal.com/gui/join-us
+
+_VT_DOMAIN_URL = "https://www.virustotal.com/api/v3/domains/{domain}"
+_VT_IP_URL = "https://www.virustotal.com/api/v3/ip_addresses/{ip}"
+
+
+def _vt_headers() -> dict:
+    return {"x-apikey": VT_API_KEY}
+
+
+async def _query_virustotal(target: str, target_type: str) -> dict:
+    """
+    Query VirusTotal's free public API v3 for `target`'s reputation: the
+    community vote totals, AV-vendor categories, and the
+    last_analysis_stats breakdown (malicious/suspicious/harmless/undetected
+    engine counts from VT's most recent scan).
+
+    Returns {source, available, target, reputation, malicious_votes,
+    suspicious_votes, categories, last_analysis_stats, error}. Never raises.
+    """
+    empty = {"source": "virustotal", "target": target, "reputation": None,
+              "malicious_votes": None, "suspicious_votes": None,
+              "categories": {}, "last_analysis_stats": {}}
+    if not VT_API_KEY:
+        return {**empty, "available": False, "error": "requires API key (VT_API_KEY, optional)"}
+
+    url = _VT_IP_URL.format(ip=target) if target_type == "ip" else _VT_DOMAIN_URL.format(domain=target)
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["virustotal"])
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, headers=_vt_headers()) as session:
+            async with session.get(url) as resp:
+                if resp.status == 404:
+                    return {**empty, "available": True, "error": None}
+                if resp.status == 401:
+                    return {**empty, "available": True, "error": "invalid VirusTotal API key"}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {**empty, "available": True, "error": str(exc)}
+
+    attrs = ((data or {}).get("data") or {}).get("attributes") or {}
+    votes = attrs.get("total_votes") or {}
+    stats = attrs.get("last_analysis_stats") or {}
+    return {
+        "source": "virustotal", "available": True, "target": target,
+        "reputation": attrs.get("reputation"),
+        "malicious_votes": votes.get("malicious"),
+        "suspicious_votes": stats.get("suspicious"),
+        "categories": attrs.get("categories") or {},
+        "last_analysis_stats": stats,
+        "error": None,
+    }
+
+
+def _virustotal_to_findings(data: dict) -> list[dict]:
+    """Surface VT's scan verdict as a single severity-scaled finding —
+    skipped entirely when VT has never scanned the target (404/no key)."""
+    findings: list[dict] = []
+    if not data.get("available") or data.get("error") or not data.get("last_analysis_stats"):
+        return findings
+
+    stats = data["last_analysis_stats"]
+    malicious = stats.get("malicious") or 0
+    suspicious = stats.get("suspicious") or 0
+    if malicious >= 3:
+        severity = "critical"
+    elif malicious > 0:
+        severity = "high"
+    elif suspicious > 0:
+        severity = "medium"
+    else:
+        severity = "info"
+
+    findings.append({
+        "type": "vt_reputation", "value": data.get("target"),
+        "severity": severity,
+        "reputation": data.get("reputation"),
+        "malicious_votes": data.get("malicious_votes"),
+        "suspicious_votes": suspicious,
+        "categories": data.get("categories"),
+        "last_analysis_stats": stats,
+    })
+    return findings
+
+
+async def _run_virustotal(target: str, target_type: str) -> dict:
+    return await _run_query_source(
+        "virustotal", _query_virustotal(target, target_type),
+        _virustotal_to_findings, _TOOL_TIMEOUTS["virustotal"],
+    )
+
+
+# ── 2. AbuseIPDB (free tier) ──────────────────────────────────────────────────
+# https://docs.abuseipdb.com/ — free tier: 1,000 checks/day.
+# Sign up: https://www.abuseipdb.com/register
+
+_ABUSEIPDB_URL = "https://api.abuseipdb.com/api/v2/check"
+
+
+def _abuseipdb_headers() -> dict:
+    return {"Key": ABUSEIPDB_API_KEY, "Accept": "application/json"}
+
+
+async def _query_abuseipdb(ip: str) -> dict:
+    """
+    Check `ip` against AbuseIPDB's community-reported abuse database.
+
+    Returns {source, available, target, abuse_confidence_score,
+    total_reports, last_reported_at, usage_type, isp, country_code, error}.
+    Never raises.
+    """
+    empty = {"source": "abuseipdb", "target": ip, "abuse_confidence_score": None,
+              "total_reports": None, "last_reported_at": None,
+              "usage_type": None, "isp": None, "country_code": None}
+    if not ABUSEIPDB_API_KEY:
+        return {**empty, "available": False, "error": "requires API key (ABUSEIPDB_API_KEY, optional)"}
+
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["abuseipdb"])
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, headers=_abuseipdb_headers()) as session:
+            async with session.get(_ABUSEIPDB_URL, params={"ipAddress": ip, "maxAgeInDays": "90"}) as resp:
+                if resp.status == 401:
+                    return {**empty, "available": True, "error": "invalid AbuseIPDB API key"}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {**empty, "available": True, "error": str(exc)}
+
+    d = (data or {}).get("data") or {}
+    return {
+        "source": "abuseipdb", "available": True, "target": ip,
+        "abuse_confidence_score": d.get("abuseConfidenceScore"),
+        "total_reports": d.get("totalReports"),
+        "last_reported_at": d.get("lastReportedAt"),
+        "usage_type": d.get("usageType"),
+        "isp": d.get("isp"),
+        "country_code": d.get("countryCode"),
+        "error": None,
+    }
+
+
+def _abuseipdb_to_findings(data: dict) -> list[dict]:
+    findings: list[dict] = []
+    score = data.get("abuse_confidence_score")
+    if not data.get("available") or data.get("error") or score is None:
+        return findings
+
+    if score >= 75:
+        severity = "critical"
+    elif score >= 50:
+        severity = "high"
+    elif score >= 25:
+        severity = "medium"
+    else:
+        severity = "info"
+
+    findings.append({
+        "type": "abuse_report", "value": data.get("target"),
+        "severity": severity,
+        "abuse_confidence_score": score,
+        "total_reports": data.get("total_reports"),
+        "last_reported_at": data.get("last_reported_at"),
+        "usage_type": data.get("usage_type"),
+        "isp": data.get("isp"),
+        "country_code": data.get("country_code"),
+    })
+    return findings
+
+
+async def _run_abuseipdb(ip: str) -> dict:
+    return await _run_query_source(
+        "abuseipdb", _query_abuseipdb(ip), _abuseipdb_to_findings, _TOOL_TIMEOUTS["abuseipdb"],
+    )
+
+
+# ── 3. FullHunt (free tier) ───────────────────────────────────────────────────
+# https://docs.fullhunt.io/ — free tier: limited monthly subdomain lookups.
+# Sign up: https://fullhunt.io/auth/register/
+
+_FULLHUNT_SUBDOMAINS_URL = "https://fullhunt.io/api/v1/domain/{domain}/subdomains"
+
+
+def _fullhunt_headers() -> dict:
+    return {"X-API-KEY": FULLHUNT_API_KEY}
+
+
+async def _query_fullhunt(domain: str) -> dict:
+    """
+    Enumerate subdomains FullHunt has indexed for `domain`.
+
+    FullHunt's free subdomains endpoint returns a plain hostname list; some
+    paid responses instead return per-host objects carrying open ports/
+    detected technologies, which are extracted opportunistically when
+    present so this never under-reports against a richer plan.
+
+    Returns {source, available, target, subdomains, hosts_count, ports,
+    technologies, error}. Never raises.
+    """
+    empty = {"source": "fullhunt", "target": domain, "subdomains": [],
+              "hosts_count": 0, "ports": [], "technologies": []}
+    if not FULLHUNT_API_KEY:
+        return {**empty, "available": False, "error": "requires API key (FULLHUNT_API_KEY, optional)"}
+
+    url = _FULLHUNT_SUBDOMAINS_URL.format(domain=domain)
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["fullhunt"])
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, headers=_fullhunt_headers()) as session:
+            async with session.get(url) as resp:
+                if resp.status == 401:
+                    return {**empty, "available": True, "error": "invalid FullHunt API key"}
+                if resp.status == 404:
+                    return {**empty, "available": True, "error": None}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {**empty, "available": True, "error": str(exc)}
+
+    hosts_raw = (data or {}).get("hosts") or []
+    subdomains: list[str] = []
+    ports: set = set()
+    technologies: set = set()
+    for h in hosts_raw:
+        if isinstance(h, dict):
+            host = h.get("host") or h.get("subdomain")
+            if host:
+                subdomains.append(host)
+            for p in (h.get("open_ports") or h.get("ports") or []):
+                ports.add(p)
+            for t in (h.get("technologies") or h.get("tags") or []):
+                technologies.add(t)
+        elif isinstance(h, str):
+            subdomains.append(h)
+
+    return {
+        "source": "fullhunt", "available": True, "target": domain,
+        "subdomains": subdomains,
+        "hosts_count": (data or {}).get("hosts_count", len(subdomains)),
+        "ports": sorted(ports), "technologies": sorted(technologies),
+        "error": None,
+    }
+
+
+def _fullhunt_to_findings(data: dict) -> list[dict]:
+    findings: list[dict] = []
+    if not data.get("available") or data.get("error"):
+        return findings
+    for sub in data.get("subdomains") or []:
+        findings.append({"type": "subdomain", "value": sub, "source_detail": "fullhunt"})
+    target = data.get("target")
+    for port in data.get("ports") or []:
+        findings.append({
+            "type": "open_port", "value": f"{target}:{port}",
+            "port": port, "source_detail": "fullhunt",
+        })
+    return findings
+
+
+async def _run_fullhunt(domain: str) -> dict:
+    return await _run_query_source(
+        "fullhunt", _query_fullhunt(domain), _fullhunt_to_findings, _TOOL_TIMEOUTS["fullhunt"],
+    )
+
+
+# ── 4. LeakCheck ──────────────────────────────────────────────────────────────
+# https://leakcheck.io/api — public endpoint is free and keyless;
+# LEAKCHECK_API_KEY (optional) upgrades to the richer authenticated v2
+# endpoint. Sign up: https://leakcheck.io/register
+
+_LEAKCHECK_PUBLIC_URL = "https://leakcheck.io/api/public"
+_LEAKCHECK_PRO_URL = "https://leakcheck.io/api/v2/query/{target}"
+
+
+def _leakcheck_headers() -> dict:
+    return {"X-API-Key": LEAKCHECK_API_KEY} if LEAKCHECK_API_KEY else {}
+
+
+async def _query_leakcheck(target: str) -> dict:
+    """
+    Check `target` (email/username/domain) against LeakCheck's breach
+    index. Always runs — the free public endpoint needs no key; setting
+    LEAKCHECK_API_KEY switches to the authenticated v2 endpoint for fuller
+    per-source detail.
+
+    Returns {source, available, target, found, sources, fields, error}.
+    Never raises.
+    """
+    empty = {"source": "leakcheck", "target": target, "found": False, "sources": [], "fields": []}
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["leakcheck"])
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, headers=_leakcheck_headers()) as session:
+            if LEAKCHECK_API_KEY:
+                async with session.get(_LEAKCHECK_PRO_URL.format(target=target)) as resp:
+                    if resp.status == 401:
+                        return {**empty, "available": True, "error": "invalid LeakCheck API key"}
+                    resp.raise_for_status()
+                    data = await resp.json()
+            else:
+                async with session.get(_LEAKCHECK_PUBLIC_URL, params={"check": target}) as resp:
+                    resp.raise_for_status()
+                    data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {**empty, "available": True, "error": str(exc)}
+
+    if isinstance(data, dict) and data.get("success") is False:
+        return {**empty, "available": True, "error": str(data.get("error") or "LeakCheck query failed")}
+
+    found = bool((data or {}).get("found"))
+    raw_sources = (data or {}).get("sources") or (data or {}).get("result") or []
+    source_names = [s.get("name") if isinstance(s, dict) else str(s) for s in raw_sources]
+    fields = (data or {}).get("fields") or []
+    return {
+        "source": "leakcheck", "available": True, "target": target,
+        "found": found, "sources": source_names, "fields": fields, "error": None,
+    }
+
+
+def _leakcheck_to_findings(data: dict) -> list[dict]:
+    findings: list[dict] = []
+    if not data.get("available") or data.get("error") or not data.get("found"):
+        return findings
+    findings.append({
+        "type": "leak_exposure", "value": data.get("target"),
+        "severity": "high",
+        "sources": data.get("sources"),
+        "fields": data.get("fields"),
+    })
+    return findings
+
+
+async def _run_leakcheck(target: str) -> dict:
+    return await _run_query_source(
+        "leakcheck", _query_leakcheck(target), _leakcheck_to_findings, _TOOL_TIMEOUTS["leakcheck"],
     )
 
 
