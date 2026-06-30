@@ -58,8 +58,8 @@ requests-cache>=1.2.0
 # NOTE: theHarvester has no stable PyPI release — install via:
 #   pip install git+https://github.com/laramies/theHarvester.git
 #   or: pipx install theHarvester
-maigret>=0.4.0
-holehe>=1.4.3
+maigret>=0.6.1
+holehe>=1.61
 
 # Cryptography (Quantum-Safe Encryption AES-GCM)
 cryptography>=41.0.0
