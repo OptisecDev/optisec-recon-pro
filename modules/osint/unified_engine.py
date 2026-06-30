@@ -116,6 +116,17 @@ _SOURCE_REQUIRES_API_KEY: dict[str, bool] = {
     # HIBP/IntelX/BreachDirectory/Leak-Lookup/OTX sources it also queries
     # each degrade individually to available=False without their own key.
     "darkweb_intel": False,
+    # Free-tier direct-API sources added on top of the above.
+    "virustotal": True,
+    "abuseipdb": True,
+    "fullhunt": True,
+    # LeakCheck's public endpoint is keyless; LEAKCHECK_API_KEY only
+    # upgrades it to the richer v2 endpoint.
+    "leakcheck": False,
+    "securitytrails": True,
+    # urlscan.io's search API needs no key at all.
+    "urlscan": False,
+    "google_safebrowsing": True,
 }
 # Binary name to probe for each subprocess-based source (case differs from
 # its `source` label, e.g. theHarvester's binary is camelCased).
@@ -125,6 +136,51 @@ _SOURCE_BINARY_NAME: dict[str, str] = {
     "maigret": "maigret",
     "holehe": "holehe",
 }
+# .env variable name backing each keyed free-tier source, so
+# get_sources_status() can report whether a key is actually configured
+# without hardcoding the lookup per source.
+_SOURCE_API_KEY_ENV: dict[str, str] = {
+    "virustotal": "VT_API_KEY",
+    "abuseipdb": "ABUSEIPDB_API_KEY",
+    "fullhunt": "FULLHUNT_API_KEY",
+    "leakcheck": "LEAKCHECK_API_KEY",
+    "securitytrails": "SECURITYTRAILS_API_KEY",
+    "google_safebrowsing": "GOOGLE_API_KEY",
+}
+# Free-tier rate limit and signup URL for each free-tier source, surfaced by
+# get_sources_status() so the UI can tell a user *how* to unlock a source
+# that's currently unavailable for lack of a key.
+_SOURCE_FREE_TIER: dict[str, dict[str, str]] = {
+    "virustotal": {
+        "limit": "500 requests/day, 4 requests/min",
+        "signup_url": "https://www.virustotal.com/gui/join-us",
+    },
+    "abuseipdb": {
+        "limit": "1,000 checks/day",
+        "signup_url": "https://www.abuseipdb.com/register",
+    },
+    "fullhunt": {
+        "limit": "limited free monthly subdomain lookups",
+        "signup_url": "https://fullhunt.io/auth/register/",
+    },
+    "leakcheck": {
+        "limit": "unlimited on the public endpoint; higher detail with a free key",
+        "signup_url": "https://leakcheck.io/register",
+    },
+    "securitytrails": {
+        "limit": "50 requests/month",
+        "signup_url": "https://securitytrails.com/app/signup",
+    },
+    "urlscan": {
+        "limit": "free public search, no signup required",
+        "signup_url": "https://urlscan.io/user/signup",
+    },
+    "google_safebrowsing": {
+        "limit": "10,000 requests/day",
+        "signup_url": "https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com",
+    },
+}
+_FREE_TIER_SOURCES = tuple(_SOURCE_FREE_TIER.keys())
 
 
 def _mark_used(name: str) -> None:
@@ -146,8 +202,18 @@ def get_sources_status() -> list[dict]:
     Subprocess-based sources (amass/theHarvester/maigret/holehe) are
     "available" only if their binary is found on PATH/venv/~/bin — the same
     resolution _run_tool() itself uses, so this reflects the same truth the
-    next real search would. Direct-API sources (crt.sh/Wayback/DNS/WHOIS)
-    have no external binary dependency, so they're always available.
+    next real search would. Direct-API sources (crt.sh/Wayback/DNS/WHOIS and
+    the free-tier sources below) have no external binary dependency, so
+    they're always "available" in the sense that the engine will attempt to
+    run them — `api_key_configured` is what actually gates whether a keyed
+    one returns real data.
+
+    Free-tier sources (VirusTotal/AbuseIPDB/FullHunt/LeakCheck/
+    SecurityTrails/URLScan/Google Safe Browsing) additionally report
+    `api_key_configured` (is the backing .env variable actually set),
+    `free_tier_limit` (the provider's free-tier rate limit, for context),
+    and `signup_url` (where to get a free key) so the UI can guide a user
+    toward unlocking a source that's currently running keyless/degraded.
     """
     statuses: list[dict] = []
     for name, binary_name in _SOURCE_BINARY_NAME.items():
@@ -162,6 +228,18 @@ def get_sources_status() -> list[dict]:
             "source": name,
             "available": True,
             "requires_api_key": _SOURCE_REQUIRES_API_KEY.get(name, False),
+            "last_used": _iso(_last_used.get(name)),
+        })
+    for name in _FREE_TIER_SOURCES:
+        env_var = _SOURCE_API_KEY_ENV.get(name)
+        tier = _SOURCE_FREE_TIER.get(name, {})
+        statuses.append({
+            "source": name,
+            "available": True,
+            "requires_api_key": _SOURCE_REQUIRES_API_KEY.get(name, False),
+            "api_key_configured": bool(os.environ.get(env_var)) if env_var else True,
+            "free_tier_limit": tier.get("limit"),
+            "signup_url": tier.get("signup_url"),
             "last_used": _iso(_last_used.get(name)),
         })
     return statuses
@@ -1588,20 +1666,36 @@ async def search_unified(
             _run_whois(target),
             _run_network_intel(target),
             _run_darkweb_intel(target),
+            _run_virustotal(target, target_type),
+            _run_urlscan(target, target_type),
+            _run_securitytrails(target),
+            _run_fullhunt(target),
+            _run_google_safebrowsing(target),
         ]
-        labels += ["amass", "theharvester", "crtsh", "wayback", "dns_full", "whois", "network_intel", "darkweb_intel"]
+        labels += [
+            "amass", "theharvester", "crtsh", "wayback", "dns_full", "whois",
+            "network_intel", "darkweb_intel", "virustotal", "urlscan",
+            "securitytrails", "fullhunt", "google_safebrowsing",
+        ]
 
     elif target_type == "email":
-        tasks += [_run_holehe(target), _run_theharvester(target, target_type), _run_darkweb_intel(target)]
-        labels += ["holehe", "theharvester", "darkweb_intel"]
+        tasks += [
+            _run_holehe(target), _run_theharvester(target, target_type),
+            _run_darkweb_intel(target), _run_leakcheck(target),
+        ]
+        labels += ["holehe", "theharvester", "darkweb_intel", "leakcheck"]
 
     elif target_type == "username":
         tasks += [_run_maigret(target)]
         labels += ["maigret"]
 
     elif target_type == "ip":
-        tasks += [_run_theharvester(target, target_type), _run_network_intel(target)]
-        labels += ["theharvester", "network_intel"]
+        tasks += [
+            _run_theharvester(target, target_type), _run_network_intel(target),
+            _run_virustotal(target, target_type), _run_abuseipdb(target),
+            _run_urlscan(target, target_type),
+        ]
+        labels += ["theharvester", "network_intel", "virustotal", "abuseipdb", "urlscan"]
 
     raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 

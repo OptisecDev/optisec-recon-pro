@@ -46,6 +46,19 @@ SOURCE_RELIABILITY: dict[str, int] = {
     "holehe": 70,
     "wayback": 65,
     "maigret": 60,
+    # Free-tier direct-API sources: each reports on data it already scanned/
+    # indexed itself (a VT AV-engine sweep, an AbuseIPDB report log, a
+    # SecurityTrails DNS snapshot, a urlscan.io crawl, a LeakCheck breach
+    # index hit, a Safe Browsing threat list match) rather than a guess, so
+    # they sit alongside crt.sh/DNS/network_intel/darkweb_intel in the high
+    # band.
+    "virustotal": 92,
+    "abuseipdb": 88,
+    "fullhunt": 85,
+    "urlscan": 87,
+    "securitytrails": 90,
+    "leakcheck": 82,
+    "google_safebrowsing": 95,
 }
 _DEFAULT_RELIABILITY = 50
 
