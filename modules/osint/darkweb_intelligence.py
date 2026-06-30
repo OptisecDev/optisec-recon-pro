@@ -369,3 +369,54 @@ async def _query_leaklookup(target: str) -> dict:
 
     return {"source": "leaklookup", "available": True, "target": target,
             "sources_found": sources_found, "data_types": sorted(data_types), "error": None}
+
+
+# ── 5. Pastebin Intelligence (psbdmp.ws, free) ─────────────────────────────────
+# Free, keyless public archive of historical Pastebin dumps —
+# https://psbdmp.ws/api. No API key required, always runs.
+
+_PSBDMP_MAX_RESULTS = 5
+
+
+async def _query_psbdmp(target: str) -> dict:
+    """
+    Search psbdmp.ws's public Pastebin archive for mentions of `target`,
+    then fetch a short snippet of each matching dump's text.
+
+    Returns {source, available, target, pastes, error}, where each paste is
+    {id, url, date, snippet} and snippet is truncated to 200 characters.
+    Never raises.
+    """
+    search_url = PSBDMP_SEARCH_URL.format(term=target)
+    try:
+        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+            async with session.get(search_url) as resp:
+                if resp.status == 404:
+                    return {"source": "psbdmp", "available": True, "target": target, "pastes": [], "error": None}
+                resp.raise_for_status()
+                data = await resp.json()
+
+            raw = data if isinstance(data, list) else (data or {}).get("data") or []
+
+            pastes: list[dict] = []
+            for entry in raw[:_PSBDMP_MAX_RESULTS]:
+                paste_id = entry.get("id")
+                snippet = ""
+                if paste_id:
+                    try:
+                        async with session.get(PSBDMP_DUMP_URL.format(id=paste_id)) as dump_resp:
+                            if dump_resp.status == 200:
+                                dump_data = await dump_resp.json()
+                                snippet = ((dump_data or {}).get("text") or "")[:200]
+                    except aiohttp.ClientError:
+                        pass  # dump fetch failing shouldn't drop the search hit itself
+                pastes.append({
+                    "id": paste_id,
+                    "url": f"https://pastebin.com/{paste_id}" if paste_id else None,
+                    "date": entry.get("time"),
+                    "snippet": snippet,
+                })
+    except aiohttp.ClientError as exc:
+        return {"source": "psbdmp", "available": True, "target": target, "pastes": [], "error": str(exc)}
+
+    return {"source": "psbdmp", "available": True, "target": target, "pastes": pastes, "error": None}
