@@ -561,3 +561,82 @@ async def _query_threat_actors(target: str) -> dict:
         "pulse_count": pulse_info.get("count", len(pulses)),
         "error": None,
     }
+
+
+# ── 8. Dark Web Exposure Score ─────────────────────────────────────────────────
+
+def _exposure_level(score: int) -> str:
+    if score >= 81:
+        return "Critical"
+    if score >= 51:
+        return "Compromised"
+    if score >= 21:
+        return "Exposed"
+    return "Clean"
+
+
+def _build_darkweb_recommendations(breakdown: list[dict]) -> list[str]:
+    recs: list[str] = []
+    reasons = " ".join(b["reason"] for b in breakdown)
+    if "verified breach" in reasons:
+        recs.append("Force a password reset for all affected accounts and enable MFA everywhere it's supported.")
+    if "paste" in reasons:
+        recs.append("Review the linked pastes and request takedown of any that expose live credentials.")
+    if "GitHub" in reasons:
+        recs.append("Rotate every credential found in the exposed GitHub code immediately and purge it from git history.")
+    if "threat actor" in reasons:
+        recs.append("Treat this as a targeted-threat indicator — engage incident response and review the related OTX pulses for TTPs.")
+    if not recs:
+        recs.append("No dark web exposure detected from the queried sources.")
+    return recs
+
+
+def calculate_darkweb_exposure_score(results: dict) -> dict:
+    """
+    Score a {breaches, pastes, github_exposures, threat_actors}-shaped dict
+    (gather_darkweb_intelligence()'s flattened output) from 0 (clean) to
+    100 (critical):
+
+      - +20 per verified breach (HIBP `verified: true` entries)
+      - +10 per public paste mentioning the target
+      - +25 per GitHub-exposed secret
+      - +30 per distinct threat actor mention
+
+    0-20 = Clean, 21-50 = Exposed, 51-80 = Compromised, 81-100 = Critical.
+    Accepts a partial dict (any source missing/unavailable) — every field is
+    read defensively.
+    """
+    score = 0
+    breakdown: list[dict] = []
+
+    verified_n = sum(1 for b in (results.get("breaches") or []) if isinstance(b, dict) and b.get("verified"))
+    if verified_n:
+        points = verified_n * 20
+        score += points
+        breakdown.append({"reason": f"{verified_n} verified breach(es)", "points": points})
+
+    pastes_n = len(results.get("pastes") or [])
+    if pastes_n:
+        points = pastes_n * 10
+        score += points
+        breakdown.append({"reason": f"{pastes_n} public paste(s) mentioning the target", "points": points})
+
+    github_n = len(results.get("github_exposures") or [])
+    if github_n:
+        points = github_n * 25
+        score += points
+        breakdown.append({"reason": f"{github_n} GitHub-exposed secret(s)", "points": points})
+
+    actors_n = len(results.get("threat_actors") or [])
+    if actors_n:
+        points = actors_n * 30
+        score += points
+        breakdown.append({"reason": f"{actors_n} threat actor mention(s)", "points": points})
+
+    score = max(0, min(100, score))
+    return {
+        "score": score,
+        "exposure_level": _exposure_level(score),
+        "breakdown": breakdown,
+        "recommendations": _build_darkweb_recommendations(breakdown),
+    }
