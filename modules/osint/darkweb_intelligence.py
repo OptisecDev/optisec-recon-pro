@@ -200,3 +200,74 @@ async def _query_hibp_pastes(email: str) -> dict:
         for p in data or []
     ]
     return {"source": "hibp_pastes", "available": True, "target": email, "pastes": pastes, "error": None}
+
+
+# ── 2. IntelligenceX ───────────────────────────────────────────────────────────
+# Official IntelligenceX API (https://intelx.io/integrations/api) — searches
+# dark web leak indexes, paste sites and public breach dumps that IntelX has
+# already crawled and indexed. Optional: degrades to available=False without
+# INTELX_API_KEY. Only short previews are returned, never full leaked content.
+
+_INTELX_MAX_RESULTS = 10
+_INTELX_POLL_ATTEMPTS = 5
+_INTELX_POLL_DELAY = 1.5
+
+
+def _intelx_headers() -> dict:
+    return {"x-key": INTELX_API_KEY, "user-agent": _USER_AGENT}
+
+
+async def _query_intelx(target: str) -> dict:
+    """
+    Search IntelligenceX for `target` (email/domain/username) across its
+    indexed dark web leaks, paste sites and public breach dumps.
+
+    Two-step API: POST a search job, then poll the result endpoint with the
+    returned search id until results are ready or _INTELX_POLL_ATTEMPTS is
+    exhausted.
+
+    Returns {source, available, target, result_count, preview, error}.
+    `preview` holds only short (<=200 char) item-name snippets — never full
+    leaked content, for the same reason this module never scrapes the dark
+    web directly. Never raises.
+    """
+    if not INTELX_API_KEY:
+        return {"source": "intelx", "available": False, "target": target,
+                "result_count": 0, "preview": [], "error": "requires API key (INTELX_API_KEY, optional)"}
+
+    body = {"term": target, "maxresults": _INTELX_MAX_RESULTS, "media": 0, "sort": 4, "terminate": []}
+    try:
+        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT, headers=_intelx_headers()) as session:
+            async with session.post(INTELX_SEARCH_URL, json=body) as resp:
+                if resp.status == 401:
+                    return {"source": "intelx", "available": True, "target": target,
+                            "result_count": 0, "preview": [], "error": "invalid IntelligenceX API key"}
+                resp.raise_for_status()
+                search_id = (await resp.json()).get("id")
+
+            if not search_id:
+                return {"source": "intelx", "available": True, "target": target,
+                        "result_count": 0, "preview": [], "error": "IntelligenceX did not return a search id"}
+
+            records: list[dict] = []
+            for _ in range(_INTELX_POLL_ATTEMPTS):
+                async with session.get(INTELX_RESULT_URL, params={"id": search_id, "limit": _INTELX_MAX_RESULTS}) as resp:
+                    resp.raise_for_status()
+                    payload = await resp.json()
+                records = payload.get("records", []) or []
+                # status 0 = search still running; anything else, or records
+                # already present, means we're done polling.
+                if payload.get("status", 0) != 0 or records:
+                    break
+                await asyncio.sleep(_INTELX_POLL_DELAY)
+    except aiohttp.ClientError as exc:
+        return {"source": "intelx", "available": True, "target": target,
+                "result_count": 0, "preview": [], "error": str(exc)}
+
+    preview = [
+        {"name": r.get("name"), "bucket": r.get("bucket"), "date": r.get("date"),
+         "snippet": (r.get("name") or "")[:200]}
+        for r in records[:_INTELX_MAX_RESULTS]
+    ]
+    return {"source": "intelx", "available": True, "target": target,
+            "result_count": len(records), "preview": preview, "error": None}
