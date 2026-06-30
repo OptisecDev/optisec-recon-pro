@@ -316,3 +316,56 @@ async def _query_breachdirectory(target: str) -> dict:
         for e in raw_entries
     ]
     return {"source": "breachdirectory", "available": True, "target": target, "entries": entries, "error": None}
+
+
+# ── 4. Leak-Lookup ─────────────────────────────────────────────────────────────
+# Official Leak-Lookup API — https://leak-lookup.com/api. Optional: degrades
+# to available=False without LEAKLOOKUP_API_KEY.
+
+def _leaklookup_query_type(target: str) -> str:
+    t = target.strip()
+    if _is_email(t):
+        return "email_address"
+    if _RE_IP.match(t):
+        return "ip_address"
+    return "domain"
+
+
+async def _query_leaklookup(target: str) -> dict:
+    """
+    Search Leak-Lookup for `target` (email/domain/IP).
+
+    Returns {source, available, target, sources_found, data_types, error}.
+    `sources_found` lists the breach source names that mention the target;
+    `data_types` is the union of leaked field names (e.g. "password",
+    "ip_address") across all of them. Never raises.
+    """
+    if not LEAKLOOKUP_API_KEY:
+        return {"source": "leaklookup", "available": False, "target": target,
+                "sources_found": [], "data_types": [], "error": "requires API key (LEAKLOOKUP_API_KEY, optional)"}
+
+    body = {"key": LEAKLOOKUP_API_KEY, "type": _leaklookup_query_type(target), "query": target}
+    try:
+        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
+            async with session.post(LEAKLOOKUP_SEARCH_URL, data=body) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {"source": "leaklookup", "available": True, "target": target,
+                "sources_found": [], "data_types": [], "error": str(exc)}
+
+    if (data or {}).get("error"):
+        return {"source": "leaklookup", "available": True, "target": target,
+                "sources_found": [], "data_types": [], "error": str(data.get("message"))}
+
+    message = (data or {}).get("message") or {}
+    sources_found = list(message.keys()) if isinstance(message, dict) else []
+    data_types: set[str] = set()
+    if isinstance(message, dict):
+        for field_sets in message.values():
+            for field_set in field_sets or []:
+                if isinstance(field_set, dict):
+                    data_types.update(field_set.keys())
+
+    return {"source": "leaklookup", "available": True, "target": target,
+            "sources_found": sources_found, "data_types": sorted(data_types), "error": None}
