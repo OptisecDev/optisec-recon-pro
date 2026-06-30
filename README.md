@@ -199,6 +199,8 @@ graph TB
 
 ## Screenshots
 
+> All screenshots are taken live from a running OPTISEC v4.0 SINGULARITY instance.
+
 <details open>
 <summary><strong>Dashboard & Overview</strong></summary>
 
@@ -210,52 +212,56 @@ graph TB
 |:---:|:---:|
 | ![Login](docs/screenshots/login.png) | ![Admin](docs/screenshots/admin.png) |
 
+| Demo Dashboard | Demo Scans |
+|:---:|:---:|
+| ![Demo Dashboard](docs/screenshots/demo_dashboard.png) | ![Demo Scans](docs/screenshots/demo_scans.png) |
+
 </details>
 
 <details>
 <summary><strong>Scanning & Vulnerabilities</strong></summary>
 
-| Scan Interface | Scan Detail |
+| Scan Interface | All Scans |
 |:---:|:---:|
-| ![Scan](docs/screenshots/scan.png) | ![Scan Detail](docs/screenshots/demo_scan_detail.png) |
+| ![Scan](docs/screenshots/scan.png) | ![Scans](docs/screenshots/scans.png) |
 
-| All Scans | Findings & Reports |
+| Scan Detail | Reports |
 |:---:|:---:|
-| ![Scans](docs/screenshots/scans.png) | ![Reports](docs/screenshots/reports.png) |
+| ![Scan Detail](docs/screenshots/demo_scan_detail.png) | ![Reports](docs/screenshots/reports.png) |
+
+| Targets Manager | |
+|:---:|:---:|
+| ![Targets](docs/screenshots/targets.png) | |
 
 </details>
 
 <details>
 <summary><strong>Intelligence & OSINT</strong></summary>
 
-| OSINT Module | Targets Manager |
+| OSINT Engine | Dark Web Intel |
 |:---:|:---:|
-| ![OSINT](docs/screenshots/osint.png) | ![Targets](docs/screenshots/targets.png) |
+| ![OSINT](docs/screenshots/osint.png) | ![Dark Web](docs/screenshots/darkweb.png) |
 
-| IOC Correlations | Threat Feed |
+| IOC Correlations | Global Threat Feed |
 |:---:|:---:|
 | ![Correlations](docs/screenshots/correlations.png) | ![Threat Feed](docs/screenshots/threat_feed.png) |
 
-| Dark Web Intel | Attack Patterns |
+| Attack Patterns | MITRE ATT&CK Navigator |
 |:---:|:---:|
-| ![Dark Web](docs/screenshots/darkweb.png) | ![Attack Patterns](docs/screenshots/attack_patterns.png) |
+| ![Attack Patterns](docs/screenshots/attack_patterns.png) | ![ATT&CK](docs/screenshots/attack_navigator.png) |
 
 </details>
 
 <details>
-<summary><strong>AI & Advanced Features</strong></summary>
+<summary><strong>AI & Red Team</strong></summary>
 
-| Autonomous Red Team | Behavioral UEBA |
+| Autonomous Red Team | AI Red Team |
 |:---:|:---:|
-| ![Autonomous RT](docs/screenshots/autonomous_redteam.png) | ![Behavioral](docs/screenshots/behavioral.png) |
+| ![Autonomous RT](docs/screenshots/autonomous_redteam.png) | ![Red Team](docs/screenshots/red_team.png) |
 
-| Zero-Day Prediction | MITRE ATT&CK Navigator |
+| Behavioral UEBA | Zero-Day Prediction |
 |:---:|:---:|
-| ![Zero Day](docs/screenshots/zero_day.png) | ![ATT&CK](docs/screenshots/attack_navigator.png) |
-
-| AI Red Team | Quantum Crypto |
-|:---:|:---:|
-| ![Red Team](docs/screenshots/red_team.png) | ![Quantum](docs/screenshots/quantum.png) |
+| ![Behavioral](docs/screenshots/behavioral.png) | ![Zero Day](docs/screenshots/zero_day.png) |
 
 </details>
 
@@ -274,9 +280,18 @@ graph TB
 |:---:|:---:|
 | ![NGFW](docs/screenshots/ngfw.png) | ![Firewall](docs/screenshots/firewall.png) |
 
-| License Manager | API Documentation |
+| Quantum Crypto (Kyber-768) | License Manager |
 |:---:|:---:|
-| ![License](docs/screenshots/license.png) | ![API Docs](docs/screenshots/api_docs.png) |
+| ![Quantum](docs/screenshots/quantum.png) | ![License](docs/screenshots/license.png) |
+
+</details>
+
+<details>
+<summary><strong>API Documentation</strong></summary>
+
+| Built-in API Docs (Dark Theme) | Swagger UI |
+|:---:|:---:|
+| ![API Docs](docs/screenshots/api_docs.png) | ![Swagger](docs/screenshots/swagger.png) |
 
 </details>
 
