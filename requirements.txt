@@ -55,9 +55,9 @@ requests-cache>=1.2.0
 # NOTE: Amass is a Go binary — install separately:
 #   go install github.com/owasp-amass/amass/v4/...@master
 #   or: apt install amass | brew install amass | snap install amass
-# NOTE: theHarvester has no stable PyPI release — install via:
+# NOTE: theHarvester is not on PyPI (the pypi package is a stub) — install via:
 #   pip install git+https://github.com/laramies/theHarvester.git
-#   or: pipx install theHarvester
+theHarvester>=4.11.1
 maigret>=0.6.1
 holehe>=1.61
 
