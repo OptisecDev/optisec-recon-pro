@@ -1,0 +1,104 @@
+version: "3.9"
+
+# ============================================================
+# OPTISEC Recon Pro v4.0 — Production Docker Compose
+# Usage: docker compose up -d
+# ============================================================
+
+services:
+
+  # ── Application ──────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    image: optisec-recon-pro:latest
+    container_name: optisec_app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://optisec:${POSTGRES_PASSWORD:-optisec_pass}@db:5432/optisec
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - optisec_data:/app/data
+      - optisec_logs:/app/logs
+      - optisec_reports:/app/reports
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - internal
+    # nmap needs NET_RAW + NET_ADMIN for raw socket scanning
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
+  # ── Nginx Reverse Proxy ───────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: optisec_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+      - optisec_static:/app/static:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - app
+    networks:
+      - internal
+      - external
+
+  # ── PostgreSQL ────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: optisec_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: optisec
+      POSTGRES_USER: optisec
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-optisec_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U optisec -d optisec"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis (sessions / rate limiting cache) ────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: optisec_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+
+# ── Named volumes ─────────────────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  optisec_data:
+  optisec_logs:
+  optisec_reports:
+  optisec_static:
+  nginx_logs:
+
+# ── Networks ──────────────────────────────────────────────
+networks:
+  internal:
+    driver: bridge
+    internal: true
+  external:
+    driver: bridge
