@@ -52,9 +52,9 @@ ua-parser>=1.0.0
 requests-cache>=1.2.0
 
 # Unified OSINT Engine v5.0 — Python-installable tool wrappers
-# NOTE: Amass is a Go binary — install separately:
-#   go install github.com/owasp-amass/amass/v4/...@master
-#   or: apt install amass | brew install amass | snap install amass
+# NOTE: Amass is a Go binary — installed at ~/bin/amass v5.1.1
+#   Source: https://github.com/owasp-amass/amass/releases/download/v5.1.1/amass_linux_amd64.tar.gz
+#   Ensure ~/bin is in PATH: export PATH="$HOME/bin:$PATH"
 # NOTE: theHarvester is not on PyPI (the pypi package is a stub) — install via:
 #   pip install git+https://github.com/laramies/theHarvester.git
 theHarvester>=4.11.1
