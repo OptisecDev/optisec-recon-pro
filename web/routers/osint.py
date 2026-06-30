@@ -363,6 +363,37 @@ async def osint_unified_search(request: Request, user: User = Depends(_user)):
     })
 
 
+@router.post(
+    "/api/osint/network-scan",
+    summary="Advanced Network Intelligence — Phase 2A",
+    description=(
+        "Passive Shodan/Censys/BGP/SSL recon on a target IP or domain, "
+        "scored into a 0-100 attack-surface rating. Shodan falls back to "
+        "the free, keyless Shodan InternetDB if `SHODAN_API_KEY` isn't "
+        "configured; Censys is skipped unless both `CENSYS_API_ID` and "
+        "`CENSYS_API_SECRET` are set. Set `deep_scan: true` to also "
+        "actively banner-grab the ports Shodan/Censys reported open — "
+        "only do this against hosts you are authorized to test."
+    ),
+)
+async def osint_network_scan(request: Request, user: User = Depends(_user)):
+    data = await request.json()
+    target = data.get("target", "").strip()
+    deep_scan = bool(data.get("deep_scan", False))
+    if not target:
+        raise HTTPException(400, "target is required")
+
+    logger.info(
+        "network_scan request user=%s target=%r deep_scan=%s ip=%s",
+        user.username, target, deep_scan,
+        request.client.host if request.client else "unknown",
+    )
+
+    from modules.osint.network_intelligence import gather_network_intelligence
+    result = await gather_network_intelligence(target, deep_scan=deep_scan)
+    return JSONResponse(result)
+
+
 @router.get(
     "/api/osint/sources-status",
     summary="OSINT source availability",
