@@ -320,11 +320,27 @@ def _parse_holehe(out: str) -> list[dict]:
     except (json.JSONDecodeError, AttributeError):
         pass
 
-    # Fallback: text output (lines starting with [+])
+    # Fallback: text output — holehe uses "[+] domain.com" for found accounts
+    # Filter out the legend line: "[+] Email used, [-] Email not used, ..."
+    _LEGEND = "email used"
+    seen: set[str] = set()
     for line in out.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[+]") or "✔" in stripped:
-            results.append({"type": "account", "raw": stripped, "status": "registered"})
+        stripped = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        if not (stripped.startswith("[+]") or "✔" in stripped):
+            continue
+        if _LEGEND in stripped.lower():
+            continue
+        # Extract domain: "[+] coroflot.com" → "coroflot.com"
+        m = re.match(r"[\[✔\+\]]+\s+(.+)", stripped)
+        domain = m.group(1).strip() if m else stripped
+        if domain and domain not in seen:
+            seen.add(domain)
+            results.append({
+                "type": "account",
+                "platform": domain.split(".")[0].capitalize(),
+                "domain": domain,
+                "status": "registered",
+            })
     return results
 
 
