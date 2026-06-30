@@ -271,3 +271,48 @@ async def _query_intelx(target: str) -> dict:
     ]
     return {"source": "intelx", "available": True, "target": target,
             "result_count": len(records), "preview": preview, "error": None}
+
+
+# ── 3. BreachDirectory (RapidAPI) ─────────────────────────────────────────────
+# RapidAPI-hosted BreachDirectory listing —
+# https://rapidapi.com/rohan-patra/api/breachdirectory. Optional: degrades
+# to available=False without RAPIDAPI_KEY.
+
+def _breachdirectory_headers() -> dict:
+    return {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": "breachdirectory.p.rapidapi.com"}
+
+
+async def _query_breachdirectory(target: str) -> dict:
+    """
+    Look up `target` (email/username/domain) in BreachDirectory via its
+    RapidAPI listing.
+
+    Returns {source, available, target, entries, error}, where each entry is
+    {email, username, password_hash, sources}. Never raises.
+    """
+    if not RAPIDAPI_KEY:
+        return {"source": "breachdirectory", "available": False, "target": target,
+                "entries": [], "error": "requires API key (RAPIDAPI_KEY, optional)"}
+
+    try:
+        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT, headers=_breachdirectory_headers()) as session:
+            async with session.get(BREACHDIRECTORY_URL, params={"func": "auto", "term": target}) as resp:
+                if resp.status in (401, 403):
+                    return {"source": "breachdirectory", "available": True, "target": target,
+                            "entries": [], "error": "invalid or unauthorized RapidAPI key"}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {"source": "breachdirectory", "available": True, "target": target, "entries": [], "error": str(exc)}
+
+    raw_entries = (data or {}).get("result", []) or []
+    entries = [
+        {
+            "email": e.get("email") or e.get("line"),
+            "username": e.get("username"),
+            "password_hash": e.get("password") or e.get("hash"),
+            "sources": e.get("sources", []),
+        }
+        for e in raw_entries
+    ]
+    return {"source": "breachdirectory", "available": True, "target": target, "entries": entries, "error": None}
