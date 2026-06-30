@@ -317,7 +317,7 @@ class TestSourcesStatus:
         names = {s["source"] for s in statuses}
         assert names == {
             "amass", "theharvester", "maigret", "holehe",
-            "crtsh", "wayback", "dns_full", "whois", "network_intel",
+            "crtsh", "wayback", "dns_full", "whois", "network_intel", "darkweb_intel",
         }
 
     def test_direct_api_sources_always_available(self):
