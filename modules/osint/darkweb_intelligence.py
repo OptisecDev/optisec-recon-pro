@@ -487,3 +487,77 @@ async def _query_github_secrets(domain: str) -> dict:
         return {"source": "github_secrets", "available": True, "target": domain, "exposures": [], "error": str(exc)}
 
     return {"source": "github_secrets", "available": True, "target": domain, "exposures": exposures, "error": last_error}
+
+
+# ── 7. Threat Actor Intelligence (AlienVault OTX) ──────────────────────────────
+# Reuses OTX_API_KEY (modules/threat_intel/otx_feed.py) — queries OTX's
+# indicator endpoint to see which pulses (community threat reports)
+# reference the target, surfacing associated threat actors, malware
+# families and campaigns.
+
+def _otx_headers() -> dict:
+    return {"X-OTX-API-KEY": OTX_API_KEY, "User-Agent": _USER_AGENT}
+
+
+def _otx_indicator_url(target: str) -> str:
+    t = target.strip()
+    if _RE_IP.match(t):
+        return OTX_INDICATOR_IP_URL.format(ip=t)
+    return OTX_INDICATOR_DOMAIN_URL.format(domain=_email_domain(t))
+
+
+async def _query_threat_actors(target: str) -> dict:
+    """
+    Query AlienVault OTX for pulses that reference `target` (or its domain,
+    if `target` is an email) as an indicator, surfacing associated threat
+    actors, malware families and campaigns.
+
+    Returns {source, available, target, threat_actors, malware_families,
+    campaigns, pulse_count, error}. Never raises.
+    """
+    if not OTX_API_KEY:
+        return {"source": "threat_actors", "available": False, "target": target,
+                "threat_actors": [], "malware_families": [], "campaigns": [],
+                "pulse_count": 0, "error": "requires API key (OTX_API_KEY)"}
+
+    url = _otx_indicator_url(target)
+    try:
+        async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT, headers=_otx_headers()) as session:
+            async with session.get(url) as resp:
+                if resp.status == 404:
+                    return {"source": "threat_actors", "available": True, "target": target,
+                            "threat_actors": [], "malware_families": [], "campaigns": [],
+                            "pulse_count": 0, "error": None}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {"source": "threat_actors", "available": True, "target": target,
+                "threat_actors": [], "malware_families": [], "campaigns": [],
+                "pulse_count": 0, "error": str(exc)}
+
+    pulse_info = (data or {}).get("pulse_info") or {}
+    pulses = pulse_info.get("pulses") or []
+
+    threat_actors: set[str] = set()
+    malware_families: set[str] = set()
+    campaigns: set[str] = set()
+    for pulse in pulses:
+        adversary = pulse.get("adversary")
+        if adversary:
+            threat_actors.add(adversary)
+        for family in pulse.get("malware_families") or []:
+            name = family.get("display_name") if isinstance(family, dict) else family
+            if name:
+                malware_families.add(name)
+        name = pulse.get("name")
+        if name:
+            campaigns.add(name)
+
+    return {
+        "source": "threat_actors", "available": True, "target": target,
+        "threat_actors": sorted(threat_actors),
+        "malware_families": sorted(malware_families),
+        "campaigns": sorted(campaigns),
+        "pulse_count": pulse_info.get("count", len(pulses)),
+        "error": None,
+    }
