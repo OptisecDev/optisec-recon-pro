@@ -26,7 +26,7 @@ logger = logging.getLogger("osint.unified")
 # ── Per-tool timeouts (seconds) ───────────────────────────────────────────────
 _TOOL_TIMEOUTS: dict[str, int] = {
     "amass":        60,
-    "theharvester": 90,
+    "theharvester": 150,
     "maigret":      60,
     "holehe":       45,
 }
@@ -217,6 +217,7 @@ def _parse_theharvester(out: str) -> list[dict]:
 
 async def _run_theharvester(target: str, target_type: str) -> dict:
     domain = target.split("@")[-1] if target_type == "email" else target
+    # Use only free sources that don't require API keys
     return await _run_tool(
         "theHarvester",
         ["theHarvester", "-d", domain, "-b", "all", "-l", "100"],
