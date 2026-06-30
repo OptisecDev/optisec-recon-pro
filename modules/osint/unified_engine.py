@@ -53,6 +53,9 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "abuseipdb": 15,
     "fullhunt": 20,
     "leakcheck": 15,
+    "securitytrails": 15,
+    "urlscan": 15,
+    "google_safebrowsing": 10,
 }
 
 # ── Free-tier direct-API source keys (all optional) ───────────────────────────
@@ -64,6 +67,10 @@ FULLHUNT_API_KEY = os.environ.get("FULLHUNT_API_KEY", "")
 # LeakCheck works keyless via its public endpoint; LEAKCHECK_API_KEY only
 # upgrades to the richer authenticated v2 endpoint.
 LEAKCHECK_API_KEY = os.environ.get("LEAKCHECK_API_KEY", "")
+SECURITYTRAILS_API_KEY = os.environ.get("SECURITYTRAILS_API_KEY", "")
+# Google Safe Browsing reuses the generic GOOGLE_API_KEY (a Cloud API key
+# with the Safe Browsing API enabled), not a dedicated env var of its own.
+GOOGLE_SAFEBROWSING_API_KEY = os.environ.get("GOOGLE_API_KEY", "")
 
 _FREE_SOURCE_USER_AGENT = "OPTISEC-Recon-Pro-FreeIntel/1.0"
 
@@ -360,9 +367,12 @@ def _parse_wayback_cdx(text: str) -> list[dict]:
     Parse the Wayback CDX API's JSON-array-of-arrays response into distinct
     subdomain findings.
 
-    Row 0 is always the CDX column header (`["original"]`), not data, and
-    is skipped. Output is capped at 300 unique hosts so a domain with a
-    huge archive history doesn't balloon the response payload.
+    Row 0 is always the CDX column header (`["original"]` or
+    `["original", "timestamp"]`), not data, and is skipped. Each row's
+    second column, when present, is attached as `timestamp` so confidence
+    scoring's freshness adjustment (see confidence_engine._freshness_adjustment)
+    can use it. Output is capped at 300 unique hosts so a domain with a huge
+    archive history doesn't balloon the response payload.
     """
     try:
         rows = json.loads(text)
@@ -381,16 +391,58 @@ def _parse_wayback_cdx(text: str) -> list[dict]:
         if not host or host in seen:
             continue
         seen.add(host)
-        results.append({"type": "subdomain", "value": host, "source_url": original_url})
+        entry = {"type": "subdomain", "value": host, "source_url": original_url}
+        if len(row) > 1 and row[1]:
+            entry["timestamp"] = row[1]
+        results.append(entry)
         if len(results) >= 300:
             break
     return results
 
 
-async def _fetch_wayback(domain: str) -> list[dict]:
+def _wayback_summary(text: str) -> dict:
+    """
+    Compute archive-history metadata from the same Wayback CDX response
+    `_parse_wayback_cdx` extracts hostnames from: the oldest and newest
+    snapshot timestamps, the total number of snapshot rows returned (capped
+    by the query's own `limit`), and the most frequently archived URL paths
+    — a proxy for historically significant endpoints (admin panels, old
+    APIs, etc.) that may no longer be linked anywhere live.
+    """
+    empty = {"oldest_snapshot": None, "newest_snapshot": None, "total_snapshots": 0, "top_paths": []}
+    try:
+        rows = json.loads(text)
+    except json.JSONDecodeError:
+        return empty
+    if not rows or len(rows) < 2:
+        return empty
+
+    data_rows = [r for r in rows[1:] if r]
+    timestamps = [r[1] for r in data_rows if len(r) > 1 and r[1]]
+
+    path_counts: dict[str, int] = {}
+    for r in data_rows:
+        path = urlparse(r[0]).path or "/"
+        path_counts[path] = path_counts.get(path, 0) + 1
+    top_paths = [
+        {"path": p, "count": c}
+        for p, c in sorted(path_counts.items(), key=lambda kv: kv[1], reverse=True)[:10]
+    ]
+
+    return {
+        "oldest_snapshot": min(timestamps) if timestamps else None,
+        "newest_snapshot": max(timestamps) if timestamps else None,
+        "total_snapshots": len(data_rows),
+        "top_paths": top_paths,
+    }
+
+
+async def _fetch_wayback_raw(domain: str) -> str:
     """
     Query the Wayback Machine's CDX API for every archived URL ever crawled
-    under `*.{domain}` and extract the distinct hostnames.
+    under `*.{domain}`, returning the raw JSON text for both
+    `_parse_wayback_cdx` (subdomains) and `_wayback_summary` (archive
+    metadata) to parse.
 
     This surfaces subdomains and hosts that existed in the past but may no
     longer resolve or serve content — historical attack surface that active
@@ -398,17 +450,36 @@ async def _fetch_wayback(domain: str) -> list[dict]:
     """
     url = (
         f"http://web.archive.org/cdx/search/cdx?url=*.{domain}"
-        "&output=json&fl=original&collapse=urlkey&limit=5000"
+        "&output=json&fl=original,timestamp&collapse=urlkey&limit=5000"
     )
     timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["wayback"])
     async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.get(url) as resp:
-            text = await resp.text()
-    return _parse_wayback_cdx(text)
+            return await resp.text()
 
 
 async def _run_wayback(domain: str) -> dict:
-    return await _run_async_source("wayback", _fetch_wayback(domain), _TOOL_TIMEOUTS["wayback"])
+    """
+    Run the Wayback CDX lookup for `domain` and report both the distinct
+    subdomains found (as findings, like every other source) and
+    archive-level metadata (oldest/newest snapshot, total snapshots, top
+    archived paths) alongside them.
+    """
+    _mark_used("wayback")
+    timeout = _TOOL_TIMEOUTS["wayback"]
+    try:
+        text = await asyncio.wait_for(_fetch_wayback_raw(domain), timeout=timeout)
+    except asyncio.TimeoutError:
+        logger.warning("[wayback] timed out after %ds", timeout)
+        return {"source": "wayback", "available": True, "error": f"timed out after {timeout}s", "results": []}
+    except Exception as exc:
+        logger.error("[wayback] unexpected error: %s", exc)
+        return {"source": "wayback", "available": True, "error": str(exc), "results": []}
+
+    results = _parse_wayback_cdx(text)
+    summary = _wayback_summary(text)
+    logger.info("[wayback] parsed %d results", len(results))
+    return {"source": "wayback", "available": True, "results": results, **summary}
 
 
 # ── Full DNS enumeration ──────────────────────────────────────────────────────
@@ -998,6 +1069,251 @@ def _leakcheck_to_findings(data: dict) -> list[dict]:
 async def _run_leakcheck(target: str) -> dict:
     return await _run_query_source(
         "leakcheck", _query_leakcheck(target), _leakcheck_to_findings, _TOOL_TIMEOUTS["leakcheck"],
+    )
+
+
+# ── 5. SecurityTrails (free tier) ─────────────────────────────────────────────
+# https://docs.securitytrails.com/ — free tier: 50 requests/month.
+# Sign up: https://securitytrails.com/app/signup
+
+_SECURITYTRAILS_DOMAIN_URL = "https://api.securitytrails.com/v1/domain/{domain}"
+
+
+def _securitytrails_headers() -> dict:
+    return {"APIKEY": SECURITYTRAILS_API_KEY}
+
+
+async def _query_securitytrails(domain: str) -> dict:
+    """
+    Query SecurityTrails' domain overview endpoint for `domain`: its
+    current DNS record set, indexed subdomain count, Alexa rank, and the
+    WHOIS registrant email SecurityTrails has on file.
+
+    Returns {source, available, target, current_dns, subdomain_count,
+    alexa_rank, whois_email, error}. Never raises.
+    """
+    empty = {"source": "securitytrails", "target": domain, "current_dns": {},
+              "subdomain_count": None, "alexa_rank": None, "whois_email": None}
+    if not SECURITYTRAILS_API_KEY:
+        return {**empty, "available": False, "error": "requires API key (SECURITYTRAILS_API_KEY, optional)"}
+
+    url = _SECURITYTRAILS_DOMAIN_URL.format(domain=domain)
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["securitytrails"])
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, headers=_securitytrails_headers()) as session:
+            async with session.get(url) as resp:
+                if resp.status in (401, 403):
+                    return {**empty, "available": True, "error": "invalid SecurityTrails API key"}
+                if resp.status == 404:
+                    return {**empty, "available": True, "error": None}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {**empty, "available": True, "error": str(exc)}
+
+    whois = data.get("whois") if isinstance(data.get("whois"), dict) else {}
+    return {
+        "source": "securitytrails", "available": True, "target": domain,
+        "current_dns": data.get("current_dns") or {},
+        "subdomain_count": data.get("subdomain_count"),
+        "alexa_rank": data.get("alexa_rank"),
+        "whois_email": whois.get("email"),
+        "error": None,
+    }
+
+
+def _securitytrails_to_findings(data: dict) -> list[dict]:
+    findings: list[dict] = []
+    if not data.get("available") or data.get("error"):
+        return findings
+
+    for rtype, info in (data.get("current_dns") or {}).items():
+        if not isinstance(info, dict):
+            continue
+        for v in info.get("values") or []:
+            if not isinstance(v, dict):
+                continue
+            value = v.get("ip") or v.get("nameserver") or v.get("value")
+            if value:
+                findings.append({
+                    "type": "dns_record", "record_type": rtype.upper(),
+                    "value": str(value), "source_detail": "securitytrails",
+                })
+
+    if data.get("whois_email"):
+        findings.append({
+            "type": "email", "value": data["whois_email"], "source_detail": "securitytrails_whois",
+        })
+
+    return findings
+
+
+async def _run_securitytrails(domain: str) -> dict:
+    return await _run_query_source(
+        "securitytrails", _query_securitytrails(domain),
+        _securitytrails_to_findings, _TOOL_TIMEOUTS["securitytrails"],
+    )
+
+
+# ── 6. URLScan.io (fully free, keyless) ───────────────────────────────────────
+# https://urlscan.io/docs/api/ — public search needs no API key at all.
+# Sign up (optional, raises rate limits): https://urlscan.io/user/signup
+
+_URLSCAN_SEARCH_URL = "https://urlscan.io/api/v1/search/"
+
+
+async def _query_urlscan(target: str, target_type: str) -> dict:
+    """
+    Search URLScan.io's public scan archive for the 10 most recent scans of
+    `target` (domain or IP) — fully free, no API key required.
+
+    Returns {source, available, target, scans, ips, verdicts, error}, where
+    `scans` is a list of {scan_id, url, screenshot, task_time, ip, server,
+    verdict_malicious}. URLScan's bulk search endpoint doesn't expose
+    detected technologies (that requires fetching each scan's full result
+    page individually); `technologies` is reported as an empty list until a
+    future per-scan enrichment pass adds it. Never raises.
+    """
+    empty = {"source": "urlscan", "target": target, "scans": [], "ips": [],
+              "technologies": [], "verdicts": []}
+    field = "ip" if target_type == "ip" else "domain"
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["urlscan"])
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(
+                _URLSCAN_SEARCH_URL, params={"q": f"{field}:{target}", "size": "10"}
+            ) as resp:
+                if resp.status == 429:
+                    return {**empty, "available": True, "error": "URLScan rate limit exceeded"}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {**empty, "available": True, "error": str(exc)}
+
+    scans: list[dict] = []
+    ips: set = set()
+    verdicts: list = []
+    for r in (data or {}).get("results") or []:
+        page = r.get("page") or {}
+        task = r.get("task") or {}
+        ip = page.get("ip")
+        if ip:
+            ips.add(ip)
+        overall = ((r.get("verdicts") or {}).get("overall") or {}) if isinstance(r.get("verdicts"), dict) else {}
+        malicious = overall.get("malicious")
+        verdicts.append(malicious)
+        scans.append({
+            "scan_id": task.get("uuid"),
+            "url": page.get("url"),
+            "screenshot": r.get("screenshot"),
+            "task_time": task.get("time"),
+            "ip": ip,
+            "server": page.get("server"),
+            "verdict_malicious": malicious,
+        })
+
+    return {
+        "source": "urlscan", "available": True, "target": target,
+        "scans": scans, "ips": sorted(ips), "technologies": [], "verdicts": verdicts,
+        "error": None,
+    }
+
+
+def _urlscan_to_findings(data: dict) -> list[dict]:
+    findings: list[dict] = []
+    if not data.get("available") or data.get("error"):
+        return findings
+
+    for scan in data.get("scans") or []:
+        findings.append({
+            "type": "urlscan_observation",
+            "value": scan.get("url") or data.get("target"),
+            "severity": "high" if scan.get("verdict_malicious") else "info",
+            "ip": scan.get("ip"), "server": scan.get("server"),
+            "scan_id": scan.get("scan_id"), "task_time": scan.get("task_time"),
+            "screenshot": scan.get("screenshot"),
+        })
+    for ip in data.get("ips") or []:
+        findings.append({"type": "ip_association", "value": ip, "source_detail": "urlscan"})
+
+    return findings
+
+
+async def _run_urlscan(target: str, target_type: str) -> dict:
+    return await _run_query_source(
+        "urlscan", _query_urlscan(target, target_type), _urlscan_to_findings, _TOOL_TIMEOUTS["urlscan"],
+    )
+
+
+# ── 7. Google Safe Browsing (free) ────────────────────────────────────────────
+# https://developers.google.com/safe-browsing/v4 — free tier: 10,000
+# requests/day. Sign up (enable the API on a GCP project):
+# https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com
+
+_GOOGLE_SAFEBROWSING_URL = "https://safebrowsing.googleapis.com/v4/threatMatches:find"
+_GOOGLE_SAFEBROWSING_THREAT_TYPES = ["MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE"]
+
+
+async def _query_google_safebrowsing(url_target: str) -> dict:
+    """
+    Check `url_target` against Google's Safe Browsing v4 threatMatches API
+    for malware, social-engineering (phishing) and unwanted-software
+    listings.
+
+    Returns {source, available, target, threats, is_safe, error}. Never
+    raises.
+    """
+    empty = {"source": "google_safebrowsing", "target": url_target, "threats": [], "is_safe": None}
+    if not GOOGLE_SAFEBROWSING_API_KEY:
+        return {**empty, "available": False, "error": "requires API key (GOOGLE_API_KEY, optional)"}
+
+    body = {
+        "client": {"clientId": "optisec-recon-pro", "clientVersion": "1.0"},
+        "threatInfo": {
+            "threatTypes": _GOOGLE_SAFEBROWSING_THREAT_TYPES,
+            "platformTypes": ["ANY_PLATFORM"],
+            "threatEntryTypes": ["URL"],
+            "threatEntries": [{"url": url_target}],
+        },
+    }
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["google_safebrowsing"])
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(
+                _GOOGLE_SAFEBROWSING_URL, params={"key": GOOGLE_SAFEBROWSING_API_KEY}, json=body
+            ) as resp:
+                if resp.status in (400, 403):
+                    return {**empty, "available": True, "error": "invalid Google Safe Browsing API key"}
+                resp.raise_for_status()
+                data = await resp.json()
+    except aiohttp.ClientError as exc:
+        return {**empty, "available": True, "error": str(exc)}
+
+    matches = (data or {}).get("matches") or []
+    threats = [m.get("threatType") for m in matches if m.get("threatType")]
+    return {
+        "source": "google_safebrowsing", "available": True, "target": url_target,
+        "threats": threats, "is_safe": len(threats) == 0, "error": None,
+    }
+
+
+def _safebrowsing_to_findings(data: dict) -> list[dict]:
+    findings: list[dict] = []
+    if not data.get("available") or data.get("error"):
+        return findings
+    for threat_type in data.get("threats") or []:
+        findings.append({
+            "type": "safebrowsing_threat", "value": data.get("target"),
+            "severity": "critical", "threat_type": threat_type,
+        })
+    return findings
+
+
+async def _run_google_safebrowsing(domain: str) -> dict:
+    url_target = domain if domain.startswith(("http://", "https://")) else f"http://{domain}"
+    return await _run_query_source(
+        "google_safebrowsing", _query_google_safebrowsing(url_target),
+        _safebrowsing_to_findings, _TOOL_TIMEOUTS["google_safebrowsing"],
     )
 
 
