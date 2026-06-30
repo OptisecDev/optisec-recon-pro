@@ -1,6 +1,7 @@
 """
 Unified OSINT Engine v5.0
-Parallel subprocess wrappers for Amass, theHarvester, Maigret, Holehe.
+Parallel subprocess wrappers for Amass, theHarvester, Maigret, Holehe,
+plus direct-API passive sources (crt.sh, Wayback Machine, DNS, WHOIS).
 
 External tool installation notes:
   - Amass   : Go binary — `go install github.com/owasp-amass/amass/v4/...@master`
@@ -8,6 +9,8 @@ External tool installation notes:
   - theHarvester : `pip install theHarvester` or `pipx install theHarvester`
   - Maigret  : `pip install maigret`
   - Holehe   : `pip install holehe`
+  - crt.sh, Wayback, DNS, WHOIS : no external binary — pure Python (aiohttp,
+    dnspython, python-whois), always "available".
 """
 
 import asyncio
@@ -20,6 +23,11 @@ import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+
+import aiohttp
+import dns.asyncresolver
+import whois as _pythonwhois
 
 logger = logging.getLogger("osint.unified")
 
@@ -31,6 +39,10 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "theharvester":  60,
     "maigret":      120,
     "holehe":        45,
+    "crtsh":         20,
+    "wayback":       25,
+    "dns_full":      15,
+    "whois":         15,
 }
 
 # ── Binary resolution: system PATH + venv bin + ~/bin ────────────────────────
@@ -51,6 +63,71 @@ def _find_binary(name: str) -> str | None:
         if p.is_file():
             return str(p)
     return None
+
+
+# ── Source usage tracking (for /api/osint/sources-status) ────────────────────
+_last_used: dict[str, float] = {}
+# None of these sources need an API key: amass/theHarvester/maigret/holehe
+# run as free/local tools, and crt.sh/Wayback/DNS/WHOIS are public APIs.
+_SOURCE_REQUIRES_API_KEY: dict[str, bool] = {
+    "amass": False,
+    "theharvester": False,
+    "maigret": False,
+    "holehe": False,
+    "crtsh": False,
+    "wayback": False,
+    "dns_full": False,
+    "whois": False,
+}
+# Binary name to probe for each subprocess-based source (case differs from
+# its `source` label, e.g. theHarvester's binary is camelCased).
+_SOURCE_BINARY_NAME: dict[str, str] = {
+    "amass": "amass",
+    "theharvester": "theHarvester",
+    "maigret": "maigret",
+    "holehe": "holehe",
+}
+
+
+def _mark_used(name: str) -> None:
+    _last_used[name] = time.time()
+
+
+def _iso(ts: float | None) -> str | None:
+    if ts is None:
+        return None
+    import datetime
+    return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat()
+
+
+def get_sources_status() -> list[dict]:
+    """
+    Report every OSINT source's availability, API-key requirement, and last
+    invocation time.
+
+    Subprocess-based sources (amass/theHarvester/maigret/holehe) are
+    "available" only if their binary is found on PATH/venv/~/bin — the same
+    resolution _run_tool() itself uses, so this reflects the same truth the
+    next real search would. Direct-API sources (crt.sh/Wayback/DNS/WHOIS)
+    have no external binary dependency, so they're always available.
+    """
+    statuses: list[dict] = []
+    for name, binary_name in _SOURCE_BINARY_NAME.items():
+        statuses.append({
+            "source": name,
+            "available": _find_binary(binary_name) is not None,
+            "requires_api_key": _SOURCE_REQUIRES_API_KEY.get(name, False),
+            "last_used": _iso(_last_used.get(name)),
+        })
+    for name in ("crtsh", "wayback", "dns_full", "whois"):
+        statuses.append({
+            "source": name,
+            "available": True,
+            "requires_api_key": _SOURCE_REQUIRES_API_KEY.get(name, False),
+            "last_used": _iso(_last_used.get(name)),
+        })
+    return statuses
+
 
 # ── Simple in-memory rate limiter ─────────────────────────────────────────────
 _rate_store: dict[str, list[float]] = defaultdict(list)
@@ -99,6 +176,7 @@ async def _run_tool(
     Run an external command, capture stdout/stderr, parse output.
     Never raises — errors are captured in the returned dict.
     """
+    _mark_used(name.lower())
     binary = _find_binary(cmd[0])
     if not binary:
         logger.debug("[%s] binary not found: %s", name, cmd[0])
@@ -159,6 +237,253 @@ async def _run_tool(
         }
 
 
+async def _run_async_source(name: str, coro, timeout: int) -> dict[str, Any]:
+    """
+    Run an in-process async OSINT source (HTTP API call or library call,
+    as opposed to an external subprocess) under a hard timeout.
+
+    Mirrors _run_tool's contract so every source — subprocess-based or
+    not — returns the same {source, available, results, error?} shape and
+    a slow/failing source never blocks the others in asyncio.gather().
+    """
+    _mark_used(name)
+    try:
+        results = await asyncio.wait_for(coro, timeout=timeout)
+        logger.info("[%s] parsed %d results", name, len(results))
+        return {"source": name, "available": True, "results": results}
+    except asyncio.TimeoutError:
+        logger.warning("[%s] timed out after %ds", name, timeout)
+        return {
+            "source": name,
+            "available": True,
+            "error": f"timed out after {timeout}s",
+            "results": [],
+        }
+    except Exception as exc:
+        logger.error("[%s] unexpected error: %s", name, exc)
+        return {"source": name, "available": True, "error": str(exc), "results": []}
+
+
+# ── crt.sh (Certificate Transparency) ────────────────────────────────────────
+# No installation required — queries the public crt.sh JSON API directly.
+
+def _parse_crtsh_json(text: str, domain: str) -> list[dict]:
+    """
+    Parse crt.sh's JSON response into subdomain findings.
+
+    Each certificate entry's `name_value` field can hold multiple newline-
+    separated SANs (e.g. a single cert covering `foo.example.com` and
+    `*.bar.example.com`); every one is extracted, wildcards stripped, and
+    only names actually ending in the queried domain are kept.
+    """
+    try:
+        entries = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+
+    domain_lower = domain.lower()
+    seen: set[str] = set()
+    results: list[dict] = []
+    for entry in entries:
+        name_value = entry.get("name_value", "") or ""
+        for raw in name_value.split("\n"):
+            sub = raw.strip().lower().lstrip("*.")
+            if not sub or not sub.endswith(domain_lower) or sub in seen:
+                continue
+            seen.add(sub)
+            results.append({
+                "type": "subdomain",
+                "value": sub,
+                "issuer": entry.get("issuer_name", ""),
+                "not_before": entry.get("not_before", ""),
+            })
+    return results
+
+
+async def _fetch_crtsh(domain: str) -> list[dict]:
+    """
+    Query crt.sh for certificates issued for `%.{domain}` and extract every
+    subdomain named in those certificates' Subject Alternative Names.
+
+    Certificate Transparency logs are append-only and publicly auditable,
+    so this is one of the highest-signal passive subdomain sources: a name
+    only appears here if a CA actually issued a certificate for it.
+    """
+    url = f"https://crt.sh/?q=%25.{domain}&output=json"
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["crtsh"])
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url) as resp:
+            text = await resp.text()
+    return _parse_crtsh_json(text, domain)
+
+
+async def _run_crtsh(domain: str) -> dict:
+    return await _run_async_source("crtsh", _fetch_crtsh(domain), _TOOL_TIMEOUTS["crtsh"])
+
+
+# ── Wayback Machine (CDX API) ────────────────────────────────────────────────
+# No installation required — queries the public web.archive.org CDX API.
+
+def _parse_wayback_cdx(text: str) -> list[dict]:
+    """
+    Parse the Wayback CDX API's JSON-array-of-arrays response into distinct
+    subdomain findings.
+
+    Row 0 is always the CDX column header (`["original"]`), not data, and
+    is skipped. Output is capped at 300 unique hosts so a domain with a
+    huge archive history doesn't balloon the response payload.
+    """
+    try:
+        rows = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not rows or len(rows) < 2:
+        return []
+
+    seen: set[str] = set()
+    results: list[dict] = []
+    for row in rows[1:]:
+        if not row:
+            continue
+        original_url = row[0]
+        host = (urlparse(original_url).hostname or "").lower()
+        if not host or host in seen:
+            continue
+        seen.add(host)
+        results.append({"type": "subdomain", "value": host, "source_url": original_url})
+        if len(results) >= 300:
+            break
+    return results
+
+
+async def _fetch_wayback(domain: str) -> list[dict]:
+    """
+    Query the Wayback Machine's CDX API for every archived URL ever crawled
+    under `*.{domain}` and extract the distinct hostnames.
+
+    This surfaces subdomains and hosts that existed in the past but may no
+    longer resolve or serve content — historical attack surface that active
+    scanning and DNS-based enumeration both miss entirely.
+    """
+    url = (
+        f"http://web.archive.org/cdx/search/cdx?url=*.{domain}"
+        "&output=json&fl=original&collapse=urlkey&limit=5000"
+    )
+    timeout = aiohttp.ClientTimeout(total=_TOOL_TIMEOUTS["wayback"])
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(url) as resp:
+            text = await resp.text()
+    return _parse_wayback_cdx(text)
+
+
+async def _run_wayback(domain: str) -> dict:
+    return await _run_async_source("wayback", _fetch_wayback(domain), _TOOL_TIMEOUTS["wayback"])
+
+
+# ── Full DNS enumeration ──────────────────────────────────────────────────────
+# No installation required — uses dnspython's async resolver directly.
+
+_DNS_RECORD_TYPES = ["A", "AAAA", "MX", "NS", "TXT", "SOA"]
+
+
+async def _fetch_dns_full(domain: str) -> list[dict]:
+    """
+    Resolve A/AAAA/MX/NS/TXT/SOA records for `domain`, then separately check
+    SPF (inside the apex TXT records) and DMARC (TXT at `_dmarc.{domain}`).
+
+    SPF/DMARC are reported as their own findings rather than raw TXT data
+    because their *absence* is itself a security-relevant finding (email
+    spoofing exposure) — see classify_severity() in confidence_engine.py.
+    """
+    resolver = dns.asyncresolver.Resolver()
+    resolver.timeout = 5
+    resolver.lifetime = 5
+
+    results: list[dict] = []
+    for rtype in _DNS_RECORD_TYPES:
+        try:
+            answers = await resolver.resolve(domain, rtype)
+            for r in answers:
+                results.append({
+                    "type": "dns_record",
+                    "record_type": rtype,
+                    "value": str(r).strip(),
+                })
+        except Exception:
+            continue
+
+    spf_present = any(
+        r["record_type"] == "TXT" and "v=spf1" in r["value"].lower()
+        for r in results
+    )
+    results.append({
+        "type": "spf_status",
+        "record_type": "SPF",
+        "value": "present" if spf_present else "missing",
+    })
+
+    try:
+        dmarc_answers = await resolver.resolve(f"_dmarc.{domain}", "TXT")
+        dmarc_txt = " ".join(str(r).strip() for r in dmarc_answers)
+        results.append({"type": "dmarc_record", "record_type": "DMARC", "value": dmarc_txt})
+    except Exception:
+        results.append({"type": "dmarc_status", "record_type": "DMARC", "value": "missing"})
+
+    return results
+
+
+async def _run_dns_full(domain: str) -> dict:
+    return await _run_async_source("dns_full", _fetch_dns_full(domain), _TOOL_TIMEOUTS["dns_full"])
+
+
+# ── WHOIS ─────────────────────────────────────────────────────────────────────
+# No installation required — uses python-whois, which is sync, so it runs in
+# a worker thread (asyncio.to_thread) rather than blocking the event loop.
+
+def _whois_str(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        value = value[0] if value else None
+    return str(value) if value is not None else ""
+
+
+def _whois_list(value) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v) for v in value]
+    return [str(value)]
+
+
+async def _fetch_whois(domain: str) -> list[dict]:
+    """
+    Look up WHOIS registration data for `domain`: registrar, creation/
+    expiration/update dates, name servers and registration status.
+
+    Domain age and time-to-expiry are classic OSINT pivots — a domain
+    registered days ago is a strong phishing/infra-reuse signal, and one
+    expiring soon may be about to lapse and become re-registrable.
+    """
+    w = await asyncio.to_thread(_pythonwhois.whois, domain)
+    record = {
+        "type": "whois_record",
+        "domain_name": _whois_str(getattr(w, "domain_name", None)),
+        "registrar": _whois_str(getattr(w, "registrar", None)),
+        "creation_date": _whois_str(getattr(w, "creation_date", None)),
+        "expiration_date": _whois_str(getattr(w, "expiration_date", None)),
+        "updated_date": _whois_str(getattr(w, "updated_date", None)),
+        "name_servers": _whois_list(getattr(w, "name_servers", None)),
+        "status": _whois_list(getattr(w, "status", None)),
+        "value": domain,
+    }
+    return [record]
+
+
+async def _run_whois(domain: str) -> dict:
+    return await _run_async_source("whois", _fetch_whois(domain), _TOOL_TIMEOUTS["whois"])
+
+
 # ── Amass ─────────────────────────────────────────────────────────────────────
 # NOTE: Amass is a Go binary — not installable via pip.
 # Install: go install github.com/owasp-amass/amass/v4/...@master
@@ -179,6 +504,7 @@ async def _run_amass(domain: str) -> dict:
     # amass v5 writes progress bars to stdout — use -oA to write results
     # to a file instead, then read the file after the process exits.
     import tempfile, uuid
+    _mark_used("amass")
     out_prefix = f"/tmp/amass_{uuid.uuid4().hex[:8]}"
     binary = _find_binary("amass")
     if not binary:
@@ -420,8 +746,15 @@ async def search_unified(
     labels: list[str] = []
 
     if target_type == "domain":
-        tasks += [_run_amass(target), _run_theharvester(target, target_type)]
-        labels += ["amass", "theharvester"]
+        tasks += [
+            _run_amass(target),
+            _run_theharvester(target, target_type),
+            _run_crtsh(target),
+            _run_wayback(target),
+            _run_dns_full(target),
+            _run_whois(target),
+        ]
+        labels += ["amass", "theharvester", "crtsh", "wayback", "dns_full", "whois"]
 
     elif target_type == "email":
         tasks += [_run_holehe(target), _run_theharvester(target, target_type)]
