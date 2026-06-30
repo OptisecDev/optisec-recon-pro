@@ -11,6 +11,9 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Status](https://img.shields.io/badge/Status-Production-00ff88.svg?style=for-the-badge)](https://github.com/OptisecDev/optisec-recon-pro)
 [![Version](https://img.shields.io/badge/Version-4.0.0--SINGULARITY-bc8cff.svg?style=for-the-badge)](https://github.com/OptisecDev/optisec-recon-pro/releases)
+[![OSINT Engine](https://img.shields.io/badge/OSINT%20Engine-v5.0-bc8cff.svg?style=for-the-badge)](#osint-engine-v50--world-class-intelligence)
+[![OSINT Sources](https://img.shields.io/badge/OSINT%20Sources-8-00d4ff.svg?style=for-the-badge)](#osint-engine-v50--world-class-intelligence)
+[![Tests](https://img.shields.io/badge/Tests-72%20Passing-00ff88.svg?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_unified_osint.py)
 [![Stars](https://img.shields.io/github/stars/OptisecDev/optisec-recon-pro?style=for-the-badge&color=00ff88)](https://github.com/OptisecDev/optisec-recon-pro/stargazers)
 
 **A full-stack, AI-powered security intelligence platform built for bug bounty hunters,  
@@ -27,6 +30,7 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
 
 - [Overview](#overview)
 - [Features Matrix — 13 Modules](#features-matrix--13-modules)
+- [OSINT Engine v5.0 — World-Class Intelligence](#osint-engine-v50--world-class-intelligence)
 - [Architecture](#architecture)
 - [Screenshots](#screenshots)
 - [Tech Stack](#tech-stack)
@@ -36,6 +40,7 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
   - [Deploy to Render](#deploy-to-render)
 - [API Documentation](#api-documentation)
 - [Licensing Tiers](#licensing-tiers)
+- [Ethical Use Policy](#ethical-use-policy)
 - [Security & Responsible Disclosure](#security--responsible-disclosure)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
@@ -68,7 +73,7 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
 |--------|-------------|------|
 | **Reconnaissance** | Subdomain enumeration (wordlist + DNS brute), DNS lookup (A/MX/TXT/NS/CNAME), WHOIS, Nmap service detection, SSL/TLS analysis, Security headers grading, Port scanning | FREE+ |
 | **Vulnerability Scanner** | XSS (reflected/stored), SQL Injection, SSRF (cloud metadata bypass), LFI (path traversal), Open Redirect | FREE+ |
-| **OSINT Engine** | Email discovery, Social media footprint, Phone number intelligence, IP geolocation, Username search (200+ platforms), Device fingerprinting, National ID lookup (Iraq), Vehicle plate recon, Cell tower triangulation | FREE/PRO |
+| **OSINT Engine v5.0** | Unified 8-source intelligence search (Amass, theHarvester, Maigret, Holehe, crt.sh, Wayback, DNS Full, WHOIS) with confidence scoring + correlation engine — see [deep dive](#osint-engine-v50--world-class-intelligence) — plus email discovery, social media footprint, phone intelligence, IP geolocation, username search (200+ platforms), device fingerprinting, national ID lookup (Iraq), vehicle plate recon, cell tower triangulation | FREE/PRO |
 
 ### AI & Intelligence
 
@@ -107,6 +112,198 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
 - **PDF Reports** — Professional executive-grade security reports with ReportLab
 - **REST API** — Full OpenAPI 3.0 spec at `/docs` and `/redoc`
 - **Demo Mode** — One-click `/demo` login with pre-populated findings and targets
+
+---
+
+## OSINT Engine v5.0 — World-Class Intelligence
+
+The OSINT module (`/api/osint/unified-search`) was rebuilt from a handful of
+single-purpose lookups into a parallel, multi-source intelligence engine
+modeled on professional tools like Maltego and SpiderFoot: dispatch every
+applicable source at once, merge what they find into one record per
+real-world entity, and score each one for trust and risk before it ever
+reaches a human.
+
+### 8 Integrated Sources
+
+Sources are dispatched automatically based on `target_type` (`domain`,
+`email`, `username`, `ip`, or `auto`-detected), and every source runs under
+its own independent timeout so one slow or failing source never blocks the
+rest of the `asyncio.gather()` batch.
+
+| Source | Target Type | What It Finds | Install |
+|--------|:---:|----------------|---------|
+| **Amass** | domain | Passive subdomain enumeration aggregating multiple intel APIs | `go install github.com/owasp-amass/amass/v4/...@master` / `apt install amass` |
+| **theHarvester** | domain, email, ip | Emails and hosts via free OSINT engines (DuckDuckGo, crt.sh, DNSDumpster, HackerTarget, RapidDNS) | `pip install theHarvester` |
+| **Maigret** | username | Username footprint across 500+ social platforms | `pip install maigret` |
+| **Holehe** | email | Checks which online services an email is registered with | `pip install holehe` |
+| **crt.sh** | domain | Subdomains extracted from public Certificate Transparency logs | none — public API |
+| **Wayback Machine** | domain | Historical hostnames pulled from the Internet Archive CDX index | none — public API |
+| **DNS Full** | domain | A / AAAA / MX / TXT / NS / SOA records plus explicit SPF / DMARC presence checks | none — `dnspython` |
+| **WHOIS** | domain | Registrar, creation/expiry/update dates, name servers, registration status | none — `python-whois` |
+
+Check what's actually runnable in your environment at any time with:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" https://your-instance/api/osint/sources-status
+```
+
+```json
+{
+  "sources": [
+    { "source": "amass", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:02+00:00" },
+    { "source": "theharvester", "available": true, "requires_api_key": false, "last_used": null },
+    { "source": "maigret", "available": false, "requires_api_key": false, "last_used": null },
+    { "source": "holehe", "available": true, "requires_api_key": false, "last_used": null },
+    { "source": "crtsh", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:02+00:00" },
+    { "source": "wayback", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:03+00:00" },
+    { "source": "dns_full", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:01+00:00" },
+    { "source": "whois", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:04+00:00" }
+  ]
+}
+```
+
+None of the 8 sources require an API key — the subprocess-based tools
+(Amass, theHarvester, Maigret, Holehe) run as free/local binaries, and the
+direct-API sources (crt.sh, Wayback, DNS, WHOIS) query public endpoints.
+
+### Confidence Scoring Engine (0–100)
+
+Every merged entity gets a trust score from `modules/osint/confidence_engine.py`,
+calculated in three steps:
+
+1. **Base score** — the reliability weight of the single most-trusted source
+   that reported the entity, calibrated by how the data was obtained:
+
+   | Source | Reliability | Rationale |
+   |--------|:---:|-----------|
+   | crt.sh | 90 | Cryptographically-anchored — a CA actually issued the cert |
+   | DNS Full | 90 | Protocol-level fact — the record actually resolves |
+   | WHOIS | 85 | Authoritative registry data |
+   | Amass | 80 | Aggregates multiple passive intel APIs itself |
+   | theHarvester | 70 | Scrapes search engines — occasional false positives |
+   | Holehe | 70 | Probes auth endpoints — occasional false positives |
+   | Wayback Machine | 65 | Confirms a URL was *crawled*, not that the host still resolves |
+   | Maigret | 60 | Username-matching across 500+ sites has the highest false-positive rate |
+
+2. **Corroboration bonus** — `+15` for every *additional* independent source
+   that reports the same entity. A subdomain confirmed by both crt.sh and
+   live DNS resolution is far more credible than one seen via a single
+   passive source.
+3. **Freshness adjustment** — `+5` if the finding's timestamp is under 90
+   days old, `-10` if it's over 2 years old, `0` otherwise.
+
+The final score is clamped to `[0, 100]`.
+
+### Correlation & Deduplication Engine
+
+`modules/osint/correlation_engine.py` collapses findings reported by
+multiple sources into one record per real-world entity, the same way
+Maltego's graph view collapses duplicate nodes pulled in by different
+transforms:
+
+- Every finding is keyed by `(type, lowercased value)`.
+- The first sighting of a key keeps its fields and starts a `sources` list
+  and an `occurrences` counter.
+- Every later sighting of the same key appends its source name (if new),
+  increments `occurrences`, and backfills any field the merged record
+  doesn't already hold a non-empty value for — a richer source's detail
+  (e.g. crt.sh's certificate issuer) is never clobbered by a sparser source
+  reporting the same entity later.
+- `build_entity_graph()` then adds a best-effort `related_to` link per
+  entity — an email links to the domain after its `@`; a subdomain links to
+  the apex domain it ends with, if that apex also appears in the result set.
+
+### Bilingual Executive Summary
+
+Every search returns a one-line verdict in **both Arabic and English**
+(`summary.executive_summary.ar` / `.en`), picking out the single
+highest-severity entity found (critical > high > medium > low > info) so a
+non-technical reader can skim the headline without reading the full
+`entities` list.
+
+### Example Response
+
+```bash
+curl -X POST https://your-instance/api/osint/unified-search \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"target": "example.com", "target_type": "auto"}'
+```
+
+```json
+{
+  "target": "example.com",
+  "target_type": "domain",
+  "elapsed_seconds": 4.82,
+  "summary": {
+    "total_findings": 47,
+    "unique_entities": 39,
+    "severity_breakdown": { "critical": 0, "high": 1, "medium": 3, "low": 33, "info": 2 },
+    "executive_summary": {
+      "ar": "تم رصد 39 كيان لـ example.com، أبرزها نطاق فرعي بخطورة عالية (legacy.example.com).",
+      "en": "Detected 39 entities for example.com; most notably a high-severity subdomain (legacy.example.com)."
+    }
+  },
+  "entities": [
+    {
+      "type": "subdomain",
+      "value": "legacy.example.com",
+      "tls": false,
+      "sources": ["crtsh", "wayback"],
+      "occurrences": 2,
+      "confidence": 95,
+      "severity": "high",
+      "related_to": "example.com"
+    },
+    {
+      "type": "whois_record",
+      "value": "example.com",
+      "registrar": "RESERVED-Internet Assigned Numbers Authority",
+      "creation_date": "1995-08-14T04:00:00",
+      "expiration_date": "2027-08-13T04:00:00",
+      "name_servers": ["A.IANA-SERVERS.NET", "B.IANA-SERVERS.NET"],
+      "sources": ["whois"],
+      "occurrences": 1,
+      "confidence": 85,
+      "severity": "info",
+      "related_to": null
+    },
+    {
+      "type": "spf_status",
+      "record_type": "SPF",
+      "value": "missing",
+      "sources": ["dns_full"],
+      "occurrences": 1,
+      "confidence": 90,
+      "severity": "medium",
+      "related_to": null
+    }
+  ],
+  "raw_sources": [
+    { "source": "amass", "available": true, "results": [{ "type": "subdomain", "value": "legacy.example.com" }] },
+    { "source": "crtsh", "available": true, "results": [{ "type": "subdomain", "value": "legacy.example.com", "issuer": "Let's Encrypt", "not_before": "2026-05-02T10:11:00" }] },
+    { "source": "wayback", "available": true, "results": [{ "type": "subdomain", "value": "legacy.example.com", "source_url": "http://legacy.example.com/" }] },
+    { "source": "dns_full", "available": true, "results": [{ "type": "spf_status", "record_type": "SPF", "value": "missing" }] },
+    { "source": "whois", "available": true, "results": [{ "type": "whois_record", "domain_name": "EXAMPLE.COM", "registrar": "RESERVED-Internet Assigned Numbers Authority" }] },
+    { "source": "theharvester", "available": true, "results": [] }
+  ]
+}
+```
+
+### 72 Passing Tests
+
+The engine ships with full unit coverage in `tests/test_unified_osint.py` —
+72 tests across target-type detection, the rate limiter, every source
+parser, `crt.sh`/Wayback response parsing, `sources-status`, confidence
+scoring, severity classification, deduplication/merging, and entity-graph
+building:
+
+```bash
+pytest tests/test_unified_osint.py -v
+# ........................................................................ [100%]
+# 72 passed
+```
 
 ---
 
@@ -606,6 +803,49 @@ curl -X POST https://your-instance/api/license/activate \
 
 ---
 
+## Ethical Use Policy
+
+OPTISEC's OSINT, vulnerability scanning, and autonomous red team modules are
+**dual-use security tools**. They are built for defenders and authorized
+researchers, not for surveilling people. The standard below follows the
+same authorization-first posture as the [OWASP Testing
+Guide](https://owasp.org/www-project-web-security-testing-guide/) and the
+**PTES** (Penetration Testing Execution Standard): no scan, lookup, or
+correlation against a target is legitimate without documented authorization
+over that target.
+
+### ✅ Permitted Use
+
+| Use Case | Requirement |
+|----------|-------------|
+| **Penetration testing** | Written authorization (engagement letter / rules of engagement) scoped to the exact assets being tested |
+| **Bug bounty hunting** | Target is in-scope per the program's published policy (HackerOne / Bugcrowd / Intigriti scope rules) |
+| **SOC / threat intel operations** | Investigating assets, infrastructure, or IOCs your organization owns or is contractually responsible for defending |
+| **Security research & education** | Self-owned lab environments, CTF infrastructure, or domains/accounts you personally control |
+
+### ⛔ Prohibited Use
+
+| Use Case | Why It's Prohibited |
+|----------|----------------------|
+| **Profiling individuals without consent** | Running username/phone/email/national-ID/vehicle-plate OSINT modules against a private person who has not authorized the search is stalking-adjacent and may violate harassment and privacy statutes regardless of intent |
+| **Unlawful private-data collection** | Aggregating PII beyond what a target has knowingly made public, or combining sources to deanonymize someone, violates data-protection law (GDPR, CCPA, and local equivalents) even when each individual data point is technically public |
+| **Out-of-scope or unauthorized targets** | Scanning any domain, IP range, account, or person not explicitly covered by your authorization — including "adjacent" infrastructure discovered mid-engagement — without first getting written sign-off to expand scope |
+| **Mass / indiscriminate targeting** | Bulk-running OSINT or vulnerability modules across targets with no individual authorization, including speculative "see what turns up" sweeps |
+
+### Enforcement
+
+- Authorization is the user's sole responsibility — OPTISEC does not, and
+  cannot, verify that a given target/scan is authorized.
+- Misuse of OSINT or scanning modules against unauthorized targets may
+  violate computer-crime law (e.g. the U.S. CFAA, EU Cybercrime
+  Directive, or local equivalents) independent of any OPTISEC license
+  terms, and is the operator's personal legal liability.
+- License access may be revoked for credible reports of unauthorized or
+  abusive use; see [Responsible Disclosure](#responsible-disclosure) below
+  to report misuse you become aware of.
+
+---
+
 ## Security & Responsible Disclosure
 
 ### Security Architecture
@@ -658,6 +898,7 @@ We do not operate a formal bug bounty program for OPTISEC itself at this time, b
 - [ ] Multi-tenant organization support
 
 ### v5.0 — NEXUS *(2027)*
+> Platform-wide milestone — independent of the [OSINT Engine v5.0](#osint-engine-v50--world-class-intelligence), which already shipped as a module-level upgrade.
 - [ ] Distributed agent network for global passive monitoring
 - [ ] On-device local LLM support (Ollama / LM Studio)
 - [ ] Real liboqs PQC library integration (CRYSTALS-Dilithium signatures)

@@ -229,32 +229,56 @@ _TYPE_AR = {
     "spf_status": "سجل SPF",
     "dns_record": "سجل DNS",
 }
+_TYPE_EN = {
+    "subdomain": "subdomain",
+    "email": "email address",
+    "account": "registered account",
+    "profile": "public profile",
+    "whois_record": "domain registration (WHOIS) record",
+    "dmarc_status": "DMARC record",
+    "spf_status": "SPF record",
+    "dns_record": "DNS record",
+}
 
 
-def _build_executive_summary(entities: list[dict], target: str) -> str:
+def _build_executive_summary(entities: list[dict], target: str) -> dict[str, str]:
     """
-    One-sentence Arabic summary of the most security-relevant finding, for
-    a non-technical reader skimming the top of the report.
+    One-sentence Arabic + English summary of the most security-relevant
+    finding, for a non-technical reader skimming the top of the report.
 
     Picks the single highest-severity entity (critical > high > ... > info)
     and names it; if nothing rises above low/info, says so explicitly
     rather than manufacturing urgency.
     """
     if not entities:
-        return f"لم يتم العثور على أي نتائج لـ {target}."
+        return {
+            "ar": f"لم يتم العثور على أي نتائج لـ {target}.",
+            "en": f"No findings were discovered for {target}.",
+        }
 
     worst = min(entities, key=lambda e: _SEVERITY_RANK.get(e.get("severity"), 4))
     worst_rank = _SEVERITY_RANK.get(worst.get("severity"), 4)
 
     if worst_rank >= _SEVERITY_RANK["low"]:
-        return f"تم تحليل {len(entities)} كيان لـ {target} دون رصد مخاطر عالية أو حرجة."
+        return {
+            "ar": f"تم تحليل {len(entities)} كيان لـ {target} دون رصد مخاطر عالية أو حرجة.",
+            "en": f"Analyzed {len(entities)} entities for {target} with no high or critical risks detected.",
+        }
 
     severity_ar = _SEVERITY_AR.get(worst.get("severity"), worst.get("severity", ""))
     type_ar = _TYPE_AR.get(worst.get("type"), worst.get("type") or "نتيجة")
-    return (
-        f"تم رصد {len(entities)} كيان لـ {target}، أبرزها {type_ar} "
-        f"بخطورة {severity_ar} ({worst.get('value', '')})."
-    )
+    severity_en = worst.get("severity", "")
+    type_en = _TYPE_EN.get(worst.get("type"), worst.get("type") or "finding")
+    return {
+        "ar": (
+            f"تم رصد {len(entities)} كيان لـ {target}، أبرزها {type_ar} "
+            f"بخطورة {severity_ar} ({worst.get('value', '')})."
+        ),
+        "en": (
+            f"Detected {len(entities)} entities for {target}; most notably a "
+            f"{severity_en}-severity {type_en} ({worst.get('value', '')})."
+        ),
+    }
 
 
 @router.post(
@@ -274,7 +298,9 @@ def _build_executive_summary(entities: list[dict], target: str) -> str:
         "Results are deduplicated/correlated across sources and scored for "
         "confidence and severity before being returned as `entities`; the "
         "untouched per-source output is still available under "
-        "`raw_sources` for advanced users.\n\n"
+        "`raw_sources` for advanced users. `summary.executive_summary` "
+        "carries a one-line verdict in both Arabic (`ar`) and English "
+        "(`en`).\n\n"
         "**Note:** Amass/theHarvester/Maigret/Holehe require their binaries "
         "to be installed separately (`pip install theHarvester maigret "
         "holehe`); crt.sh/Wayback/DNS/WHOIS need no installation."
