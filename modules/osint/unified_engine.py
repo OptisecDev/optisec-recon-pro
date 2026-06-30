@@ -25,8 +25,10 @@ logger = logging.getLogger("osint.unified")
 
 # ── Per-tool timeouts (seconds) ───────────────────────────────────────────────
 _TOOL_TIMEOUTS: dict[str, int] = {
-    "amass":        60,
-    "theharvester": 150,
+    # amass v5 passive enum takes 10-15 min on large domains — not suited
+    # for inline API calls. Kept for completeness; timeout acts as hard cap.
+    "amass":       120,
+    "theharvester":  60,
     "maigret":      120,
     "holehe":        45,
 }
@@ -174,13 +176,41 @@ def _parse_amass(out: str) -> list[dict]:
 
 
 async def _run_amass(domain: str) -> dict:
-    return await _run_tool(
-        "amass",
-        # -passive avoids active DNS brute-force; -timeout in minutes
-        ["amass", "enum", "-passive", "-d", domain, "-timeout", "1"],
-        _TOOL_TIMEOUTS["amass"],
-        _parse_amass,
-    )
+    # amass v5 writes progress bars to stdout — use -oA to write results
+    # to a file instead, then read the file after the process exits.
+    import tempfile, uuid
+    out_prefix = f"/tmp/amass_{uuid.uuid4().hex[:8]}"
+    binary = _find_binary("amass")
+    if not binary:
+        return {"source": "amass", "available": False,
+                "error": "amass not installed or not in PATH/venv", "results": []}
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            binary, "enum", "-d", domain, "-timeout", "1", "-oA", out_prefix,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        try:
+            await asyncio.wait_for(proc.communicate(), timeout=_TOOL_TIMEOUTS["amass"])
+        except asyncio.TimeoutError:
+            try:
+                proc.kill(); await proc.communicate()
+            except Exception:
+                pass
+            logger.warning("[amass] timed out after %ds", _TOOL_TIMEOUTS["amass"])
+
+        txt_file = out_prefix + ".txt"
+        if Path(txt_file).exists():
+            content = Path(txt_file).read_text(errors="replace")
+            Path(txt_file).unlink(missing_ok=True)
+            results = _parse_amass(content)
+            logger.info("[amass] parsed %d subdomains", len(results))
+            return {"source": "amass", "available": True, "results": results}
+        return {"source": "amass", "available": True,
+                "error": "no output file produced", "results": []}
+    except Exception as exc:
+        logger.error("[amass] error: %s", exc)
+        return {"source": "amass", "available": True, "error": str(exc), "results": []}
 
 
 # ── theHarvester ──────────────────────────────────────────────────────────────
@@ -218,9 +248,11 @@ def _parse_theharvester(out: str) -> list[dict]:
 async def _run_theharvester(target: str, target_type: str) -> dict:
     domain = target.split("@")[-1] if target_type == "email" else target
     # Use only free sources that don't require API keys
+    # Free sources that don't require API keys and complete in <30s
+    _FREE_SOURCES = "duckduckgo,crtsh,dnsdumpster,hackertarget,rapiddns"
     return await _run_tool(
         "theHarvester",
-        ["theHarvester", "-d", domain, "-b", "all", "-l", "100"],
+        ["theHarvester", "-d", domain, "-b", _FREE_SOURCES, "-l", "100"],
         _TOOL_TIMEOUTS["theharvester"],
         _parse_theharvester,
     )
