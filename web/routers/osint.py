@@ -1,6 +1,7 @@
 """OSINT Router — world-class open-source intelligence engine."""
 
 import asyncio
+import logging
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,7 @@ from web.auth import get_current_user
 from web.shared_templates import templates
 from config import APP_NAME
 
+logger = logging.getLogger("osint.router")
 router = APIRouter(tags=["osint"])
 
 
@@ -202,3 +204,54 @@ async def osint_domain(request: Request, user: User = Depends(_user)):
         "subdomains": subs if not isinstance(subs, Exception) else [],
         "geolocation": geo if not isinstance(geo, Exception) else {"error": str(geo)},
     })
+
+
+# ── Unified OSINT Engine v5.0 ─────────────────────────────────────────────────
+
+_VALID_TARGET_TYPES = {"domain", "email", "username", "ip", "auto"}
+
+
+@router.post(
+    "/api/osint/unified-search",
+    summary="Unified OSINT Engine v5.0",
+    description=(
+        "Run all applicable OSINT tools in parallel: "
+        "**Amass** (subdomain enumeration), "
+        "**theHarvester** (emails/hosts), "
+        "**Maigret** (username across 500+ sites), "
+        "**Holehe** (email account checker). "
+        "Tools are dispatched based on `target_type`. "
+        "Use `auto` to let the engine detect the type automatically. "
+        "Each tool runs with an independent timeout so a slow/failing tool "
+        "never blocks the others.\n\n"
+        "**Note:** External binaries must be installed separately — "
+        "Amass requires a Go binary; theHarvester, Maigret, and Holehe "
+        "are Python packages (`pip install theHarvester maigret holehe`)."
+    ),
+)
+async def osint_unified_search(request: Request, user: User = Depends(_user)):
+    data = await request.json()
+    target = data.get("target", "").strip()
+    target_type = data.get("target_type", "auto").strip().lower()
+
+    if not target:
+        raise HTTPException(400, "target is required")
+    if target_type not in _VALID_TARGET_TYPES:
+        raise HTTPException(
+            400,
+            f"target_type must be one of: {', '.join(sorted(_VALID_TARGET_TYPES))}",
+        )
+
+    logger.info(
+        "unified_search request user=%s target=%r type=%s ip=%s",
+        user.username, target, target_type,
+        request.client.host if request.client else "unknown",
+    )
+
+    from modules.osint.unified_engine import search_unified
+    result = await search_unified(target, target_type, rate_key=f"user:{user.id}")
+
+    if result.get("error") == "rate_limited":
+        raise HTTPException(429, result.get("message", "Rate limit exceeded"))
+
+    return JSONResponse(result)
