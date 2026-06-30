@@ -23,6 +23,8 @@ from typing import Any
 # reported by exactly one source. Calibrated by how the data is obtained:
 #   - crt.sh / DNS / WHOIS: protocol-level / cryptographically-anchored facts
 #     (a cert was actually issued, a record actually resolves) -> high (90/85)
+#   - Network Intel: open ports/ASN/TLS state come from a live TLS handshake
+#     or an already-scanned Shodan/BGP record, not a guess -> high (85)
 #   - Amass: aggregates multiple passive APIs itself -> high (80)
 #   - theHarvester / Holehe: scrape search engines / probe auth endpoints,
 #     occasional false positives -> medium (70)
@@ -34,6 +36,7 @@ SOURCE_RELIABILITY: dict[str, int] = {
     "crtsh": 90,
     "dns_full": 90,
     "whois": 85,
+    "network_intel": 85,
     "amass": 80,
     "theharvester": 70,
     "holehe": 70,
@@ -153,6 +156,11 @@ def calculate_confidence(finding: dict, all_results: list[dict]) -> int:
 
 _SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
 
+# Ports commonly tied to high-impact exposures if reachable from the
+# internet: cleartext admin (FTP/Telnet), remote admin (RDP), file/object
+# storage (SMB), and databases left open without a bastion in front of them.
+_RISKY_PORTS = {21, 23, 445, 3389, 3306, 5432, 6379, 9200, 27017}
+
 
 def _days_between(raw: Any, *, from_now: bool) -> int | None:
     dt = _parse_timestamp(raw)
@@ -174,8 +182,14 @@ def classify_severity(finding: dict) -> str:
     `tls` flag if a source already attached one).
 
     Rules (first match wins):
+      - finding already carries an explicit `severity`  -> honored as-is
+        (network_intelligence.py rates its own cve/ssl_issue findings,
+        e.g. CVSS-derived for a CVE, since that's not inferable from `type`
+        alone)
       - whois_record expiring within 30 days  -> critical (hijack/lapse risk)
       - subdomain explicitly flagged tls=False -> high (cleartext exposure)
+      - open_port on a high-risk service (FTP/Telnet/RDP/SMB/databases)
+                                                -> high (common breach vector)
       - whois_record registered within last 30 days -> medium (fresh infra,
         common in phishing setups)
       - SPF/DMARC missing                      -> medium (spoofing exposure)
@@ -183,9 +197,14 @@ def classify_severity(finding: dict) -> str:
       - registered account on an external platform -> medium (identity pivot)
       - subdomain (TLS state unknown)           -> low (attack surface)
       - public social-media profile             -> low
+      - open_port on a common/expected service  -> low (attack surface)
       - SPF/DMARC record present, raw DNS record, WHOIS far from expiry,
-        anything unrecognized                   -> info
+        ASN/network metadata, anything unrecognized -> info
     """
+    explicit = finding.get("severity")
+    if explicit in _SEVERITY_ORDER:
+        return explicit
+
     ftype = (finding.get("type") or "").lower()
 
     if ftype == "whois_record":
@@ -195,6 +214,10 @@ def classify_severity(finding: dict) -> str:
 
     if ftype == "subdomain" and finding.get("tls") is False:
         return "high"
+
+    if ftype == "open_port":
+        port = finding.get("port")
+        return "high" if port in _RISKY_PORTS else "low"
 
     if ftype == "whois_record":
         days_old = _days_between(finding.get("creation_date"), from_now=False)

@@ -43,6 +43,7 @@ _TOOL_TIMEOUTS: dict[str, int] = {
     "wayback":       25,
     "dns_full":      15,
     "whois":         15,
+    "network_intel": 25,
 }
 
 # ── Binary resolution: system PATH + venv bin + ~/bin ────────────────────────
@@ -78,6 +79,10 @@ _SOURCE_REQUIRES_API_KEY: dict[str, bool] = {
     "wayback": False,
     "dns_full": False,
     "whois": False,
+    # Works keyless (Shodan InternetDB + BGPView/RIPEstat + raw TLS
+    # handshake) — SHODAN_API_KEY/CENSYS_* only enrich results, never gate
+    # whether the source runs at all.
+    "network_intel": False,
 }
 # Binary name to probe for each subprocess-based source (case differs from
 # its `source` label, e.g. theHarvester's binary is camelCased).
@@ -119,7 +124,7 @@ def get_sources_status() -> list[dict]:
             "requires_api_key": _SOURCE_REQUIRES_API_KEY.get(name, False),
             "last_used": _iso(_last_used.get(name)),
         })
-    for name in ("crtsh", "wayback", "dns_full", "whois"):
+    for name in ("crtsh", "wayback", "dns_full", "whois", "network_intel"):
         statuses.append({
             "source": name,
             "available": True,
@@ -484,6 +489,69 @@ async def _run_whois(domain: str) -> dict:
     return await _run_async_source("whois", _fetch_whois(domain), _TOOL_TIMEOUTS["whois"])
 
 
+# ── Network Intelligence (Shodan/Censys/BGP/SSL) ──────────────────────────────
+# No installation required — modules/osint/network_intelligence.py queries
+# free/keyless public APIs (Shodan InternetDB, BGPView/RIPEstat) plus a raw
+# TLS handshake against the target itself. Always runs in passive mode here
+# (deep_scan=False); active service fingerprinting is reserved for the
+# explicit POST /api/osint/network-scan endpoint.
+
+def _network_intel_to_findings(data: dict) -> list[dict]:
+    """Reframe gather_network_intelligence()'s output as unified-engine
+    findings ({type, value, ...}) so it flows through the same confidence/
+    correlation/severity pipeline as every other source."""
+    findings: list[dict] = []
+    ip = data.get("ip")
+    if not ip:
+        return findings
+
+    for key in ("shodan", "censys"):
+        src = data.get(key) or {}
+        if not src.get("available"):
+            continue
+        for port in src.get("open_ports") or []:
+            findings.append({
+                "type": "open_port", "value": f"{ip}:{port}",
+                "port": port, "source_detail": key,
+            })
+        for vuln in src.get("vulnerabilities") or []:
+            cve_id = vuln.get("cve") if isinstance(vuln, dict) else vuln
+            severity = vuln.get("severity") if isinstance(vuln, dict) else "high"
+            if cve_id:
+                findings.append({
+                    "type": "cve", "value": cve_id,
+                    "severity": severity, "source_detail": key,
+                })
+
+    bgp = data.get("bgp") or {}
+    if bgp.get("available") and bgp.get("asn"):
+        findings.append({
+            "type": "asn", "value": f"AS{bgp['asn']}",
+            "asn_name": bgp.get("asn_name"), "country": bgp.get("country"),
+        })
+
+    ssl_res = data.get("ssl") or {}
+    for issue in ssl_res.get("vulnerabilities") or []:
+        findings.append({
+            "type": "ssl_issue", "value": issue.get("title"),
+            "severity": issue.get("severity"),
+        })
+
+    return findings
+
+
+async def _fetch_network_intel(target: str) -> list[dict]:
+    from modules.osint.network_intelligence import gather_network_intelligence
+    data = await gather_network_intelligence(target, deep_scan=False)
+    return _network_intel_to_findings(data)
+
+
+async def _run_network_intel(target: str) -> dict:
+    return await _run_async_source(
+        "network_intel", _fetch_network_intel(target), _TOOL_TIMEOUTS["network_intel"]
+    )
+
+
 # ── Amass ─────────────────────────────────────────────────────────────────────
 # NOTE: Amass is a Go binary — not installable via pip.
 # Install: go install github.com/owasp-amass/amass/v4/...@master
@@ -753,8 +821,9 @@ async def search_unified(
             _run_wayback(target),
             _run_dns_full(target),
             _run_whois(target),
+            _run_network_intel(target),
         ]
-        labels += ["amass", "theharvester", "crtsh", "wayback", "dns_full", "whois"]
+        labels += ["amass", "theharvester", "crtsh", "wayback", "dns_full", "whois", "network_intel"]
 
     elif target_type == "email":
         tasks += [_run_holehe(target), _run_theharvester(target, target_type)]
@@ -765,8 +834,8 @@ async def search_unified(
         labels += ["maigret"]
 
     elif target_type == "ip":
-        tasks += [_run_theharvester(target, target_type)]
-        labels += ["theharvester"]
+        tasks += [_run_theharvester(target, target_type), _run_network_intel(target)]
+        labels += ["theharvester", "network_intel"]
 
     raw_results = await asyncio.gather(*tasks, return_exceptions=True)
 
