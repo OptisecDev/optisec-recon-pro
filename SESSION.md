@@ -175,6 +175,31 @@
 
 ---
 
+### ✅ المهمة 9 — تفعيل CVE Submission Pipeline (أداة صياغة فقط)
+- الموديول كان موجوداً بشكل scaffolded (`modules/bug_bounty/cve_pipeline.py` + `web/templates/cve_pipeline.html`) لكنه **غير آمن**: كان يحتوي فعلياً على `submit_cve_to_mitre()` تُرسل `POST` حقيقي إلى `cveawg.mitre.org` إذا كانت `CVE_CNA_ORG`/`CVE_CNA_USERNAME`/`CVE_CNA_API_KEY` مضبوطة في البيئة — يخالف تماماً متطلب "لا إرسال تلقائي لأي جهة خارجية"، فتم **حذف هذه الدالة نهائياً** (لا يوجد أي استدعاء شبكي خارج `search_nvd` القراءة فقط)، ويُثبت ذلك اختبار `TestNoLiveSubmissionCapability` صراحة (لا `submit_cve_to_mitre`، لا ذكر لـ`cveawg.mitre.org`، لا route فيه "submit")
+- `web/models.py` — جدول جديد `CveDraft`: `draft_ref` (CVE-DRAFT-XXXXXXXX)، ربط اختياري بـ`Finding` (المصدر: نتيجة فحص فعلية)، `status` يتحرك فقط draft → exported (لا يوجد submitted/error لأنه لا إرسال أصلاً)، حقول MITRE CNA كاملة (vendor/product/versions_affected/problem_type/CWE/CVSS/references/credits)
+- `modules/bug_bounty/cve_pipeline.py` — أُعيدت كتابته بالكامل:
+  - `search_nvd()` — استعلام NVD للقراءة فقط (كشف تكرار CVE قبل الصياغة)، بقي كما كان
+  - `CWE_BY_VULN_TYPE` — تخطيط أنواع الثغرات الشائعة (XSS/SQLi/SSRF/LFI/Open Redirect/CSRF/RCE/IDOR/XXE...) إلى CWE مناسب
+  - `SUGGESTED_CVSS_BY_SEVERITY` — نقطة بداية مقترحة (قابلة للتعديل، ليست نهائية) لمتجه CVSS 3.1 حسب severity
+  - `draft_from_finding()` — يحوّل Finding من فحص فعلي (type/severity/url/parameter/evidence/payload) إلى حقول مسودة مقترحة
+  - `build_cve_json_5()` — يُخرج سجل CVE JSON 5.0 كامل (`dataType`/`dataVersion`/`cveMetadata`/`containers.cna`)؛ `cveId`/`assignerOrgId` تبقى "TBD" و`state: DRAFT` لأنه لا يوجد رقم CVE حقيقي حتى تتم الموافقة والتقديم يدوياً عبر CNA معتمد
+- `web/routers/cve_submission.py` — **جديد**، مسار مستقل `prefix=/api/cve` (منفصل عن `/bug-bounty` القديم):
+  - `POST /api/cve/draft` — توليد مسودة من `finding_id` (مع دمج أي حقول يدوية فوقها) أو يدوياً بالكامل
+  - `GET /api/cve/drafts` — قائمة مسودات المستخدم (فلترة status + pagination)
+  - `GET /api/cve/drafts/{id}` — تفاصيل مسودة واحدة
+  - `GET /api/cve/drafts/{id}/export` — تنزيل CVE JSON 5.0 (يُعلّم status=exported)
+  - `GET /api/cve/search` — نُقل من `bug_bounty.py` (نفس NVD القراءة فقط)
+  - كل استجابة مسودة تتضمن `disclaimer_en`/`disclaimer_ar` صراحة
+  - أُزيلت 4 endpoints القديمة من `web/routers/bug_bounty.py` (`/api/cve/search|queue|draft|submit/{id}`) بالكامل
+- `web/schemas.py` — `CveDraftRequest`/`CveDraftResponse`/`CveDraftListItem` (Swagger كامل)
+- `web/templates/cve_pipeline.html` — إعادة كتابة: تحذير بارز أعلى الصفحة (نفس أسلوب `threat_feed.html`) بالنص المطلوب حرفياً "هذه أداة مساعدة لصياغة التقرير فقط — التقديم الفعلي لـMITRE يتطلب مراجعة بشرية وحساب CNA معتمد" عربي/إنجليزي، قسم جديد "توليد مسودة من نتيجة فحص" (dropdown من `/api/findings`)، إصلاح mismatch كان موجوداً أصلاً بين الـfrontend والـbackend (`d.results` بينما الـAPI يُرجع `vulnerabilities`)، زر "Submit to MITRE" استُبدل بزر تنزيل "Export CVE JSON 5.0"
+- `.env.example` — أُزيلت `CVE_CNA_ORG`/`CVE_CNA_USERNAME`/`CVE_CNA_API_KEY` (لم تعد هناك حاجة لها، لا يوجد إرسال)، أُبقيت `NVD_API_KEY` فقط مع توضيح أنها اختيارية لرفع حد معدل NVD
+- `tests/test_cve_pipeline.py` — **جديد**: 67 اختبار (تخطيط CWE، اقتراح CVSS، `draft_from_finding`، بنية CVE JSON 5.0 كاملة بما فيها استخراج CWE ID والمقاييس والمراجع والـcredits، `search_nvd` مع mocking كامل لـ`httpx.AsyncClient` بدون أي اتصال شبكي حقيقي، دوال المثابرة في الراوتر (`create_draft`/`list_drafts`/`get_draft`/`get_finding_for_user`) مع عزل صارم بين المستخدمين، والأهم: اختبار صريح يثبت عدم وجود أي قدرة إرسال حقيقية لـMITRE)
+- **568/568 اختبار ناجح** على كامل test suite (501 سابق + 67 جديد) — لا regressions
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker

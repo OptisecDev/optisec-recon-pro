@@ -100,37 +100,5 @@ async def ig_program(handle: str, user: User = Depends(_user)):
 
 
 # ── CVE Pipeline ──────────────────────────────────────────────────────────────
-
-@router.get("/api/cve/search")
-async def cve_search(keyword: str = "", cve_id: str = "", user: User = Depends(_user)):
-    from modules.bug_bounty.cve_pipeline import search_nvd
-    return await search_nvd(keyword=keyword, cve_id=cve_id)
-
-
-@router.get("/api/cve/queue")
-async def cve_queue(user: User = Depends(_user)):
-    from modules.bug_bounty.cve_pipeline import list_queue
-    return {"queue": list_queue()}
-
-
-@router.post("/api/cve/draft")
-async def cve_draft(request: Request, user: User = Depends(_user)):
-    data = await request.json()
-    from modules.bug_bounty.cve_pipeline import draft_cve_report
-    return await draft_cve_report(
-        title=data.get("title", ""),
-        description=data.get("description", ""),
-        affected_product=data.get("affected_product", ""),
-        affected_versions=data.get("affected_versions", ""),
-        severity=data.get("severity", "medium"),
-        cvss_vector=data.get("cvss_vector", ""),
-        reporter_name=data.get("reporter_name", user.username),
-        reporter_email=data.get("reporter_email", user.email),
-        poc_url=data.get("poc_url", ""),
-    )
-
-
-@router.post("/api/cve/submit/{draft_id}")
-async def cve_submit(draft_id: str, user: User = Depends(_user)):
-    from modules.bug_bounty.cve_pipeline import submit_cve_to_mitre
-    return await submit_cve_to_mitre(draft_id)
+# Moved to web/routers/cve_submission.py, mounted at /api/cve (drafting only —
+# see that module's docstring for why there is no submit-to-MITRE endpoint).

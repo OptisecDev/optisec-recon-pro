@@ -62,6 +62,7 @@ from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_f
 from web.routers import darkweb_monitor
 from web.routers import honeypot as honeypot_router
 from web.routers import threat_sharing as threat_sharing_router
+from web.routers import cve_submission as cve_router
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -132,7 +133,17 @@ OPENAPI_TAGS = [
         "name": "bug-bounty",
         "description": (
             "Bug bounty platform integrations: HackerOne, Bugcrowd, Intigriti. "
-            "Browse programs, submit reports, and manage CVE pipeline."
+            "Browse programs and submit reports."
+        ),
+    },
+    {
+        "name": "cve-pipeline",
+        "description": (
+            "CVE report drafting assistant: turn a scan finding into a MITRE CNA-style "
+            "draft (title, description, affected product/versions, CWE, CVSS, references), "
+            "store it locally, and export it as a CVE JSON 5.0 record. Drafting only — "
+            "no report is ever submitted to MITRE automatically; real submission requires "
+            "human review and an approved CNA account."
         ),
     },
     {
@@ -453,6 +464,7 @@ app.include_router(correlations_router.router)
 app.include_router(honeypot_router.router)
 app.include_router(honeypot_router.page_router)
 app.include_router(threat_sharing_router.router)
+app.include_router(cve_router.router)
 
 
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────
@@ -939,7 +951,7 @@ async def api_docs_page(request: Request, user: User = Depends(web_user)):
         "osint": "🕵️", "firewall": "🛡️", "vpn": "🔒", "quantum": "⚛️",
         "federation": "🌐", "attack_navigator": "⚔️", "darkweb": "🕸️",
         "autonomous_redteam": "🤖", "ngfw": "🔥", "threat_feed": "🌍",
-        "correlations": "🔗", "Other": "📌",
+        "correlations": "🔗", "cve-pipeline": "🧾", "Other": "📌",
     }
     tag_descs = {t["name"]: t.get("description", "") for t in (app.openapi_tags or [])}
 

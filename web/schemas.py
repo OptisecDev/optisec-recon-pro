@@ -211,6 +211,65 @@ class ReportResponse(BaseModel):
     download_url: str
 
 
+# ─── CVE Submission Pipeline ──────────────────────────────────────────────────
+# Drafting aid only — see modules/bug_bounty/cve_pipeline.py module docstring.
+# Actual submission to MITRE/a CNA is never automated by this API.
+
+class CveDraftRequest(BaseModel):
+    finding_id: Optional[int] = Field(
+        None, example=12,
+        description="Auto-populate the draft from an existing scan finding (GET /api/findings). "
+                     "If set, the fields below are optional overrides applied on top of the "
+                     "auto-derived suggestion.",
+    )
+    title: Optional[str] = Field(None, example="Reflected XSS in ExampleApp search endpoint")
+    description: Optional[str] = Field(None, example="Detailed vulnerability description...")
+    vendor: Optional[str] = Field(None, example="ExampleCorp")
+    product: Optional[str] = Field(None, example="ExampleApp")
+    versions_affected: Optional[list] = Field(
+        None, example=[{"version": "< 2.3.1", "status": "affected"}],
+    )
+    problem_type: Optional[str] = Field(None, example="CWE-79 Cross-Site Scripting (XSS)")
+    severity: Optional[str] = Field(None, example="high",
+                                    description="One of: critical | high | medium | low")
+    cvss_vector: Optional[str] = Field(None, example="CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:N")
+    cvss_score: Optional[str] = Field(None, example="8.1")
+    references: Optional[list] = Field(None, example=["https://github.com/org/repo/security/advisories/x"])
+    credits: Optional[list] = Field(None, example=[{"name": "Jane Doe", "type": "finder"}])
+    reporter_name: Optional[str] = Field(None, example="Jane Doe")
+    reporter_email: Optional[str] = Field(None, example="jane@example.com")
+    cna_org: Optional[str] = Field(None, example="MyOrg CNA",
+                                   description="Informational only — recorded on the draft, not used to submit anywhere")
+
+
+class CveDraftResponse(BaseModel):
+    id: int
+    draft_ref: str = Field(..., example="CVE-DRAFT-9F3A1B2C")
+    status: str = Field(..., example="draft", description="draft | exported")
+    title: str
+    severity: Optional[str]
+    product: Optional[str]
+    created_at: str
+    disclaimer_en: str = Field(
+        "This is a drafting assistant only. Actual submission to MITRE requires human "
+        "review and an approved CNA account.",
+    )
+    disclaimer_ar: str = Field(
+        "هذه أداة مساعدة لصياغة التقرير فقط — التقديم الفعلي لـ MITRE يتطلب مراجعة بشرية وحساب CNA معتمد.",
+    )
+
+
+class CveDraftListItem(BaseModel):
+    id: int
+    draft_ref: str
+    status: str
+    title: str
+    severity: Optional[str]
+    product: Optional[str]
+    source_module: str
+    created_at: str
+
+
 # ─── Admin ────────────────────────────────────────────────────────────────────
 
 class UserPatch(BaseModel):

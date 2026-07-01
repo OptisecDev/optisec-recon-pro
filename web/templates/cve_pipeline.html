@@ -1,12 +1,36 @@
 {% extends "base.html" %}
 {% block title %}CVE Pipeline — {{ app_name }}{% endblock %}
-{% block page_title %}CVE Pipeline{% endblock %}
+{% block page_title %}CVE Submission Pipeline{% endblock %}
 
 {% block content %}
+<style>
+.cve-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
+.cve-item{padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg-secondary)}
+.cve-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.cve-badge.draft{background:rgba(255,167,38,0.15);color:#FFA726;border:1px solid rgba(255,167,38,0.4)}
+.cve-badge.exported{background:rgba(0,255,136,0.12);color:#00ff88;border:1px solid rgba(0,255,136,0.35)}
+</style>
+
+<!-- MANDATORY DISCLAIMER — drafting assistant only, never auto-submits -->
+<div class="cve-card" style="margin-bottom:20px;border-color:#FFA726">
+  <div style="display:flex;gap:10px;align-items:flex-start">
+    <span style="font-size:20px">⚠️</span>
+    <div style="font-size:12px;color:var(--text-dim);line-height:1.7">
+      <strong style="color:#FFA726">تنبيه هام / Important Notice:</strong>
+      هذه أداة مساعدة لصياغة التقرير فقط — <strong>التقديم الفعلي لـ MITRE يتطلب مراجعة بشرية وحساب CNA معتمد</strong>.
+      لا يقوم هذا النظام أبداً بإرسال أي تقرير تلقائياً إلى أي جهة خارجية؛ كل ما يوفره هو توليد مسودة محلية يمكن
+      مراجعتها وتعديلها، ثم تصديرها بصيغة CVE JSON 5.0 القياسية لتقديمها يدوياً عبر حساب CNA معتمد.<br>
+      <em>This is a drafting assistant only. Actual submission to MITRE requires human review and an approved CNA
+      account. Nothing is ever sent to MITRE or any third party automatically — this tool only generates a local
+      draft you can review, edit, and export as a standard CVE JSON 5.0 record for manual submission.</em>
+    </div>
+  </div>
+</div>
+
 <div class="grid-2" style="align-items:start">
-  <div class="card">
+  <div class="cve-card">
     <div class="card-header">
-      <div class="card-title">🔍 NVD CVE Search</div>
+      <div class="card-title">🔍 NVD CVE Search · بحث NVD</div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" />
@@ -15,54 +39,81 @@
     <div id="cve-search-results"></div>
   </div>
 
-  <div class="card">
-    <div class="card-header"><div class="card-title">📋 CVE Submission Queue</div></div>
-    <button class="btn btn-secondary btn-sm" onclick="loadCVEQueue()" style="margin-bottom:12px">Refresh Queue</button>
-    <div id="cve-queue"></div>
+  <div class="cve-card">
+    <div class="card-header">
+      <div class="card-title">🧬 توليد مسودة من نتيجة فحص · Generate Draft from Scan Finding</div>
+    </div>
+    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+      اختر ثغرة مكتشفة من فحوصاتك السابقة لتوليد مسودة تقرير تلقائياً. / Pick a finding from a previous scan to
+      auto-generate a draft.
+    </p>
+    <div style="display:flex;gap:8px">
+      <select id="finding-select" style="flex:1">
+        <option value="">Loading findings…</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="draftFromFinding()">Generate</button>
+    </div>
+    <div id="finding-draft-result" style="margin-top:12px"></div>
   </div>
 </div>
 
-<div class="card" style="margin-top:16px;max-width:700px">
-  <div class="card-header">
-    <div class="card-title">📝 Draft CVE Report</div>
+<div class="grid-2" style="align-items:start;margin-top:16px">
+  <div class="cve-card">
+    <div class="card-header">
+      <div class="card-title">📝 مسودة يدوية · Manual Draft</div>
+    </div>
+    <div class="form-group">
+      <label>Title / العنوان</label>
+      <input type="text" id="submit-title" placeholder="Remote Code Execution in ExampleLib < 2.3.1" />
+    </div>
+    <div class="form-group">
+      <label>Vendor / المُصنِّع</label>
+      <input type="text" id="submit-vendor" placeholder="ExampleCorp" />
+    </div>
+    <div class="form-group">
+      <label>Affected Product / المنتج المتأثر</label>
+      <input type="text" id="submit-product" placeholder="ExampleLib" />
+    </div>
+    <div class="form-group">
+      <label>Affected Versions / الإصدارات المتأثرة</label>
+      <input type="text" id="submit-versions" placeholder="< 2.3.1" />
+    </div>
+    <div class="form-group">
+      <label>Severity / الخطورة</label>
+      <select id="submit-severity">
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium" selected>Medium</option>
+        <option value="low">Low</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Problem Type / CWE (optional)</label>
+      <input type="text" id="submit-cwe" placeholder="CWE-79 Cross-Site Scripting (XSS)" />
+    </div>
+    <div class="form-group">
+      <label>CVSS Vector (optional)</label>
+      <input type="text" id="submit-cvss" placeholder="CVSS:3.1/AV:N/AC:L/..." />
+    </div>
+    <div class="form-group">
+      <label>Description / الوصف</label>
+      <textarea id="submit-desc" rows="4" placeholder="Detailed vulnerability description..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>PoC / Reference URL (optional)</label>
+      <input type="text" id="submit-poc" placeholder="https://github.com/..." />
+    </div>
+    <button class="btn btn-primary" onclick="draftCVE()" style="width:100%;justify-content:center">
+      📝 Save Draft · حفظ المسودة
+    </button>
+    <div id="draft-result" style="margin-top:12px"></div>
   </div>
-  <div class="form-group">
-    <label>Title</label>
-    <input type="text" id="submit-title" placeholder="Remote Code Execution in ExampleLib < 2.3.1" />
+
+  <div class="cve-card">
+    <div class="card-header"><div class="card-title">📋 المسودات · CVE Drafts</div></div>
+    <button class="btn btn-secondary btn-sm" onclick="loadCVEDrafts()" style="margin-bottom:12px">Refresh</button>
+    <div id="cve-drafts"></div>
   </div>
-  <div class="form-group">
-    <label>Affected Product</label>
-    <input type="text" id="submit-product" placeholder="ExampleLib" />
-  </div>
-  <div class="form-group">
-    <label>Affected Versions</label>
-    <input type="text" id="submit-versions" placeholder="< 2.3.1" />
-  </div>
-  <div class="form-group">
-    <label>Severity</label>
-    <select id="submit-severity">
-      <option value="critical">Critical</option>
-      <option value="high">High</option>
-      <option value="medium" selected>Medium</option>
-      <option value="low">Low</option>
-    </select>
-  </div>
-  <div class="form-group">
-    <label>CVSS Vector (optional)</label>
-    <input type="text" id="submit-cvss" placeholder="CVSS:3.1/AV:N/AC:L/..." />
-  </div>
-  <div class="form-group">
-    <label>Description</label>
-    <textarea id="submit-desc" rows="4" placeholder="Detailed vulnerability description..."></textarea>
-  </div>
-  <div class="form-group">
-    <label>PoC URL (optional)</label>
-    <input type="text" id="submit-poc" placeholder="https://github.com/..." />
-  </div>
-  <button class="btn btn-primary" onclick="draftCVE()" style="width:100%;justify-content:center">
-    📝 Save Draft
-  </button>
-  <div id="draft-result" style="margin-top:12px"></div>
 </div>
 {% endblock %}
 
@@ -72,66 +123,100 @@ async function searchCVE() {
   const kw = document.getElementById('cve-keyword').value.trim();
   if (!kw) return;
   const params = kw.startsWith('CVE-') ? `cve_id=${encodeURIComponent(kw)}` : `keyword=${encodeURIComponent(kw)}`;
-  const r = await fetch(`/bug-bounty/api/cve/search?${params}`);
+  const r = await fetch(`/api/cve/search?${params}`);
   const d = await r.json();
   const el = document.getElementById('cve-search-results');
-  el.innerHTML = (d.results || []).map(v => `
-    <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+  el.innerHTML = (d.vulnerabilities || []).map(v => `
+    <div class="cve-item">
       <a href="${v.url}" target="_blank" style="color:var(--accent);font-weight:600">${v.cve_id}</a>
-      <span style="margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;background:var(--severity-${(v.severity||'').toLowerCase()},#444)">${v.severity || 'N/A'}</span>
+      <span class="cve-badge draft" style="margin-left:8px">${v.severity || 'N/A'}</span>
       <div style="margin-top:4px;font-size:13px;color:var(--text-dim)">${v.description || ''}</div>
-    </div>`).join('') || '<div class="text-dim">No CVEs found</div>';
+    </div>`).join('') || '<div class="text-dim">No CVEs found · لا توجد نتائج</div>';
 }
 
-async function loadCVEQueue() {
-  const r = await fetch('/bug-bounty/api/cve/queue');
+async function loadFindingsSelect() {
+  const sel = document.getElementById('finding-select');
+  try {
+    const r = await fetch('/api/findings');
+    const findings = await r.json();
+    sel.innerHTML = findings.length
+      ? findings.map(f => `<option value="${f.id}">#${f.id} — ${f.type} (${f.severity}) — ${f.url || ''}</option>`).join('')
+      : '<option value="">No findings yet · لا توجد نتائج فحص بعد</option>';
+  } catch (e) {
+    sel.innerHTML = '<option value="">Failed to load findings</option>';
+  }
+}
+
+async function draftFromFinding() {
+  const findingId = document.getElementById('finding-select').value;
+  const el = document.getElementById('finding-draft-result');
+  if (!findingId) { el.innerHTML = '<div style="color:var(--danger)">اختر ثغرة أولاً / Select a finding first.</div>'; return; }
+  const r = await fetch('/api/cve/draft', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({finding_id: parseInt(findingId, 10)}),
+  });
   const d = await r.json();
-  const el = document.getElementById('cve-queue');
-  el.innerHTML = (d.queue || []).map(e => `
-    <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+  if (r.ok) {
+    el.innerHTML = `<div style="color:var(--success)">تم إنشاء المسودة ${d.draft_ref} / Draft ${d.draft_ref} created.</div>`;
+    loadCVEDrafts();
+  } else {
+    el.innerHTML = `<div style="color:var(--danger)">${d.detail || 'Failed to generate draft.'}</div>`;
+  }
+}
+
+async function loadCVEDrafts() {
+  const r = await fetch('/api/cve/drafts');
+  const d = await r.json();
+  const el = document.getElementById('cve-drafts');
+  el.innerHTML = (d.drafts || []).map(e => `
+    <div class="cve-item">
       <div style="font-weight:600">${e.title || 'Untitled'}</div>
-      ${e.cve_id ? `<div style="color:var(--accent)">${e.cve_id}</div>` : ''}
-      <div style="font-size:12px;color:var(--text-dim);margin-top:4px">Status: ${e.status || 'draft'}</div>
-      ${e.status === 'draft' ? `<button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="submitDraft('${e.id}')">Submit to MITRE</button>` : ''}
-    </div>`).join('') || '<div class="text-dim">Queue is empty</div>';
-}
-
-async function submitDraft(draftId) {
-  const r = await fetch(`/bug-bounty/api/cve/submit/${draftId}`, {method:'POST'});
-  const d = await r.json();
-  alert(d.message || (d.success ? 'Submitted!' : 'Error submitting draft'));
-  loadCVEQueue();
+      <div style="color:var(--accent);font-size:12px">${e.draft_ref}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
+        <span class="cve-badge ${e.status}">${e.status}</span>
+        ${e.severity ? ` · ${e.severity}` : ''} ${e.product ? ` · ${e.product}` : ''}
+      </div>
+      <a class="btn btn-secondary btn-sm" style="margin-top:8px" href="/api/cve/drafts/${e.id}/export">
+        ⬇ Export CVE JSON 5.0 · تصدير
+      </a>
+    </div>`).join('') || '<div class="text-dim">لا توجد مسودات بعد / Queue is empty</div>';
 }
 
 async function draftCVE() {
+  const versions = document.getElementById('submit-versions').value.trim();
+  const poc = document.getElementById('submit-poc').value.trim();
   const payload = {
     title: document.getElementById('submit-title').value.trim(),
-    affected_product: document.getElementById('submit-product').value.trim(),
-    affected_versions: document.getElementById('submit-versions').value.trim(),
+    vendor: document.getElementById('submit-vendor').value.trim() || undefined,
+    product: document.getElementById('submit-product').value.trim(),
+    versions_affected: versions ? [{version: versions, status: 'affected'}] : undefined,
     severity: document.getElementById('submit-severity').value,
-    cvss_vector: document.getElementById('submit-cvss').value.trim(),
+    problem_type: document.getElementById('submit-cwe').value.trim() || undefined,
+    cvss_vector: document.getElementById('submit-cvss').value.trim() || undefined,
     description: document.getElementById('submit-desc').value.trim(),
-    poc_url: document.getElementById('submit-poc').value.trim(),
+    references: poc ? [poc] : undefined,
   };
   if (!payload.title || !payload.description) {
-    document.getElementById('draft-result').innerHTML = '<div style="color:var(--danger)">Title and description are required.</div>';
+    document.getElementById('draft-result').innerHTML = '<div style="color:var(--danger)">العنوان والوصف مطلوبان / Title and description are required.</div>';
     return;
   }
-  const r = await fetch('/bug-bounty/api/cve/draft', {
+  const r = await fetch('/api/cve/draft', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
     body: JSON.stringify(payload),
   });
   const d = await r.json();
   const el = document.getElementById('draft-result');
-  if (d.success || d.id) {
-    el.innerHTML = `<div style="color:var(--success)">Draft saved${d.id ? ` (ID: ${d.id})` : ''}.</div>`;
-    loadCVEQueue();
+  if (r.ok) {
+    el.innerHTML = `<div style="color:var(--success)">تم حفظ المسودة ${d.draft_ref} / Draft saved (${d.draft_ref}).</div>`;
+    loadCVEDrafts();
   } else {
-    el.innerHTML = `<div style="color:var(--danger)">${d.error || 'Failed to save draft.'}</div>`;
+    el.innerHTML = `<div style="color:var(--danger)">${d.detail || 'Failed to save draft.'}</div>`;
   }
 }
 
-loadCVEQueue();
+loadFindingsSelect();
+loadCVEDrafts();
 </script>
 {% endblock %}

@@ -186,6 +186,46 @@ class ThreatShare(Base):
     user = relationship("User")
 
 
+class CveDraft(Base):
+    """A locally-drafted CVE report — see modules/bug_bounty/cve_pipeline.py.
+    Pure drafting aid: nothing here is ever submitted to MITRE automatically.
+    `status` only ever moves draft -> exported (a human downloaded the CVE
+    JSON 5.0 record); actual submission to a CNA is a manual, out-of-band
+    human action. May be derived from an existing Finding (source_module
+    "scan_finding") or entered manually ("manual")."""
+    __tablename__ = "cve_drafts"
+
+    id = Column(Integer, primary_key=True)
+    draft_ref = Column(String(30), unique=True, nullable=False, index=True)  # CVE-DRAFT-XXXXXXXX
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    finding_id = Column(Integer, ForeignKey("findings.id", ondelete="SET NULL"), nullable=True)
+    source_module = Column(String(20), default="manual")  # manual | scan_finding
+    status = Column(String(20), default="draft")  # draft | exported
+
+    title = Column(String(300), nullable=False)
+    description = Column(Text, nullable=False)
+    vendor = Column(String(200), default="Unknown")
+    product = Column(String(200))
+    versions_affected = Column(JSON)   # [{"version": "...", "status": "affected", "lessThan": "..."}]
+    problem_type = Column(String(200))  # e.g. "CWE-79 Cross-Site Scripting (XSS)"
+    severity = Column(String(20))       # critical | high | medium | low
+    cvss_vector = Column(String(120))
+    cvss_score = Column(String(10))
+    references = Column(JSON)           # ["https://..."]
+    credits = Column(JSON)              # [{"name": "...", "type": "finder"}]
+
+    reporter_name = Column(String(200))
+    reporter_email = Column(String(200))
+    cna_org = Column(String(200))       # informational only — no live submission is performed
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    exported_at = Column(DateTime)
+
+    user = relationship("User")
+    finding = relationship("Finding")
+
+
 class SchedulerLock(Base):
     """Single-row-per-job lock so periodic tasks (e.g. the dark web scan
     sweep in modules/darkweb/scheduler.py) never run concurrently across
