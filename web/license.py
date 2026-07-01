@@ -35,7 +35,7 @@ TIER_FEATURES: dict[str, list[str]] = {
         "bug_bounty", "compliance",
         "pdf_report", "api_access",
         "behavioral_ueba", "zero_day_predict", "attack_patterns",
-        "ngfw", "firewall", "vpn", "quantum", "honeypot",
+        "ngfw", "firewall", "vpn", "quantum", "honeypot", "threat_sharing",
     ],
     "enterprise": [
         "*",  # all features
@@ -49,7 +49,7 @@ TIER_FEATURES: dict[str, list[str]] = {
         "behavioral_ueba", "zero_day_predict", "attack_patterns", "ai_red_team",
         "autonomous_redteam", "attack_navigator",
         "ngfw", "firewall", "vpn", "quantum", "honeypot",
-        "federation", "threat_feed", "ioc_correlations",
+        "federation", "threat_feed", "ioc_correlations", "threat_sharing",
         "darkweb_intel", "user_management", "multi_node",
     ],
 }
@@ -98,6 +98,7 @@ FEATURE_LABELS: dict[str, str] = {
     "federation":        "Federated Scan",
     "threat_feed":       "Global Threat Feed",
     "ioc_correlations":  "IOC Correlations",
+    "threat_sharing":    "Threat Sharing",
     "darkweb_intel":     "Dark Web Intel",
     "user_management":   "User Management",
     "multi_node":        "Multi-Node Deploy",

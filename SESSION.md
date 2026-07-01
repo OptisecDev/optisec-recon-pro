@@ -147,6 +147,34 @@
 
 ---
 
+### ✅ المهمة 8 — Real-time Threat Sharing (مشاركة التهديدات الفورية مع المجتمع)
+- `modules/threat_intel/threat_sharing.py` — **جديد**: طبقة تصدير/مشاركة IOCs محلية:
+  - `collect_honeypot_iocs()` — عناوين IP للمهاجمين (HIGH/CRITICAL فقط) من `HoneypotEvent` — بنية هجومية بحتة، ليست بيانات عملاء
+  - `collect_darkweb_iocs()` — يستخرج فقط رابط الـpaste/GitHub العام من `DarkWebAlert.detail` (`url`/`html_url`)؛ **لا يقرأ أبداً** النطاق/البريد المراقَب (`DarkWebMonitor.target`) — هوية العميل مستبعدة هيكلياً من نتيجة الدالة، لا فلترة لاحقة
+  - `collect_vulnerability_iocs()` — CVEs من قائمة CISA KEV العامة (`modules.osint.vulnerability_intelligence._query_cisa_kev`) — **ليس** من جداول Finding/Scan الخاصة بفحوصات العميل، تفادياً لأي تسريب لنتائج فحص
+  - `validate_ioc()` — خط الدفاع الأخير: يرفض أي قيمة تحتوي `@` (بريد إلكتروني) بصرف النظر عن النوع المُعلن، ويتحقق من الشكل الصارم لكل نوع (IP/domain/hash MD5-40-64hex/CVE/URL)
+  - `build_stix_bundle()` — حزمة STIX 2.1 مبسّطة (بدون اعتماد مكتبة `stix2` غير المثبتة أصلاً) — indicator SDOs بأنماط STIX pattern صحيحة
+  - `build_csv()` — تصدير CSV بسيط
+  - `share_ioc_to_otx()` / `share_ioc()` — إنشاء OTX pulse لمؤشر واحد (`POST /pulses/create`)؛ `share_ioc()` هو المدخل الوحيد المعتمد: يتحقق من `ENABLE_THREAT_SHARING` أولاً (معطّل افتراضياً)، ثم من صحة المؤشر، ثم من وجود `OTX_API_KEY` — رسائل عربية/إنجليزية في كل حالة، ولا يرمي استثناء أبداً
+- `web/models.py` — جدول جديد `ThreatShare` (سجل تدقيق كامل لكل عملية مشاركة: النوع/القيمة/المصدر/الحالة/تفاصيل الاستجابة — بدون أي PII)
+- `web/routers/threat_sharing.py` — **جديد**، prefix `/api/threat-feed`:
+  - `GET /api/threat-feed` (الاستقبال — نفس منطق `_build_feed` من `threat_feed.py` المُعاد استخدامه، تدفق OTX pulses الحي)
+  - `GET /api/threat-feed/status` (هل المشاركة مفعّلة + هل OTX مُهيّأ)
+  - `GET /api/threat-feed/local-iocs` (مرشّحو المشاركة المحليون + علامة `already_shared`)
+  - `GET /api/threat-feed/export?format=json|csv|stix` (تصدير للقراءة فقط)
+  - `GET /api/threat-feed/history` (سجل تدقيق المشاركات)
+  - `POST /api/threat-feed/share` (**الموافقة اليدوية الفعلية** — مؤشر واحد في كل طلب، مُشغّل بواسطة مستخدم مسجّل دخوله فقط، يُسجَّل في `ThreatShare` بصرف النظر عن النتيجة)
+  - `record_share()`/`already_shared_values()`/`_share_to_dict()` دوال منفصلة قابلة للاختبار مباشرة (نفس أسلوب `honeypot.py`/`darkweb_monitor.py`)
+- `config.py` / `.env.example` — `ENABLE_THREAT_SHARING=false` (افتراضي معطّل تماماً — لا يخرج أي IOC من هذا التنصيب بدون تفعيل صريح، وحتى مع التفعيل تبقى كل مشاركة فعلاً يدوياً بحتاً عبر `POST /share`)
+- `web/license.py` — ميزة `threat_sharing` جديدة (PRO + ENTERPRISE)
+- `web/templates/threat_feed.html` — تبويب سادس "Threat Sharing · مشاركة التهديدات": تحذير أمني بارز عربي/إنجليزي، حالة التفعيل، قائمة IOCs محلية مع زر مشاركة (تأكيد قبل الإرسال)، أزرار تصدير JSON/CSV/STIX، سجل المشاركات
+- `web/templates/base.html` — رابط سايدبار جديد "Threat Sharing" 🤝 تحت SINGULARITY v4.0
+- `web/app.py` — تسجيل الراوتر، OpenAPI tag جديد
+- `tests/test_threat_sharing.py` — **جديد**: 48 اختبار (validate_ioc لكل نوع ورفض PII، جمع IOCs من الثلاثة مصادر مع التحقق الصريح من عدم تسرب هوية العميل، STIX/CSV export، مشاركة OTX مع mocking كامل لـ`requests` بدون أي اتصال شبكي حقيقي، بوابة opt-in/التحقق/فشل OTX، دوال التدقيق في الراوتر، تسجيل الميزة في الترخيص) — نفس معيار `test_honeypot.py`
+- **501/501 اختبار ناجح** على كامل test suite (453 سابق + 48 جديد) — لا regressions
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker

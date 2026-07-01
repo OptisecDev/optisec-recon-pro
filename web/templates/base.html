@@ -103,6 +103,10 @@
       <span class="icon">🔗</span><span>IOC Correlations</span>
       {% if not lic.has_feature('ioc_correlations') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
+    <a href="/threat-feed#sharing" class="nav-item {% if active == 'threat_feed' %}active{% endif %}">
+      <span class="icon">🤝</span><span>Threat Sharing</span>
+      {% if not lic.has_feature('threat_sharing') %}<span class="nav-lock">🔒</span>{% endif %}
+    </a>
 
     <div class="nav-section">Defense</div>
     <a href="/honeypot" class="nav-item {% if active == 'honeypot' %}active{% endif %}">

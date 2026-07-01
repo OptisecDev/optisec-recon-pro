@@ -162,6 +162,30 @@ class HoneypotEvent(Base):
     )
 
 
+class ThreatShare(Base):
+    """Audit trail of every outbound IOC share — see
+    modules/threat_intel/threat_sharing.py. Each row is one explicit,
+    human-triggered share action (never automatic, see ENABLE_THREAT_SHARING
+    in config.py); only a technical indicator (ip/domain/hash/cve/url) is
+    ever stored here — never a customer identity, monitored target, or
+    scan result."""
+    __tablename__ = "threat_shares"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    ioc_type = Column(String(30), nullable=False)   # ip | domain | hash_md5 | hash_sha1 | hash_sha256 | cve | url
+    ioc_value = Column(String(500), nullable=False, index=True)
+    source_module = Column(String(30))  # honeypot | darkweb | vulnerability_intel | manual
+    severity = Column(String(20))
+    tlp = Column(String(10), default="AMBER")
+    destination = Column(String(50), default="alienvault_otx")
+    status = Column(String(20))   # success | failed | disabled | invalid
+    detail = Column(JSON)         # sanitized result/error detail — no PII
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User")
+
+
 class SchedulerLock(Base):
     """Single-row-per-job lock so periodic tasks (e.g. the dark web scan
     sweep in modules/darkweb/scheduler.py) never run concurrently across

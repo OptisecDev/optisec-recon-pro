@@ -82,6 +82,7 @@
   <button class="tab-btn" onclick="showTab('campaigns')">Campaigns</button>
   <button class="tab-btn" onclick="showTab('sources')">Feed Sources</button>
   <button class="tab-btn" onclick="showTab('submit')">Submit IOC</button>
+  <button class="tab-btn" onclick="showTab('sharing')">Threat Sharing · مشاركة التهديدات</button>
 </div>
 
 <!-- LIVE FEED TAB -->
@@ -288,12 +289,118 @@
   </div>
 </div>
 
+<!-- THREAT SHARING TAB -->
+<div id="tab-sharing" style="display:none">
+  <div class="tf-card" style="margin-bottom:16px;border-color:#FFA726">
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      <span style="font-size:20px">⚠️</span>
+      <div style="font-size:12px;color:var(--text-dim);line-height:1.6">
+        <strong style="color:#FFA726">تنبيه أمني / Security Notice:</strong>
+        هذه الميزة تتعامل مع بيانات قد تُشارك مع طرف خارجي (مجتمع AlienVault OTX). لا تتم أي مشاركة تلقائياً — كل عملية مشاركة
+        تتطلب موافقة يدوية صريحة، ولا تُشارَك سوى مؤشرات تقنية بحتة (IP / نطاق / hash / CVE / URL) — لا تُشارك أبداً بيانات شخصية
+        (PII) أو معلومات تخص عملاءك أو نتائج فحوصاتك.<br>
+        <em>This feature may share data with a third party (AlienVault OTX community). Nothing is shared automatically —
+        every share requires explicit manual approval, and only pure technical indicators (IP/domain/hash/CVE/URL) are ever
+        shared — never PII or customer/scan data.</em>
+      </div>
+    </div>
+  </div>
+
+  <div id="sharing-status-banner" class="tf-card" style="margin-bottom:16px"></div>
+
+  <div class="grid grid-2" style="margin-bottom:16px">
+    <div class="tf-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3>IOCs مؤهلة للمشاركة · Local Candidates</h3>
+        <button class="btn btn-secondary btn-sm" onclick="loadLocalIocs()">Refresh</button>
+      </div>
+      <div id="local-iocs-list" style="font-size:11px;color:var(--text-dim)">Loading…</div>
+    </div>
+    <div class="tf-card">
+      <h3 style="margin-bottom:12px">Export · تصدير</h3>
+      <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px">
+        Download all local IOCs (honeypot + dark web + CISA KEV) — read-only, nothing is sent anywhere.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        <a class="btn btn-secondary btn-sm" href="/api/threat-feed/export?format=json">JSON</a>
+        <a class="btn btn-secondary btn-sm" href="/api/threat-feed/export?format=csv">CSV</a>
+        <a class="btn btn-secondary btn-sm" href="/api/threat-feed/export?format=stix">STIX 2.1</a>
+      </div>
+      <h3 style="margin-bottom:12px">سجل المشاركة · Share History</h3>
+      <div id="share-history-list" style="font-size:11px;color:var(--text-dim)">Loading…</div>
+    </div>
+  </div>
+
+  <div id="share-result"></div>
+</div>
+
 <script>
 function showTab(t) {
-  ['feed','map','campaigns','sources','submit'].forEach(id => {
+  ['feed','map','campaigns','sources','submit','sharing'].forEach(id => {
     document.getElementById('tab-'+id).style.display = id===t?'':'none';
   });
-  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',['feed','map','campaigns','sources','submit'][i]===t));
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',['feed','map','campaigns','sources','submit','sharing'][i]===t));
+  if (t === 'sharing') { loadSharingStatus(); loadLocalIocs(); loadShareHistory(); }
+}
+
+if (window.location.hash === '#sharing') { setTimeout(() => showTab('sharing'), 0); }
+
+async function loadSharingStatus() {
+  const resp = await fetch('/api/threat-feed/status');
+  const data = await resp.json();
+  const el = document.getElementById('sharing-status-banner');
+  el.style.borderColor = data.enabled ? '#00ff88' : '#8b949e';
+  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
+    <div><strong style="color:${data.enabled ? '#00ff88' : '#8b949e'}">${data.enabled ? '✓ مفعّلة / Enabled' : '✕ معطّلة / Disabled'}</strong>
+      — ${data.message_ar}</div>
+    <div style="color:var(--text-dim)">OTX: ${data.otx_configured ? 'configured' : 'not configured'}</div>
+  </div>`;
+}
+
+async function loadLocalIocs() {
+  const resp = await fetch('/api/threat-feed/local-iocs?limit=20');
+  const data = await resp.json();
+  const el = document.getElementById('local-iocs-list');
+  if (!data.iocs.length) { el.innerHTML = 'لا توجد مؤشرات محلية بعد. / No local IOCs yet.'; return; }
+  el.innerHTML = data.iocs.map(ioc => `
+    <div class="ioc-row">
+      <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:70px;text-align:center">${ioc.type}</span>
+      <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${ioc.value}">${ioc.value}</code>
+      <span style="color:var(--text-dim);font-size:9px;min-width:90px">${ioc.source_module}</span>
+      <span style="color:#FFA726;font-size:9px;min-width:60px">${ioc.severity||''}</span>
+      ${ioc.already_shared
+        ? '<span style="font-size:9px;color:#00ff88">✓ shared</span>'
+        : `<button class="btn btn-primary btn-sm" onclick='shareIoc(${JSON.stringify(ioc)})'>مشاركة</button>`}
+    </div>`).join('');
+}
+
+async function shareIoc(ioc) {
+  if (!confirm(`مشاركة هذا المؤشر مع مجتمع AlienVault OTX؟\nShare ${ioc.type}:${ioc.value} with the AlienVault OTX community?`)) return;
+  const resp = await fetch('/api/threat-feed/share', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({type: ioc.type, value: ioc.value, source_module: ioc.source_module, severity: ioc.severity}),
+  });
+  const data = await resp.json();
+  const ok = data.status === 'success';
+  document.getElementById('share-result').innerHTML = `<div class="tf-card" style="border-color:${ok?'#00ff88':'#FF6B6B'};margin-top:12px">
+    <div style="color:${ok?'#00ff88':'#FF6B6B'};font-weight:700;font-size:12px">${ok?'✓':'✕'} ${data.message_ar}</div>
+    <div style="color:var(--text-dim);font-size:11px;margin-top:4px">${data.message_en||''}</div>
+  </div>`;
+  loadLocalIocs();
+  loadShareHistory();
+}
+
+async function loadShareHistory() {
+  const resp = await fetch('/api/threat-feed/history?limit=20');
+  const data = await resp.json();
+  const el = document.getElementById('share-history-list');
+  if (!data.shares.length) { el.innerHTML = 'لا يوجد سجل مشاركة بعد. / No share history yet.'; return; }
+  const statusColor = s => s==='success'?'#00ff88':s==='disabled'?'#8b949e':'#FF6B6B';
+  el.innerHTML = data.shares.map(s => `
+    <div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px">
+      <code style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.ioc_type}:${s.ioc_value}</code>
+      <span style="color:${statusColor(s.status)};font-size:10px;font-weight:700">${s.status}</span>
+    </div>`).join('');
 }
 
 function filterFeed(q) {

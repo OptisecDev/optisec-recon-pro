@@ -61,6 +61,7 @@ from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quan
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
 from web.routers import darkweb_monitor
 from web.routers import honeypot as honeypot_router
+from web.routers import threat_sharing as threat_sharing_router
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -194,6 +195,14 @@ OPENAPI_TAGS = [
         "description": (
             "Lightweight, isolated SSH/FTP/HTTP-admin decoy listeners — capture and enrich "
             "(geolocation + AbuseIPDB) attacker connection attempts."
+        ),
+    },
+    {
+        "name": "threat_sharing",
+        "description": (
+            "Export locally-discovered technical IOCs (honeypot attacker IPs, dark web paste/leak "
+            "URLs, CISA KEV CVEs) as STIX/CSV/JSON, and optionally share a single IOC with the "
+            "AlienVault OTX community. Opt-in and disabled by default — see ENABLE_THREAT_SHARING."
         ),
     },
 ]
@@ -443,6 +452,7 @@ app.include_router(threat_feed.router)
 app.include_router(correlations_router.router)
 app.include_router(honeypot_router.router)
 app.include_router(honeypot_router.page_router)
+app.include_router(threat_sharing_router.router)
 
 
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────

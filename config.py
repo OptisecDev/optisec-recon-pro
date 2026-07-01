@@ -20,6 +20,11 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 OTX_API_KEY = os.environ.get("OTX_API_KEY", "")
 OTX_BASE_URL = "https://otx.alienvault.com/api/v1"
 
+# Threat Sharing — opt-in outbound IOC sharing (modules/threat_intel/threat_sharing.py).
+# Disabled by default: no IOC ever leaves this deployment unless an operator
+# explicitly sets this to true AND then explicitly triggers each share.
+ENABLE_THREAT_SHARING = os.environ.get("ENABLE_THREAT_SHARING", "false").strip().lower() == "true"
+
 # Database — defaults to SQLite; set DATABASE_URL for PostgreSQL
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
