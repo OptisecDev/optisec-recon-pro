@@ -129,3 +129,17 @@ class DarkWebAlert(Base):
     acknowledged = Column(Boolean, default=False)
 
     monitor = relationship("DarkWebMonitor", back_populates="alerts")
+
+
+class SchedulerLock(Base):
+    """Single-row-per-job lock so periodic tasks (e.g. the dark web scan
+    sweep in modules/darkweb/scheduler.py) never run concurrently across
+    multiple uvicorn workers/instances (Render runs 2 workers). Acquired via
+    an atomic conditional UPDATE keyed on `job_name`; `locked_at` older than
+    the caller's staleness threshold is treated as free, so a crashed holder
+    can never deadlock the job forever."""
+    __tablename__ = "scheduler_locks"
+
+    job_name = Column(String(100), primary_key=True)
+    locked_at = Column(DateTime)
+    locked_by = Column(String(100))

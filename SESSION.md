@@ -107,6 +107,20 @@
 - `tests/test_darkweb_monitor.py` — **جديد**: 38 اختبار (LeakCheck، fingerprinting، build_leak_events، diff_new_events، التعريب، run_monitor_check) — نفس معيار `test_vulnerability_intelligence.py`
 - **356/356 اختبار ناجح** على كامل test suite (لا regressions)
 
+### ✅ المهمة 6 — جدولة الفحص الدوري التلقائي (APScheduler)
+- `modules/darkweb/scheduler.py` — **جديد**: `BackgroundScheduler` (APScheduler) يفحص كل أهداف `DarkWebMonitor` النشطة دورياً:
+  - `DARKWEB_SCAN_INTERVAL_HOURS` (افتراضي 24) يتحكم بفاصل الفحص، و`DARKWEB_SCAN_LOCK_STALE_HOURS` (افتراضي 2) يتحكم بمهلة القفل المُهجور
+  - **قفل موزّع عبر DB** (`SchedulerLock` — تحديث شرطي ذري) يمنع تكرار الفحص عند تشغيل أكثر من worker/instance — Render يشغّل التطبيق بـ`--workers 2`، فهذا ضروري فعلياً وليس نظرياً
+  - كل هدف يُفحص فقط إذا مضى عليه `last_checked_at` أكثر من الفاصل الزمني (استعلام SQL مباشر) — هذا يجعل إعادة النشر/التشغيل على Render آمنة: أول تشغيل بعد كل deploy يجد غالبية الأهداف "غير مستحقة" فلا يُعيد فحصها بلا داعٍ
+  - أول تشغيل بعد 60 ثانية من إقلاع التطبيق (حتى يكتمل `init_db`)، ثم كل `DARKWEB_SCAN_INTERVAL_HOURS`
+  - يعيد استخدام نفس منطق الفحص/المقارنة/الحفظ المستخدم يدوياً عبر `run_check_and_persist()` (مستخرجة من الراوتر) — تنبيهات جديدة تُضاف لنفس جدول `DarkWebAlert`
+  - تسجيل تفصيلي (logging) لكل جولة: عدد المفحوص/المتخطى/الفاشل/التنبيهات الجديدة
+- `web/routers/darkweb_monitor.py` — استُخرجت `run_check_and_persist()` كدالة مشتركة بين endpoint الفحص اليدوي والـscheduler؛ أُضيف `GET /api/darkweb/scheduler/status` (running/interval/last_run/next_run)؛ **إصلاح جانبي**: `last_checked_at` كان يُكتب بـ`datetime.now(timezone.utc)` (tz-aware) خلافاً لبقية الجدول (naive) — عمود `DateTime` بدون timezone على Postgres/asyncpg يرفض قيم tz-aware، فتم توحيدها إلى `datetime.utcnow()` قبل أن تُسبب crash في الإنتاج
+- `web/models.py` — جدول جديد `SchedulerLock` (job_name PK, locked_at, locked_by)
+- `web/app.py` — `start_scheduler()` ضمن `@app.on_event("startup")`، وأُضيف `@app.on_event("shutdown")` جديد (لم يكن موجوداً) يستدعي `stop_scheduler()`
+- `tests/test_darkweb_scheduler.py` — **جديد**: 23 اختبار (فاصل الفحص من env، القفل الذري ومقاومته للتكرار وانتهاء صلاحية القفل المُهجور، تحديد الأهداف "المستحقة" فقط، استمرار الجولة رغم فشل هدف واحد، تحرير القفل حتى عند الفشل، تكامل كامل مع حفظ فعلي في DarkWebAlert، عدم تكرار التنبيه على نفس التسريب، دورة حياة start/stop/status) — DB معزولة بالكامل (SQLite in-memory عبر `monkeypatch` لـ`web.database.SessionLocal`)، لا اتصال شبكة حقيقي
+- **379/379 اختبار ناجح** على كامل test suite (356 سابق + 23 جديد) — لا regressions
+
 ---
 
 ## المهام القادمة (جلسات مستقبلية)
@@ -114,4 +128,3 @@
 - [ ] نشر على VPS / Docker
 - [ ] إضافة email notifications
 - [ ] تحسين أداء الفحوصات الموازية
-- [ ] جدولة فحص دوري تلقائي لأهداف Dark Web Monitoring (apscheduler موجود كـ dependency لكن غير مُفعّل بعد)

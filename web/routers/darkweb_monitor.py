@@ -10,7 +10,7 @@ surfaced as alerts, each with a discovery timestamp.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -61,6 +61,41 @@ async def _get_owned_monitor(monitor_id: int, user: User, db: AsyncSession) -> D
     if not monitor:
         raise HTTPException(404, "monitor not found")
     return monitor
+
+
+async def run_check_and_persist(monitor: DarkWebMonitor, db: AsyncSession) -> tuple[list[DarkWebAlert], dict]:
+    """
+    Run a dark web check for `monitor`, diff against previously-stored
+    alerts and persist only the new ones. Shared by the manual
+    POST .../check endpoint and the periodic scheduler
+    (modules/darkweb/scheduler.py) so both paths behave identically.
+
+    Returns (new_alerts, raw_check_result).
+    """
+    from modules.darkweb.monitor import run_monitor_check, diff_new_events
+
+    result = await run_monitor_check(monitor.target, monitor.target_type)
+    events = result["events"]
+
+    known = set((await db.execute(
+        select(DarkWebAlert.fingerprint).where(DarkWebAlert.monitor_id == monitor.id)
+    )).scalars().all())
+
+    new_events = diff_new_events(events, known)
+    new_alerts = [
+        DarkWebAlert(monitor_id=monitor.id, fingerprint=ev["fingerprint"], source=ev["source"],
+                      severity=ev["severity"], title=ev["title"], detail=ev["detail"])
+        for ev in new_events
+    ]
+    for alert in new_alerts:
+        db.add(alert)
+
+    monitor.last_checked_at = datetime.utcnow()
+    await db.commit()
+    for alert in new_alerts:
+        await db.refresh(alert)
+
+    return new_alerts, result
 
 
 @router.get(
@@ -135,28 +170,9 @@ async def delete_monitor(monitor_id: int, request: Request, user: User = Depends
 async def check_monitor(monitor_id: int, request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     monitor = await _get_owned_monitor(monitor_id, user, db)
 
-    from modules.darkweb.monitor import run_monitor_check, diff_new_events, build_arabic_alert_message
+    from modules.darkweb.monitor import build_arabic_alert_message
 
-    result = await run_monitor_check(monitor.target, monitor.target_type)
-    events = result["events"]
-
-    known = set((await db.execute(
-        select(DarkWebAlert.fingerprint).where(DarkWebAlert.monitor_id == monitor.id)
-    )).scalars().all())
-
-    new_events = diff_new_events(events, known)
-    new_alerts = [
-        DarkWebAlert(monitor_id=monitor.id, fingerprint=ev["fingerprint"], source=ev["source"],
-                      severity=ev["severity"], title=ev["title"], detail=ev["detail"])
-        for ev in new_events
-    ]
-    for alert in new_alerts:
-        db.add(alert)
-
-    monitor.last_checked_at = datetime.now(timezone.utc)
-    await db.commit()
-    for alert in new_alerts:
-        await db.refresh(alert)
+    new_alerts, result = await run_check_and_persist(monitor, db)
 
     logger.info(
         "darkweb_monitor checked user=%s monitor_id=%s target=%r new_alerts=%d ip=%s",
@@ -170,9 +186,12 @@ async def check_monitor(monitor_id: int, request: Request, user: User = Depends(
         "monitor": _monitor_to_dict(monitor),
         "new_alerts": alert_dicts,
         "new_alerts_count": len(alert_dicts),
-        "total_events_checked": len(events),
+        "total_events_checked": len(result["events"]),
         "exposure": exposure,
-        "message_ar": build_arabic_alert_message(monitor.target, new_events),
+        "message_ar": build_arabic_alert_message(monitor.target, [
+            {"fingerprint": a.fingerprint, "source": a.source, "severity": a.severity, "title": a.title}
+            for a in new_alerts
+        ]),
     })
 
 
@@ -207,3 +226,17 @@ async def recent_alerts(user: User = Depends(_user), db: AsyncSession = Depends(
         d["target"] = monitor.target
         alerts.append(d)
     return JSONResponse({"alerts": alerts})
+
+
+@router.get(
+    "/scheduler/status",
+    summary="Dark web monitoring scheduler status",
+    description=(
+        "Whether the periodic dark web scan sweep (modules/darkweb/scheduler.py) is "
+        "running in this process, its configured interval, when it last ran and "
+        "what it found, and its next scheduled run."
+    ),
+)
+async def scheduler_status(user: User = Depends(_user)):
+    from modules.darkweb.scheduler import get_status
+    return JSONResponse(get_status())

@@ -617,6 +617,7 @@ One-click deployment on [Render.com](https://render.com):
 | `OTX_API_KEY` | Optional | AlienVault OTX threat feed |
 | `HACKERONE_API_TOKEN` | Optional | HackerOne integration |
 | `BUGCROWD_API_TOKEN` | Optional | Bugcrowd integration |
+| `DARKWEB_SCAN_INTERVAL_HOURS` | Optional | Dark web monitoring re-scan interval, default `24` |
 
 4. Render auto-detects the `Dockerfile` and deploys
 

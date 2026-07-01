@@ -463,6 +463,15 @@ async def startup():
     await _ensure_first_admin()
     await _ensure_demo_account()
 
+    from modules.darkweb.scheduler import start_scheduler
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    from modules.darkweb.scheduler import stop_scheduler
+    stop_scheduler()
+
 
 async def _ensure_first_admin():
     async with SessionLocal() as db:
