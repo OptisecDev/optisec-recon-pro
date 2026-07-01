@@ -447,6 +447,85 @@ async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
     })
 
 
+@router.post(
+    "/api/osint/threat-analysis",
+    summary="Vulnerability Intelligence — Threat Analysis",
+    description=(
+        "Turn a scan_results dict (e.g. the output of /api/osint/unified-search "
+        "or /api/osint/network-scan) into a full threat intelligence report: "
+        "MITRE ATT&CK mapping for every recognized finding (deterministic, no "
+        "AI), an ordered kill-chain attack path, and CVE intelligence "
+        "(NVD + EPSS + CISA KEV + ExploitDB composite risk score) for every "
+        "service discovered from open ports. Set `include_ai: true` to also "
+        "generate a Groq-authored bilingual executive narrative — requires "
+        "GROQ_API_KEY; degrades to `ai_narrative.available: false` otherwise."
+    ),
+)
+async def osint_threat_analysis(request: Request, user: User = Depends(_user)):
+    data = await request.json()
+    target = data.get("target", "").strip()
+    scan_results = data.get("scan_results") or {}
+    include_ai = bool(data.get("include_ai", False))
+    if not target:
+        raise HTTPException(400, "target is required")
+    if not isinstance(scan_results, dict):
+        raise HTTPException(400, "scan_results must be an object")
+
+    logger.info(
+        "threat_analysis request user=%s target=%r include_ai=%s ip=%s",
+        user.username, target, include_ai,
+        request.client.host if request.client else "unknown",
+    )
+
+    from modules.osint.mitre_mapping import map_findings_to_attack, generate_attack_path
+    from modules.osint.vulnerability_intelligence import map_service_to_cves
+    from modules.osint.unified_engine import extract_findings, detect_open_port_services
+
+    findings = extract_findings(scan_results)
+    services = detect_open_port_services(findings)
+
+    attack_mapping_t = map_findings_to_attack(findings)
+    attack_path_t = generate_attack_path(findings)
+    cve_tasks = [map_service_to_cves(service) for service in services]
+
+    attack_mapping, attack_path, *cve_results = await asyncio.gather(
+        attack_mapping_t, attack_path_t, *cve_tasks, return_exceptions=True
+    )
+    if isinstance(attack_mapping, Exception):
+        logger.warning("[threat_analysis] MITRE mapping failed: %s", attack_mapping)
+        attack_mapping = []
+    if isinstance(attack_path, Exception):
+        logger.warning("[threat_analysis] attack path generation failed: %s", attack_path)
+        attack_path = {"total_findings_analyzed": len(findings), "mapped_findings": 0,
+                        "attack_path": [], "path_length": 0}
+
+    cve_intelligence = {}
+    for service, result in zip(services, cve_results):
+        if isinstance(result, Exception):
+            logger.warning("[threat_analysis] CVE lookup for %s failed: %s", service, result)
+            cve_intelligence[service] = {"service": service, "error": str(result), "cves": []}
+        else:
+            cve_intelligence[service] = result
+
+    report = {
+        "target": target,
+        "services_detected": services,
+        "mitre_attack": attack_mapping,
+        "attack_path": attack_path,
+        "cve_intelligence": cve_intelligence,
+        "ai_narrative": None,
+    }
+
+    if include_ai:
+        from modules.osint.threat_narrative import generate_threat_narrative
+        report["ai_narrative"] = await asyncio.to_thread(
+            generate_threat_narrative, scan_results, {"mitre_attack": attack_mapping, "attack_path": attack_path},
+            cve_intelligence,
+        )
+
+    return JSONResponse(report)
+
+
 @router.get(
     "/api/osint/sources-status",
     summary="OSINT source availability",

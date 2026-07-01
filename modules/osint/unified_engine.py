@@ -1622,6 +1622,92 @@ async def _run_holehe(email: str) -> dict:
     )
 
 
+# ── Vulnerability Intelligence enrichment (MITRE ATT&CK + CVE) ────────────────
+# Post-processing step run once every OSINT source has finished: maps
+# findings to MITRE ATT&CK (deterministic, no AI — modules/osint/
+# mitre_mapping.py) and looks up CVE intelligence (NVD+EPSS+CISA KEV+
+# ExploitDB — modules/osint/vulnerability_intelligence.py) for every
+# service inferred from open ports. Never blocks/fails the primary
+# search — any error here degrades to empty enrichment.
+
+_PORT_SERVICE_NAMES: dict[int, str] = {
+    21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns",
+    80: "http", 443: "https", 445: "smb", 1433: "mssql",
+    3306: "mysql", 3389: "rdp", 27017: "mongodb",
+}
+
+_THREAT_INTEL_TIMEOUT = 25
+
+
+def extract_findings(scan_results: dict) -> list[dict]:
+    """
+    Normalize a scan_results dict — the output of /api/osint/unified-search
+    (`entities`/`raw_sources`), a raw {"sources": [...]} search_unified()
+    result, or a raw gather_network_intelligence()-shaped dict — into a
+    flat list of {type, value, ...} findings suitable for
+    modules/osint/mitre_mapping.py.
+    """
+    findings: list[dict] = []
+
+    entities = scan_results.get("entities")
+    if isinstance(entities, list):
+        findings.extend(e for e in entities if isinstance(e, dict))
+
+    for key in ("raw_sources", "sources"):
+        sources = scan_results.get(key)
+        if isinstance(sources, list):
+            for entry in sources:
+                if isinstance(entry, dict):
+                    findings.extend(r for r in entry.get("results") or [] if isinstance(r, dict))
+
+    if not findings and "ip" in scan_results:
+        findings.extend(_network_intel_to_findings(scan_results))
+
+    return findings
+
+
+def detect_open_port_services(findings: list[dict]) -> list[str]:
+    """Map {type: "open_port", port: N} findings to well-known service
+    names (via _PORT_SERVICE_NAMES), for feeding into map_service_to_cves()."""
+    ports = {f["port"] for f in findings if f.get("type") == "open_port" and f.get("port")}
+    return sorted({_PORT_SERVICE_NAMES[p] for p in ports if p in _PORT_SERVICE_NAMES})
+
+
+async def _run_threat_intelligence(by_source: list[dict]) -> dict:
+    from modules.osint import mitre_mapping, vulnerability_intelligence
+
+    findings: list[dict] = []
+    for entry in by_source:
+        findings.extend(entry.get("results") or [])
+
+    services = detect_open_port_services(findings)
+
+    async def _cve_for_service(service: str) -> tuple[str, dict]:
+        try:
+            return service, await vulnerability_intelligence.map_service_to_cves(service)
+        except Exception as exc:
+            logger.warning("[threat_intel] CVE lookup for %s failed: %s", service, exc)
+            return service, {"service": service, "error": str(exc), "cves": []}
+
+    try:
+        attack_mapping, cve_pairs = await asyncio.wait_for(
+            asyncio.gather(
+                mitre_mapping.map_findings_to_attack(findings),
+                asyncio.gather(*[_cve_for_service(s) for s in services]),
+            ),
+            timeout=_THREAT_INTEL_TIMEOUT,
+        )
+    except Exception as exc:
+        logger.warning("[threat_intel] enrichment failed/timed out: %s", exc)
+        return {"mitre_attack": [], "cve_intelligence": {}, "services_detected": services}
+
+    return {
+        "mitre_attack": attack_mapping,
+        "cve_intelligence": dict(cve_pairs),
+        "services_detected": services,
+    }
+
+
 # ── Unified dispatcher ────────────────────────────────────────────────────────
 
 async def search_unified(
@@ -1709,6 +1795,8 @@ async def search_unified(
         total += len(entry.get("results") or [])
         by_source.append(entry)
 
+    threat_intel = await _run_threat_intelligence(by_source)
+
     elapsed = round(time.monotonic() - t0, 2)
     logger.info("unified_search done elapsed=%.2fs total=%d", elapsed, total)
 
@@ -1718,4 +1806,7 @@ async def search_unified(
         "elapsed_seconds": elapsed,
         "total_results": total,
         "sources": by_source,
+        "mitre_attack": threat_intel["mitre_attack"],
+        "cve_intelligence": threat_intel["cve_intelligence"],
+        "services_detected": threat_intel["services_detected"],
     }
