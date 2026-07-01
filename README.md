@@ -20,7 +20,7 @@
 red teamers, and enterprise SOC teams — featuring 13 integrated scanning modules,  
 Arabic/English NLP, post-quantum cryptography, and autonomous red team simulation.**
 
-[Live Demo](https://optisec-recon-pro.onrender.com/demo) · [API Docs](https://optisec-recon-pro.onrender.com/docs) · [Report Bug](https://github.com/OptisecDev/optisec-recon-pro/issues) · [Request Feature](https://github.com/OptisecDev/optisec-recon-pro/issues)
+[Live Demo](https://optisec-recon-pro.onrender.com/demo) · [API Docs](https://optisec-recon-pro.onrender.com/docs) · [License Store](https://optisecdev.github.io/optisec-store) · [Report Bug](https://github.com/OptisecDev/optisec-recon-pro/issues) · [Request Feature](https://github.com/OptisecDev/optisec-recon-pro/issues)
 
 </div>
 
@@ -51,6 +51,8 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
 ## Overview
 
 **OPTISEC v4.0 SINGULARITY** is a comprehensive bug bounty and penetration testing platform that consolidates the entire security research workflow into a single, unified web dashboard. From subdomain enumeration to autonomous AI-driven red team simulations, OPTISEC gives security professionals an enterprise-grade toolkit accessible from any browser.
+
+> **بالعربية:** **OPTISEC v4.0 SINGULARITY** منصة استخبارات أمنية متكاملة موجهة لصائدي الثغرات (Bug Bounty) وفرق الاختراق الأخلاقي وفرق العمليات الأمنية (SOC)، تجمع 13 وحدة فحص واستخبارات — من استكشاف النطاقات الفرعية إلى محاكاة الفريق الأحمر المستقل بالذكاء الاصطناعي — في لوحة تحكم واحدة، مع دعم كامل للغة العربية في واجهة الأوامر الطبيعية (NLP) ووحدات استخبارات مفتوحة المصدر (OSINT) مخصصة للسياق العراقي (البحث بالهوية الوطنية، لوحات المركبات).
 
 ### Why OPTISEC?
 
@@ -550,6 +552,8 @@ cp .env.example .env
 
 # 5. Launch the dashboard
 python main.py web --port 8000
+# — or use the bundled startup script, which also handles the venv/deps for you —
+./start.sh web
 
 # Dashboard: http://localhost:8000
 # API Docs:  http://localhost:8000/docs
@@ -643,7 +647,7 @@ python main.py report example.com
 
 ## API Documentation
 
-Interactive API documentation is available at runtime:
+OPTISEC exposes **163 REST + WebSocket endpoints** across 14 routers, all fully typed with Pydantic v2 schemas and documented in the live OpenAPI 3.0 spec. Interactive API documentation is available at runtime:
 
 | Interface | URL | Description |
 |-----------|-----|-------------|
@@ -799,7 +803,7 @@ curl -X POST https://your-instance/api/license/activate \
   -d '{"key": "OPTISEC-PRO-XXXX-XXXX-XXXX"}'
 ```
 
-> **Contact:** [ahssanali84.syber@gmail.com](mailto:ahssanali84.syber@gmail.com) for PRO/ENTERPRISE license inquiries.
+> **Purchase a license:** [optisecdev.github.io/optisec-store](https://optisecdev.github.io/optisec-store) · **Contact:** [ahssanali84.syber@gmail.com](mailto:ahssanali84.syber@gmail.com) for PRO/ENTERPRISE inquiries.
 
 ---
 
