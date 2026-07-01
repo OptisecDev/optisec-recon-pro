@@ -62,6 +62,7 @@
   <button class="tab-btn" onclick="showTab('tor')">Tor Intelligence</button>
   <button class="tab-btn" onclick="showTab('keywords')">Keyword Alerts</button>
   <button class="tab-btn" onclick="showTab('ransomware')">Ransomware Groups</button>
+  <button class="tab-btn" onclick="showTab('monitor')">Continuous Monitoring · المراقبة المستمرة</button>
 </div>
 
 <!-- BREACH DETECTION TAB -->
@@ -267,13 +268,75 @@
   </div>
 </div>
 
+<!-- CONTINUOUS MONITORING TAB -->
+<div id="tab-monitor" style="display:none">
+  <div class="grid grid-2">
+    <div class="dw-card">
+      <h3 style="color:#00D4AA;margin-bottom:16px">Add Target to Monitoring · إضافة هدف للمراقبة</h3>
+      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+        Continuously watch a domain or email against HIBP, IntelligenceX, BreachDirectory, Leak-Lookup,
+        psbdmp, GitHub, OTX and LeakCheck — new leaks are alerted with a timestamp, never re-alerted twice.
+      </p>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input type="text" id="monitor-target" class="form-control" placeholder="example.com or user@example.com" style="flex:1">
+        <button class="btn btn-primary" onclick="addMonitorTarget()">Add · إضافة</button>
+      </div>
+      <div id="monitor-add-result"></div>
+
+      <h4 style="font-size:13px;margin:20px 0 10px">Monitored Targets · الأهداف المراقبة</h4>
+      <div id="monitor-list">
+        {% if monitors %}
+          {% for m in monitors %}
+          <div class="rw-group" id="monitor-row-{{ m.id }}" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <div>
+              <div style="font-size:13px;font-weight:600">{{ m.label or m.target }}</div>
+              <div style="font-size:10px;color:var(--text-dim)">
+                {{ m.target }} · {{ m.target_type }} ·
+                {% if m.last_checked_at %}آخر فحص: {{ m.last_checked_at.strftime('%Y-%m-%d %H:%M') }}{% else %}لم يُفحص بعد{% endif %}
+              </div>
+            </div>
+            <div style="display:flex;gap:6px;flex-shrink:0">
+              <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="checkMonitorTarget({{ m.id }})">فحص الآن</button>
+              <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteMonitorTarget({{ m.id }})">حذف</button>
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p style="color:var(--text-dim);font-size:12px">لا توجد أهداف مراقبة بعد. أضف نطاقاً أو بريداً إلكترونياً أعلاه.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="dw-card">
+      <h3 style="color:#00D4AA;margin-bottom:16px">Recent Alerts · التنبيهات الأخيرة</h3>
+      <div id="monitor-alerts">
+        {% if recent_alerts %}
+          {% for alert, monitor in recent_alerts %}
+          <div class="breach-item {{ 'critical' if alert.severity in ('critical','high') else alert.severity }}">
+            <div style="display:flex;justify-content:space-between">
+              <span style="font-size:12px;font-weight:700">{{ alert.title }}</span>
+              <span class="risk-badge risk-{{ alert.severity }}">{{ alert.severity }}</span>
+            </div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:4px">
+              {{ monitor.target }} · {{ alert.discovered_at.strftime('%Y-%m-%d %H:%M') if alert.discovered_at else '' }}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p style="color:var(--text-dim);font-size:12px">لا توجد تنبيهات بعد. اضغط "فحص الآن" على أحد الأهداف المراقبة.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 function showTab(t) {
-  ['breach','paste','tor','keywords','ransomware'].forEach(id => {
+  ['breach','paste','tor','keywords','ransomware','monitor'].forEach(id => {
     document.getElementById('tab-'+id).style.display = id===t?'':'none';
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    b.classList.toggle('active', ['breach','paste','tor','keywords','ransomware'][i]===t);
+    b.classList.toggle('active', ['breach','paste','tor','keywords','ransomware','monitor'][i]===t);
   });
 }
 
@@ -374,6 +437,77 @@ async function generateReport() {
     <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:700">Recommendations:</div>
     ${(data.recommendations||[]).map(r=>`<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);color:var(--text-dim)">• ${r}</div>`).join('')}
   </div>`;
+}
+
+function monitorRowHtml(m) {
+  const lastChecked = m.last_checked_at ? new Date(m.last_checked_at).toLocaleString() : 'لم يُفحص بعد';
+  return `<div class="rw-group" id="monitor-row-${m.id}" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+    <div>
+      <div style="font-size:13px;font-weight:600">${m.label || m.target}</div>
+      <div style="font-size:10px;color:var(--text-dim)">${m.target} · ${m.target_type} · آخر فحص: ${lastChecked}</div>
+    </div>
+    <div style="display:flex;gap:6px;flex-shrink:0">
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="checkMonitorTarget(${m.id})">فحص الآن</button>
+      <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteMonitorTarget(${m.id})">حذف</button>
+    </div>
+  </div>`;
+}
+
+function alertItemHtml(a, target) {
+  const sev = ['critical','high'].includes(a.severity) ? 'critical' : a.severity;
+  return `<div class="breach-item ${sev}">
+    <div style="display:flex;justify-content:space-between">
+      <span style="font-size:12px;font-weight:700">${a.title}</span>
+      <span class="risk-badge risk-${a.severity}">${a.severity}</span>
+    </div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:4px">${target || ''} · ${a.discovered_at ? new Date(a.discovered_at).toLocaleString() : ''}</div>
+    <div style="font-size:10px;color:var(--text-dim);margin-top:2px">${a.source_ar || ''} · ${a.severity_ar || ''}</div>
+  </div>`;
+}
+
+async function addMonitorTarget() {
+  const target = document.getElementById('monitor-target').value.trim();
+  if (!target) return;
+  const btn = event.target; btn.textContent = 'Adding...'; btn.disabled = true;
+  const resp = await fetch('/api/darkweb/monitor', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})});
+  const data = await resp.json();
+  btn.textContent = 'Add · إضافة'; btn.disabled = false;
+  const resultEl = document.getElementById('monitor-add-result');
+  if (!resp.ok) {
+    resultEl.innerHTML = `<p style="color:#FF6B6B;font-size:12px">${data.detail || 'تعذّرت الإضافة'}</p>`;
+    return;
+  }
+  resultEl.innerHTML = '';
+  document.getElementById('monitor-target').value = '';
+  const list = document.getElementById('monitor-list');
+  if (list.querySelector('p')) list.innerHTML = '';
+  list.insertAdjacentHTML('afterbegin', monitorRowHtml(data.monitor));
+}
+
+async function checkMonitorTarget(id) {
+  const row = document.getElementById(`monitor-row-${id}`);
+  const btn = row.querySelector('.btn-secondary');
+  const originalText = btn.textContent; btn.textContent = 'جارِ الفحص...'; btn.disabled = true;
+  const resp = await fetch(`/api/darkweb/monitor/${id}/check`, {method:'POST'});
+  const data = await resp.json();
+  btn.textContent = originalText; btn.disabled = false;
+  if (!resp.ok) { alert(data.detail || 'فشل الفحص'); return; }
+
+  row.outerHTML = monitorRowHtml(data.monitor);
+
+  const alertsEl = document.getElementById('monitor-alerts');
+  if (data.new_alerts_count > 0) {
+    if (alertsEl.querySelector('p')) alertsEl.innerHTML = '';
+    alertsEl.insertAdjacentHTML('afterbegin', data.new_alerts.map(a => alertItemHtml(a, data.monitor.target)).join(''));
+  }
+  alert(data.message_ar);
+}
+
+async function deleteMonitorTarget(id) {
+  if (!confirm('هل تريد حذف هذا الهدف من المراقبة؟')) return;
+  await fetch(`/api/darkweb/monitor/${id}`, {method:'DELETE'});
+  const row = document.getElementById(`monitor-row-${id}`);
+  if (row) row.remove();
 }
 </script>
 {% endblock %}

@@ -1,10 +1,11 @@
 """Dark Web Intelligence router."""
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.database import get_db
-from web.models import User
+from web.models import User, DarkWebMonitor, DarkWebAlert
 from web.auth import get_current_user
 from web.shared_templates import templates
 from config import APP_NAME
@@ -17,13 +18,27 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 
 @router.get("", response_class=HTMLResponse)
-async def darkweb_home(request: Request, user: User = Depends(_user)):
+async def darkweb_home(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     from modules.darkweb.intelligence import simulate_tor_monitor, get_monitored_keywords, get_breach_intelligence
+
+    monitors = (await db.execute(
+        select(DarkWebMonitor).where(DarkWebMonitor.user_id == user.id).order_by(DarkWebMonitor.created_at.desc())
+    )).scalars().all()
+    recent_alert_rows = (await db.execute(
+        select(DarkWebAlert, DarkWebMonitor)
+        .join(DarkWebMonitor, DarkWebAlert.monitor_id == DarkWebMonitor.id)
+        .where(DarkWebMonitor.user_id == user.id)
+        .order_by(DarkWebAlert.discovered_at.desc())
+        .limit(20)
+    )).all()
+
     return templates.TemplateResponse(request, "darkweb.html", {
         "app_name": APP_NAME, "user": user, "active": "darkweb",
         "tor_monitor": simulate_tor_monitor(),
         "keywords": get_monitored_keywords(),
         "breach_intel": get_breach_intelligence(),
+        "monitors": monitors,
+        "recent_alerts": recent_alert_rows,
     })
 
 

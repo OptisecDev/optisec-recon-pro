@@ -20,6 +20,7 @@ class User(Base):
     targets = relationship("Target", back_populates="user", cascade="all, delete-orphan")
     scans = relationship("Scan", back_populates="user", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
+    darkweb_monitors = relationship("DarkWebMonitor", back_populates="user", cascade="all, delete-orphan")
 
 
 class Target(Base):
@@ -92,3 +93,39 @@ class Report(Base):
     user = relationship("User", back_populates="reports")
     target = relationship("Target", back_populates="reports")
     scan = relationship("Scan", back_populates="reports")
+
+
+class DarkWebMonitor(Base):
+    """A domain/email watched for new dark web / breach exposure — see
+    modules/darkweb/monitor.py for the check logic."""
+    __tablename__ = "darkweb_monitors"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    target = Column(String(255), nullable=False)
+    target_type = Column(String(10), default="domain")  # domain | email
+    label = Column(String(200))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_checked_at = Column(DateTime)
+
+    user = relationship("User", back_populates="darkweb_monitors")
+    alerts = relationship("DarkWebAlert", back_populates="monitor", cascade="all, delete-orphan")
+
+
+class DarkWebAlert(Base):
+    """A single new leak event discovered for a DarkWebMonitor — `fingerprint`
+    dedupes re-checks so the same leak is never stored twice."""
+    __tablename__ = "darkweb_alerts"
+
+    id = Column(Integer, primary_key=True)
+    monitor_id = Column(Integer, ForeignKey("darkweb_monitors.id", ondelete="CASCADE"), nullable=False)
+    fingerprint = Column(String(64), nullable=False, index=True)
+    source = Column(String(50))  # breach | paste | github_secret | threat_actor | leakcheck
+    severity = Column(String(20))
+    title = Column(String(300))
+    detail = Column(JSON)
+    discovered_at = Column(DateTime, default=datetime.utcnow)
+    acknowledged = Column(Boolean, default=False)
+
+    monitor = relationship("DarkWebMonitor", back_populates="alerts")

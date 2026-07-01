@@ -59,6 +59,7 @@ from modules.report.pdf_generator import generate_report
 from config import APP_NAME, APP_VERSION, REPORTS_DIR
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
+from web.routers import darkweb_monitor
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -427,6 +428,7 @@ app.include_router(osint_router.router)
 # ─── v4.0 SINGULARITY Routers ─────────────────────────────────────────────────
 app.include_router(attack_navigator.router)
 app.include_router(darkweb.router)
+app.include_router(darkweb_monitor.router)
 app.include_router(autonomous_rt.router)
 app.include_router(ngfw.router)
 app.include_router(threat_feed.router)
