@@ -35,7 +35,7 @@ TIER_FEATURES: dict[str, list[str]] = {
         "bug_bounty", "compliance",
         "pdf_report", "api_access",
         "behavioral_ueba", "zero_day_predict", "attack_patterns",
-        "ngfw", "firewall", "vpn", "quantum",
+        "ngfw", "firewall", "vpn", "quantum", "honeypot",
     ],
     "enterprise": [
         "*",  # all features
@@ -48,7 +48,7 @@ TIER_FEATURES: dict[str, list[str]] = {
         "pdf_report", "api_access",
         "behavioral_ueba", "zero_day_predict", "attack_patterns", "ai_red_team",
         "autonomous_redteam", "attack_navigator",
-        "ngfw", "firewall", "vpn", "quantum",
+        "ngfw", "firewall", "vpn", "quantum", "honeypot",
         "federation", "threat_feed", "ioc_correlations",
         "darkweb_intel", "user_management", "multi_node",
     ],
@@ -92,6 +92,7 @@ FEATURE_LABELS: dict[str, str] = {
     "attack_navigator":  "ATT&CK Navigator",
     "ngfw":              "NGFW v2 ML/DPI",
     "firewall":          "AI Firewall",
+    "honeypot":          "Honeypot Deception",
     "vpn":               "WireGuard VPN",
     "quantum":           "Quantum Crypto",
     "federation":        "Federated Scan",

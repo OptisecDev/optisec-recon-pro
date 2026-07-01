@@ -60,6 +60,7 @@ from config import APP_NAME, APP_VERSION, REPORTS_DIR
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
 from web.routers import darkweb_monitor
+from web.routers import honeypot as honeypot_router
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -187,6 +188,13 @@ OPENAPI_TAGS = [
     {
         "name": "correlations",
         "description": "IOC correlation engine — cluster and link indicators across multiple sources.",
+    },
+    {
+        "name": "honeypot",
+        "description": (
+            "Lightweight, isolated SSH/FTP/HTTP-admin decoy listeners — capture and enrich "
+            "(geolocation + AbuseIPDB) attacker connection attempts."
+        ),
     },
 ]
 
@@ -433,6 +441,8 @@ app.include_router(autonomous_rt.router)
 app.include_router(ngfw.router)
 app.include_router(threat_feed.router)
 app.include_router(correlations_router.router)
+app.include_router(honeypot_router.router)
+app.include_router(honeypot_router.page_router)
 
 
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────
@@ -466,11 +476,17 @@ async def startup():
     from modules.darkweb.scheduler import start_scheduler
     start_scheduler()
 
+    from modules.honeypot.manager import start_honeypots
+    await start_honeypots()
+
 
 @app.on_event("shutdown")
 async def shutdown():
     from modules.darkweb.scheduler import stop_scheduler
     stop_scheduler()
+
+    from modules.honeypot.manager import stop_honeypots
+    await stop_honeypots()
 
 
 async def _ensure_first_admin():

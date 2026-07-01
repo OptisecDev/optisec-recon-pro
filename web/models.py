@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from web.database import Base
 
@@ -129,6 +129,37 @@ class DarkWebAlert(Base):
     acknowledged = Column(Boolean, default=False)
 
     monitor = relationship("DarkWebMonitor", back_populates="alerts")
+
+
+class HoneypotEvent(Base):
+    """A single connection captured by one of the lightweight honeypot
+    listeners (modules/honeypot/listeners.py) — SSH, FTP or a fake HTTP
+    admin panel, each bound to a non-standard port that never overlaps a
+    real service (see modules/honeypot/manager.py). Enriched at write time
+    with geolocation + AbuseIPDB reputation (modules/honeypot/enrichment.py)
+    so reads never need a fresh lookup. Global, not per-user — every
+    logged-in user can see the same feed, like the global threat feed."""
+    __tablename__ = "honeypot_events"
+
+    id = Column(Integer, primary_key=True)
+    service = Column(String(20), nullable=False, index=True)  # ssh | ftp | http_admin
+    source_ip = Column(String(45), nullable=False, index=True)  # IPv4/IPv6
+    source_port = Column(Integer)
+    dest_port = Column(Integer)
+    payload = Column(Text)          # raw attacker input, truncated (see listeners.MAX_PAYLOAD_BYTES)
+    session_data = Column(JSON)     # structured protocol detail: banner/commands/headers/path...
+    country = Column(String(100))
+    country_code = Column(String(5))
+    city = Column(String(100))
+    isp = Column(String(200))
+    abuse_score = Column(Integer, default=0)
+    risk_level = Column(String(20), default="UNKNOWN")  # LOW | MEDIUM | HIGH | CRITICAL | UNKNOWN
+    enrichment = Column(JSON)       # full raw enrichment payload (geo + abuseipdb)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index("ix_honeypot_events_ip_time", "source_ip", "created_at"),
+    )
 
 
 class SchedulerLock(Base):

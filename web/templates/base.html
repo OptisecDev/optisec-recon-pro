@@ -105,6 +105,10 @@
     </a>
 
     <div class="nav-section">Defense</div>
+    <a href="/honeypot" class="nav-item {% if active == 'honeypot' %}active{% endif %}">
+      <span class="icon">🍯</span><span>Honeypot</span>
+      {% if not lic.has_feature('honeypot') %}<span class="nav-lock">🔒</span>{% endif %}
+    </a>
     <a href="/firewall" class="nav-item {% if active == 'firewall' %}active{% endif %}">
       <span class="icon">🛡️</span><span>AI Firewall</span>
       {% if not lic.has_feature('firewall') %}<span class="nav-lock">🔒</span>{% endif %}

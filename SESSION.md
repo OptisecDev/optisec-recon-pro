@@ -121,6 +121,30 @@
 - `tests/test_darkweb_scheduler.py` — **جديد**: 23 اختبار (فاصل الفحص من env، القفل الذري ومقاومته للتكرار وانتهاء صلاحية القفل المُهجور، تحديد الأهداف "المستحقة" فقط، استمرار الجولة رغم فشل هدف واحد، تحرير القفل حتى عند الفشل، تكامل كامل مع حفظ فعلي في DarkWebAlert، عدم تكرار التنبيه على نفس التسريب، دورة حياة start/stop/status) — DB معزولة بالكامل (SQLite in-memory عبر `monkeypatch` لـ`web.database.SessionLocal`)، لا اتصال شبكة حقيقي
 - **379/379 اختبار ناجح** على كامل test suite (356 سابق + 23 جديد) — لا regressions
 
+### ✅ المهمة 7 — Honeypot Integration (خدمات مصيدة معزولة)
+- `modules/honeypot/listeners.py` — **جديد**: محاكيات خفيفة الوزن لثلاث خدمات (SSH/FTP/HTTP Admin Panel) عبر `asyncio.start_server`:
+  - SSH: يرسل banner حقيقي المظهر (`SSH-2.0-OpenSSH_8.9p1...`) ويلتقط أول رسالة من العميل — بدون أي مصافحة SSH حقيقية (لا تشفير، لا مصادقة)
+  - FTP: banner بأسلوب vsFTPd، يرد بأكواد استجابة معقولة (331/530/...) على أوامر USER/PASS/QUIT إلخ، ويسجّل كل الأوامر كمحاولة credential-stuffing نموذجية
+  - HTTP Admin: صفحة تسجيل دخول وهمية ثابتة (مطابقة لأسلوب `modules/threat_intel/honeypot.py`)، يسجّل method/path/headers (مفلترة)/body
+  - كل مقبض (handler) لا يُنفّذ أو يفسّر مدخلات المهاجم أبداً — فقط يقرأ bytes ويسجّلها؛ حدود صارمة (`MAX_PAYLOAD_BYTES`، `FTP_MAX_COMMANDS`، `READ_TIMEOUT_SECONDS`) تمنع استنزاف الذاكرة/الوقت؛ عطل في `on_event` لا يُسقط المستمع (listener) أبداً
+- `modules/honeypot/enrichment.py` — **جديد**: إثراء IP المهاجم تلقائياً:
+  - Geolocation عبر `modules.osint.geo_intel.geolocate_ip` الموجود أصلاً (ip-api.com + ipinfo.io)
+  - AbuseIPDB عبر نفس `ABUSEIPDB_API_KEY` المستخدم في `modules/threat_intel/ioc_detector.py`
+  - `risk_level` (LOW/MEDIUM/HIGH/CRITICAL) محسوب من أعلى نتيجة بين abuse score وgeo risk score، مع تعريب كامل (`RISK_LEVELS_AR`) — لا يفشل أبداً حتى لو تعطّل كل مزوّد
+- `modules/honeypot/manager.py` — **جديد**: دورة حياة + تخزين:
+  - **عزل صارم بالتصميم** (موثّق في docstring المديول): كل خدمة تُربط بمنفذ غير قياسي بعيد تماماً عن أي منفذ حقيقي — SSH:2222، FTP:2121، HTTP:8081 (افتراضياً بعيدة عن 22/21/80/443/8000) — قابلة للتخصيص عبر env، ومعطّلة بالكامل افتراضياً (`HONEYPOT_ENABLED=false`)، مع تفعيل/تعطيل مستقل لكل خدمة
+  - `record_event()` — الـ`on_event` callback المشترك بين كل المستمعات: يُثري IP ثم يخزّن `HoneypotEvent` — لا يرمي استثناء أبداً حتى لو فشل الإثراء أو الكتابة في القاعدة
+  - `start_honeypots()`/`stop_honeypots()`/`get_status()` — نفس أسلوب lifecycle الموجود في `modules/darkweb/scheduler.py`، لكن كمستمعات asyncio دائمة (لا APScheduler) داخل نفس event loop للتطبيق
+- `web/models.py` — جدول جديد `HoneypotEvent` (service، source_ip، source_port، payload، session_data JSON، country/city/isp/abuse_score/risk_level المُثراة، enrichment JSON كامل) — فهرسة مركّبة على `(source_ip, created_at)` بالإضافة لفهرسة كل عمود منفرداً
+- `web/routers/honeypot.py` — **جديد**: `GET /api/honeypot/events` (فلترة بـservice/source_ip/risk_level/hours + pagination)، `GET /api/honeypot/stats` (إجماليات، توزيع حسب الخدمة/مستوى الخطورة، أعلى 10 IPs/دول، heatmap 7×24 لآخر 7 أيام)، `GET /api/honeypot/status`، وصفحة `GET /honeypot`. منطق الاستعلام/التجميع (`query_events`، `compute_stats`، `build_heatmap`) دوال منفصلة قابلة للاختبار مباشرة (بنفس أسلوب `run_check_and_persist` في `darkweb_monitor.py`)
+- `web/templates/honeypot.html` — **جديد**: حالة المستمعات الحية، 4 بطاقات إحصائية، Chart.js doughnut لتوزيع الخدمات، جدول أعلى IPs، خريطة حرارية CSS بسيطة (7 أيام × 24 ساعة)، جدول المحاولات الأخيرة مع فلترة حية، تحذير أمني بارز بالعربي/الإنجليزي، تعريب كامل لكل تسميات الخدمة/الخطورة
+- `web/templates/base.html` — رابط سايدبار جديد تحت "Defense" 🍯
+- `web/license.py` — ميزة `honeypot` جديدة (PRO + ENTERPRISE)
+- `web/app.py` — تسجيل الراوترين (API + صفحة)، OpenAPI tag، `start_honeypots()`/`stop_honeypots()` في startup/shutdown
+- `.env.example` — قسم `HONEYPOT_*` موثّق بالكامل مع تحذير العزل
+- `tests/test_honeypot.py` — **جديد**: 74 اختبار — تحليل بروتوكولات نقي (FTP/HTTP)، اختبارات تكامل حقيقية عبر loopback sockets (منافذ OS-assigned، بدون شبكة خارجية) لكل من SSH/FTP/HTTP، إثراء AbuseIPDB/geolocation (mocked)، عتبات risk_level، دورة حياة المدير (تشغيل/إيقاف على منافذ عشوائية)، تخزين الأحداث، استعلامات/تجميع الراوتر، heatmap، تعريب
+- **453/453 اختبار ناجح** على كامل test suite (379 سابق + 74 جديد) — لا regressions
+
 ---
 
 ## المهام القادمة (جلسات مستقبلية)
@@ -128,3 +152,4 @@
 - [ ] نشر على VPS / Docker
 - [ ] إضافة email notifications
 - [ ] تحسين أداء الفحوصات الموازية
+- [ ] تفعيل Honeypot فعلياً على بيئة إنتاج معزولة (VPS/حاوية منفصلة) واختبار الالتقاط الحي
