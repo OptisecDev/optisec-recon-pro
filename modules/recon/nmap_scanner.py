@@ -101,6 +101,18 @@ def nmap_scan(target: str, flags: str = "-sT -sV --open -T4 --top-ports 1000") -
             r = socket_scan(target)
             r["note"] = f"nmap error — used socket scanner: {result.stderr[:100]}"
             return r
+        if _scanned_zero_hosts(result.stdout):
+            # nmap exits 0 with valid-but-empty XML when it can't resolve/reach the
+            # target at all (e.g. its internal resolver fails) — distinct from a host
+            # that was actually scanned and found down/filtered.
+            logger.warning(
+                "nmap scanned 0 hosts for target=%s (likely DNS resolution failure) — "
+                "falling back to socket scanner. stderr=%s",
+                target, result.stderr[:500],
+            )
+            r = socket_scan(target)
+            r["note"] = f"nmap scanned 0 hosts — used socket scanner: {result.stderr[:100] or 'target not resolved'}"
+            return r
         return _parse_xml(result.stdout, target)
     except subprocess.TimeoutExpired:
         logger.warning("nmap scan timed out after 120s for target=%s", target)
@@ -110,6 +122,18 @@ def nmap_scan(target: str, flags: str = "-sT -sV --open -T4 --top-ports 1000") -
     except Exception as e:
         logger.exception("Unexpected error running nmap for target=%s", target)
         return {"error": str(e), "ports": []}
+
+
+def _scanned_zero_hosts(xml_output: str) -> bool:
+    """True if nmap's own <hosts total="..."/> summary says it scanned nobody."""
+    try:
+        root = ET.fromstring(xml_output)
+        hosts_el = root.find("runstats/hosts")
+        if hosts_el is None:
+            return False
+        return hosts_el.get("total", "1") == "0"
+    except ET.ParseError:
+        return False
 
 
 def _parse_xml(xml_output: str, target: str) -> dict:
