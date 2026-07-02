@@ -1,6 +1,7 @@
 import json
 from typing import Optional
 from config import GROQ_API_KEY, GROQ_MODEL
+from modules.ai.groq_client_utils import call_groq_sync_with_retry
 
 try:
     from groq import Groq
@@ -60,7 +61,8 @@ Write the analysis professionally."""
 
     try:
         client = _client()
-        response = client.chat.completions.create(
+        response = call_groq_sync_with_retry(
+            client.chat.completions.create,
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2048,
@@ -100,18 +102,19 @@ Arabic command examples:
 
     try:
         client = _client()
-        response = client.chat.completions.create(
+        response = call_groq_sync_with_retry(
+            client.chat.completions.create,
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=256,
             temperature=0.1,
+            response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content.strip()
-        import re
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-        return {"action": "unknown", "target": "", "scan_types": [], "language": "en", "confidence": 0}
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return {"action": "unknown", "target": "", "scan_types": [], "language": "en", "confidence": 0}
     except Exception as e:
         return {"action": "error", "target": "", "error": str(e), "language": "en", "confidence": 0}
 
@@ -125,7 +128,8 @@ def summarize_recon(recon_data: dict, lang: str = "ar") -> str:
 
     try:
         client = _client()
-        response = client.chat.completions.create(
+        response = call_groq_sync_with_retry(
+            client.chat.completions.create,
             model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=512,

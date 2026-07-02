@@ -1,6 +1,5 @@
 """Autonomous Red Team Engine — multi-stage attack simulation, AI payload generation, pentest reports."""
 import os
-import re
 import json
 import asyncio
 import hashlib
@@ -10,6 +9,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from config import GROQ_MODEL
+from modules.ai.groq_client_utils import call_groq_async_with_retry
 
 DATA_FILE = Path("data/autonomous_rt_sessions.json")
 
@@ -315,8 +315,8 @@ Provide a concise attack analysis in JSON:
   "executive_risk": "<low|medium|high|critical>"
 }}"""
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
+    async def _request() -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
@@ -324,15 +324,17 @@ Provide a concise attack analysis in JSON:
                     "model": GROQ_MODEL,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3, "max_tokens": 600,
+                    "response_format": {"type": "json_object"},
                 },
             )
             r.raise_for_status()
             content = r.json()["choices"][0]["message"]["content"]
-            m = re.search(r'\{[\s\S]*\}', content)
-            if m:
-                return json.loads(m.group())
-        except Exception:
-            pass
+            return json.loads(content)
+
+    try:
+        return await call_groq_async_with_retry(_request)
+    except Exception:
+        pass
     return {"error": "AI analysis unavailable — GROQ_API_KEY not set or API error"}
 
 

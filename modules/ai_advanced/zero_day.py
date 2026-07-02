@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import GROQ_MODEL
+from modules.ai.groq_client_utils import call_groq_async_with_retry
 
 PREDICTIONS_FILE = Path("data/zero_day_predictions.json")
 
@@ -179,8 +180,8 @@ Analyze and respond in JSON format:
   "reasoning": "<brief explanation>"
 }}"""
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
+    async def _request() -> dict:
+        async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -189,17 +190,17 @@ Analyze and respond in JSON format:
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,
                     "max_tokens": 800,
+                    "response_format": {"type": "json_object"},
                 },
             )
             r.raise_for_status()
             content = r.json()["choices"][0]["message"]["content"]
-            # Extract JSON from response
-            import re
-            json_match = re.search(r'\{[\s\S]*\}', content)
-            if json_match:
-                return json.loads(json_match.group())
-        except Exception:
-            pass
+            return json.loads(content)
+
+    try:
+        return await call_groq_async_with_retry(_request)
+    except Exception:
+        pass
     return _heuristic_analysis(software, nvd_data, kev_data)
 
 

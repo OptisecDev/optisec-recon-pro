@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from config import GROQ_MODEL
+from modules.ai.groq_client_utils import call_groq_async_with_retry
 
 ENGAGEMENTS_FILE = Path("data/red_team_engagements.json")
 
@@ -128,8 +129,8 @@ Generate a detailed red team plan in JSON:
   "executive_summary": "<2-3 sentences>"
 }}"""
 
-    async with httpx.AsyncClient(timeout=45) as client:
-        try:
+    async def _request() -> dict:
+        async with httpx.AsyncClient(timeout=45) as client:
             r = await client.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -138,16 +139,17 @@ Generate a detailed red team plan in JSON:
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.4,
                     "max_tokens": 1200,
+                    "response_format": {"type": "json_object"},
                 },
             )
             r.raise_for_status()
             content = r.json()["choices"][0]["message"]["content"]
-            import re
-            json_match = re.search(r'\{[\s\S]*\}', content)
-            if json_match:
-                return json.loads(json_match.group())
-        except Exception:
-            pass
+            return json.loads(content)
+
+    try:
+        return await call_groq_async_with_retry(_request)
+    except Exception:
+        pass
     return _template_plan(target, scope, objectives, categories)
 
 

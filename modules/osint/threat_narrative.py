@@ -20,10 +20,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import Any
 
 from config import GROQ_API_KEY, GROQ_MODEL
+from modules.ai.groq_client_utils import call_groq_sync_with_retry
 
 try:
     from groq import Groq
@@ -101,13 +101,6 @@ def _parse_narrative_json(content: str | None) -> dict | None:
     try:
         return json.loads(content)
     except json.JSONDecodeError:
-        pass
-    match = re.search(r"\{.*\}", content, re.DOTALL)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group())
-    except json.JSONDecodeError:
         return None
 
 
@@ -147,7 +140,8 @@ def generate_threat_narrative(scan_results: dict, mitre_mapping: Any, cve_result
 
     user_prompt = _build_user_prompt(scan_results or {}, mitre_mapping or {}, cve_results or {})
     try:
-        response = client.chat.completions.create(
+        response = call_groq_sync_with_retry(
+            client.chat.completions.create,
             model=GROQ_MODEL,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
@@ -155,6 +149,7 @@ def generate_threat_narrative(scan_results: dict, mitre_mapping: Any, cve_result
             ],
             max_tokens=_MAX_TOKENS,
             temperature=_TEMPERATURE,
+            response_format={"type": "json_object"},
         )
         content = response.choices[0].message.content
     except Exception as exc:
