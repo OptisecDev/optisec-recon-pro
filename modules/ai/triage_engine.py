@@ -15,6 +15,7 @@ import logging
 from config import GROQ_CONCURRENCY_LIMIT, GROQ_MODEL
 from modules.ai.groq_analyzer import _client
 from modules.ai.groq_client_utils import call_groq_sync_with_retry
+from modules.ai.rate_limiter import TokenBucketLimiter, estimate_tokens
 
 logger = logging.getLogger("ai.triage_engine")
 
@@ -122,13 +123,22 @@ async def classify_findings_batch(
     many run at once. One finding's failure never affects the others — it
     just gets the same NEEDS_MANUAL_REVIEW fallback classify_finding already
     returns on error.
+
+    A TokenBucketLimiter shared across the whole batch is a second, separate
+    layer: it caps how many tokens/minute the batch spends, which is what
+    Groq's account-level TPM cap actually enforces — a low concurrency limit
+    alone doesn't stop the batch from exceeding TPM if each call is small
+    and fast. Concurrency and token-rate are independent constraints, so the
+    semaphore's behavior above is untouched.
     """
     limit = concurrency_limit if concurrency_limit is not None else GROQ_CONCURRENCY_LIMIT
     semaphore = asyncio.Semaphore(limit)
+    rate_limiter = TokenBucketLimiter()
 
     async def _classify_one(finding: dict) -> dict:
         async with semaphore:
             try:
+                await rate_limiter.acquire(estimate_tokens(finding))
                 return await asyncio.to_thread(classify_finding, finding)
             except Exception as exc:
                 logger.warning("AI triage call failed: %s", exc)
