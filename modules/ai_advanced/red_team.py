@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from config import GROQ_MODEL
+
 ENGAGEMENTS_FILE = Path("data/red_team_engagements.json")
 
 ATTACK_CATEGORIES = [
@@ -132,7 +134,7 @@ Generate a detailed red team plan in JSON:
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": GROQ_MODEL,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.4,
                     "max_tokens": 1200,

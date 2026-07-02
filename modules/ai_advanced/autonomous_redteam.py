@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+from config import GROQ_MODEL
+
 DATA_FILE = Path("data/autonomous_rt_sessions.json")
 
 # ── Attack Phase Definitions ──────────────────────────────────────────────────
@@ -319,7 +321,7 @@ Provide a concise attack analysis in JSON:
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json={
-                    "model": "llama-3.3-70b-versatile",
+                    "model": GROQ_MODEL,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3, "max_tokens": 600,
                 },
