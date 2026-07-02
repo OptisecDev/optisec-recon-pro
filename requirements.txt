@@ -57,7 +57,7 @@ requests-cache>=1.2.0
 #   Ensure ~/bin is in PATH: export PATH="$HOME/bin:$PATH"
 # NOTE: theHarvester is not on PyPI (the pypi package is a stub) — install via:
 #   pip install git+https://github.com/laramies/theHarvester.git
-theHarvester>=4.11.1
+git+https://github.com/laramies/theHarvester.git
 maigret>=0.6.1
 holehe>=1.61
 
