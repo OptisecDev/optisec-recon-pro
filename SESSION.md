@@ -255,6 +255,21 @@
 
 ---
 
+## قرار: أعمدة WAF Classifier (waf_detected / verdict) - نهائي
+
+- العمودان `waf_detected` (`String(50)`) و`verdict` (`String(30)`) في `web/models.py` (السطر 78-79، ضمن model الـ`Finding`) هما التصميم النهائي المعتمد — تم التحقق منهما مقابل الكود الحالي عند كتابة هذه الملاحظة (2026-07-02).
+- `waf_detected` يخزن اسم الـWAF المكتشف كنص حر (مثل `"Cloudflare"` أو `"Akamai"` أو `None`) — وليس boolean.
+- `verdict` يخزن نصاً حراً (`String(30)`) يستخدمه `modules/vuln/waf_aware_classifier.py`. **تصحيح مهم**: القيم الفعلية المستخدمة في الإنتاج حالياً هي **خمس قيم** وليست ثلاثاً:
+  - لكشف XSS (`classify()`/`classify_response()`): `CONFIRMED`، `WAF_BLOCKED`، `ENDPOINT_INVALID`، `ENCODED_SAFE`
+  - للفحوصات القائمة على التوقيع/الفحص الأعمى (SQLi/LFI/SSRF عبر `classify_signature_match()`/`classify_blind_signal()`): `CONFIRMED`، `WAF_BLOCKED`، `ENDPOINT_INVALID`، `INCONCLUSIVE` (بدل `ENCODED_SAFE` هنا)
+  - فقط `CONFIRMED` يُفعّل `should_report=True` ويُحفظ كـFinding مؤكد
+- تصميم بديل بـ`boolean` (بدل نص لاسم الـWAF) + enum ثابت بأربع قيم (`CONFIRMED_EXPLOITABLE`، `WAF_BLOCKED`، `ENDPOINT_INVALID`، `ENCODED_SAFE`) كان مطروحاً كبديل نظري، لكنه **غير معتمد ولم يُطبَّق أبداً** — والتصميم الحالي (نص حر لكلا العمودين) هو الوحيد الموجود في الكود والمطبَّق على البيانات الحية فعلياً، ويعطي معلومة أدق (اسم الـWAF الفعلي بدل true/false، وتمييز `ENDPOINT_INVALID`/`ENCODED_SAFE`/`INCONCLUSIVE` كحالات منفصلة بدل دمجها).
+- أي عمل مستقبلي على هذا الموديول يجب أن يبني على القيم الحقيقية الموجودة في `waf_aware_classifier.py` (`CONFIRMED`/`WAF_BLOCKED`/`ENDPOINT_INVALID`/`ENCODED_SAFE`/`INCONCLUSIVE` حسب نوع الفحص) — **وليس** على القيم الثلاث أو الأربع المذكورة في أي طلب سابق يفترض عكس ذلك.
+- migration script: `web/migrate_add_finding_waf_columns.py` (idempotent، يدعم SQLite وPostgres) - مطبّق مسبقاً على قاعدة البيانات الحية، لا حاجة لإعادة تشغيله.
+- هذه ملاحظة توثيقية فقط — لم يُعدَّل أي كود أو schema في قاعدة البيانات ضمن هذه المهمة.
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
