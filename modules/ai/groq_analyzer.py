@@ -94,11 +94,12 @@ Respond with ONLY a JSON object with these fields:
   "confidence": 0.0 to 1.0
 }}
 
-Arabic command examples:
-- "افحص example.com عن ثغرات XSS" → action: xss, target: example.com
-- "اجمع النطاقات الفرعية لـ tesla.com" → action: subdomain, target: tesla.com
-- "ابدأ فحص شامل" → action: full_scan
-- "أضف الهدف hackerone.com" → action: add_target, target: hackerone.com"""
+Examples:
+- input "افحص example.com عن ثغرات XSS" -> {{"action": "xss", "target": "example.com", "scan_types": ["xss"], "language": "ar", "confidence": 0.95}}
+- input "Scan tesla.com for XSS and SQLi vulnerabilities" -> {{"action": "full_scan", "target": "tesla.com", "scan_types": ["xss", "sqli"], "language": "en", "confidence": 0.95}}
+- input "اجمع النطاقات الفرعية لـ tesla.com" -> {{"action": "subdomain", "target": "tesla.com", "scan_types": [], "language": "ar", "confidence": 0.95}}
+- input "ابدأ فحص شامل" -> {{"action": "full_scan", "target": "", "scan_types": [], "language": "ar", "confidence": 0.95}}
+- input "أضف الهدف hackerone.com" -> {{"action": "add_target", "target": "hackerone.com", "scan_types": [], "language": "ar", "confidence": 0.95}}"""
 
     try:
         client = _client()
@@ -109,6 +110,11 @@ Arabic command examples:
             max_tokens=256,
             temperature=0.1,
             response_format={"type": "json_object"},
+            # openai/gpt-oss-120b intermittently rejects this call with an
+            # HTTP 400 json_validate_failed when scan_types has 2+ items
+            # (observed ~12-50% depending on input language); more attempts
+            # than the shared default drive residual failure near zero.
+            retry_delays=(1, 2, 4, 8),
         )
         content = response.choices[0].message.content.strip()
         try:
