@@ -15,7 +15,7 @@ import logging
 from config import GROQ_CONCURRENCY_LIMIT, GROQ_MODEL
 from modules.ai.groq_analyzer import _client
 from modules.ai.groq_client_utils import call_groq_sync_with_retry
-from modules.ai.rate_limiter import TokenBucketLimiter, estimate_tokens
+from modules.ai.rate_limiter import TokenBucketLimiter, TPDExhaustedException, estimate_tokens
 
 logger = logging.getLogger("ai.triage_engine")
 
@@ -69,6 +69,14 @@ def _fallback(reason: str) -> dict:
     }
 
 
+def _tpd_fallback(reset_time_iso: str) -> dict:
+    return {
+        "triage_verdict": "NEEDS_MANUAL_REVIEW",
+        "triage_confidence": 0.0,
+        "triage_reason": f"Daily token quota (TPD) exhausted. Resets at {reset_time_iso}.",
+    }
+
+
 def classify_finding(finding: dict) -> dict:
     """Classify a single scanner finding via Groq. Never raises — falls back to NEEDS_MANUAL_REVIEW."""
     try:
@@ -115,7 +123,7 @@ def classify_finding(finding: dict) -> dict:
 
 async def classify_findings_batch(
     findings: list[dict], concurrency_limit: int | None = None
-) -> list[dict]:
+) -> tuple[list[dict], dict]:
     """Classify multiple findings concurrently, preserving input order.
 
     classify_finding itself is a sync call (sync Groq client), so each call
@@ -125,23 +133,59 @@ async def classify_findings_batch(
     returns on error.
 
     A TokenBucketLimiter shared across the whole batch is a second, separate
-    layer: it caps how many tokens/minute the batch spends, which is what
-    Groq's account-level TPM cap actually enforces — a low concurrency limit
-    alone doesn't stop the batch from exceeding TPM if each call is small
-    and fast. Concurrency and token-rate are independent constraints, so the
-    semaphore's behavior above is untouched.
+    layer: it caps how many tokens/minute (TPM) and tokens/day (TPD) the
+    batch spends, which is what Groq's account-level caps actually enforce —
+    a low concurrency limit alone doesn't stop the batch from exceeding
+    either if each call is small and fast. Concurrency and token-rate are
+    independent constraints, so the semaphore's behavior above is untouched.
+
+    TPM and TPD exhaustion are handled differently on purpose. TPM resolves
+    in seconds-to-minutes, so TokenBucketLimiter.acquire() waits it out
+    (dynamic sleep) exactly as before. TPD resolves in hours, so waiting is
+    unacceptable — the first TPDExhaustedException seen here immediately
+    stops the whole batch from making further Groq calls: every finding not
+    already in flight (including the one that just hit the exception) gets
+    NEEDS_MANUAL_REVIEW with the TPD reset time, with no retry. Findings
+    that already completed successfully before that point keep their
+    results untouched.
+
+    Returns (results, summary) where results is the per-finding list in
+    input order (same shape as before) and summary is:
+    {"succeeded": int, "deferred_tpd": int, "tpd_reset_time": str | None}.
     """
     limit = concurrency_limit if concurrency_limit is not None else GROQ_CONCURRENCY_LIMIT
     semaphore = asyncio.Semaphore(limit)
     rate_limiter = TokenBucketLimiter()
 
+    tpd_exhausted = asyncio.Event()
+    tpd_reset_time: list[str] = []
+    counts = {"succeeded": 0, "deferred_tpd": 0}
+
     async def _classify_one(finding: dict) -> dict:
         async with semaphore:
+            if tpd_exhausted.is_set():
+                counts["deferred_tpd"] += 1
+                return _tpd_fallback(tpd_reset_time[0])
             try:
                 await rate_limiter.acquire(estimate_tokens(finding))
-                return await asyncio.to_thread(classify_finding, finding)
+            except TPDExhaustedException as exc:
+                if not tpd_exhausted.is_set():
+                    tpd_reset_time.append(exc.reset_time_iso)
+                    tpd_exhausted.set()
+                counts["deferred_tpd"] += 1
+                return _tpd_fallback(tpd_reset_time[0])
+            try:
+                result = await asyncio.to_thread(classify_finding, finding)
+                counts["succeeded"] += 1
+                return result
             except Exception as exc:
                 logger.warning("AI triage call failed: %s", exc)
                 return _fallback(str(exc))
 
-    return await asyncio.gather(*(_classify_one(f) for f in findings))
+    results = list(await asyncio.gather(*(_classify_one(f) for f in findings)))
+    summary = {
+        "succeeded": counts["succeeded"],
+        "deferred_tpd": counts["deferred_tpd"],
+        "tpd_reset_time": tpd_reset_time[0] if tpd_reset_time else None,
+    }
+    return results, summary

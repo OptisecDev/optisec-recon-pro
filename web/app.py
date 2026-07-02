@@ -1420,7 +1420,15 @@ async def _run_scan_task(
         results["vulnerabilities"] = all_vulns
 
         try:
-            triage_results = await classify_findings_batch(all_vulns)
+            triage_results, triage_summary = await classify_findings_batch(all_vulns)
+            if triage_summary["deferred_tpd"]:
+                logger.warning(
+                    "AI triage batch hit daily token quota (TPD): %s succeeded, "
+                    "%s deferred, resets at %s",
+                    triage_summary["succeeded"],
+                    triage_summary["deferred_tpd"],
+                    triage_summary["tpd_reset_time"],
+                )
         except Exception as exc:
             logger.warning("AI triage batch failed: %s", exc)
             triage_results = [None] * len(all_vulns)
