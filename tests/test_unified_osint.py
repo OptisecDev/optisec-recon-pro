@@ -13,6 +13,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import modules.osint.unified_engine as unified_engine_module
 from modules.osint.unified_engine import (
     detect_target_type,
     search_unified,
@@ -176,8 +177,60 @@ class TestParsers:
 # ── Unified search (no external tools required) ───────────────────────────────
 
 class TestSearchUnified:
+    # search_unified() dispatches to real subprocess/HTTP sources. amass and
+    # maigret alone carry documented worst-case budgets of 120s each (see
+    # _TOOL_TIMEOUTS in unified_engine.py), and since amass happens to be
+    # installed on this box, it used to run a genuine live passive enum for
+    # real here — making these tests take minutes and look hung, in direct
+    # contradiction of this file's own "no real network calls, no external
+    # tools required" docstring. Stub every dispatched source so dispatch/
+    # aggregation — what's actually under test in this class — stays fast
+    # and deterministic regardless of what happens to be installed on the
+    # machine running the suite; each source's own parsing logic already has
+    # its own test (TestParsers above) or its own dedicated test module.
+    _SOURCE_FUNCS = {
+        "_run_amass": "amass",
+        "_run_theharvester": "theHarvester",
+        "_run_crtsh": "crtsh",
+        "_run_wayback": "wayback",
+        "_run_dns_full": "dns_full",
+        "_run_whois": "whois",
+        "_run_network_intel": "network_intel",
+        "_run_darkweb_intel": "darkweb_intel",
+        "_run_virustotal": "virustotal",
+        "_run_urlscan": "urlscan",
+        "_run_securitytrails": "securitytrails",
+        "_run_fullhunt": "fullhunt",
+        "_run_google_safebrowsing": "google_safebrowsing",
+        "_run_holehe": "holehe",
+        "_run_leakcheck": "leakcheck",
+        "_run_maigret": "maigret",
+        "_run_abuseipdb": "abuseipdb",
+    }
+
+    # Once every source above is stubbed, search_unified() should resolve
+    # almost instantly. This is a defensive ceiling, not the expected
+    # runtime — if it's ever hit, a source was added to search_unified()
+    # without a matching stub in _SOURCE_FUNCS and is making a real call.
+    _TEST_TIMEOUT = 30
+
+    @pytest.fixture(autouse=True)
+    def _stub_all_sources(self, monkeypatch):
+        for fn_name, source in self._SOURCE_FUNCS.items():
+            async def _stub(*_args, _source=source, **_kwargs):
+                return {"source": _source, "available": True, "results": []}
+            monkeypatch.setattr(unified_engine_module, fn_name, _stub)
+
     def _run(self, coro):
-        return asyncio.run(coro)
+        try:
+            return asyncio.run(asyncio.wait_for(coro, timeout=self._TEST_TIMEOUT))
+        except asyncio.TimeoutError:
+            pytest.fail(
+                f"search_unified() did not return within {self._TEST_TIMEOUT}s even "
+                "with every source stubbed in _SOURCE_FUNCS — check whether a new "
+                "source was added to search_unified() without a matching stub here, "
+                "so it's making a real subprocess/network call."
+            )
 
     def test_domain_returns_correct_structure(self):
         result = self._run(
