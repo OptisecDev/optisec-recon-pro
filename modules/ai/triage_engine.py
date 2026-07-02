@@ -15,7 +15,12 @@ import logging
 from config import GROQ_CONCURRENCY_LIMIT, GROQ_MODEL
 from modules.ai.groq_analyzer import _client
 from modules.ai.groq_client_utils import call_groq_sync_with_retry
-from modules.ai.rate_limiter import TokenBucketLimiter, TPDExhaustedException, estimate_tokens
+from modules.ai.rate_limiter import (
+    TokenBucketLimiter,
+    TPDExhaustedException,
+    estimate_tokens,
+    parse_tpd_state_from_error,
+)
 
 logger = logging.getLogger("ai.triage_engine")
 
@@ -77,8 +82,15 @@ def _tpd_fallback(reset_time_iso: str) -> dict:
     }
 
 
-def classify_finding(finding: dict) -> dict:
-    """Classify a single scanner finding via Groq. Never raises — falls back to NEEDS_MANUAL_REVIEW."""
+def classify_finding(finding: dict, *, _capture_exception: list[BaseException] | None = None) -> dict:
+    """Classify a single scanner finding via Groq. Never raises — falls back to NEEDS_MANUAL_REVIEW.
+
+    `_capture_exception` is internal-only: when classify_findings_batch passes
+    a list here, the exception that triggered the fallback (if any) is
+    appended to it, so the caller can inspect a real Groq error (e.g. to
+    detect and seed real TPD state) without changing this function's
+    never-raises contract for any other caller.
+    """
     try:
         prompt = _build_prompt(finding)
         client = _client()
@@ -117,6 +129,8 @@ def classify_finding(finding: dict) -> dict:
             "triage_reason": reason,
         }
     except Exception as exc:
+        if _capture_exception is not None:
+            _capture_exception.append(exc)
         logger.warning("AI triage call failed: %s", exc)
         return _fallback(str(exc))
 
@@ -149,6 +163,19 @@ async def classify_findings_batch(
     that already completed successfully before that point keep their
     results untouched.
 
+    TokenBucketLimiter's TPD window only tracks *this batch's own* estimated
+    spend, starting from 0 — it has no way to know the real account is
+    already near/at its daily cap from usage outside this process. Without
+    more, that means an account already near TPD externally would sail past
+    every local acquire() check and hit real 429s one by one, each paying
+    the slow retry-then-fallback path individually (confirmed live). To
+    close that gap, the first time a real Groq call here fails with a
+    genuine TPD 429 (parsed via parse_tpd_state_from_error), the shared
+    rate_limiter is seeded with the real Used/Limit/retry-after from that
+    error — so the very next finding's acquire() call raises
+    TPDExhaustedException immediately instead of also making a doomed real
+    call.
+
     Returns (results, summary) where results is the per-finding list in
     input order (same shape as before) and summary is:
     {"succeeded": int, "deferred_tpd": int, "tpd_reset_time": str | None}.
@@ -175,12 +202,28 @@ async def classify_findings_batch(
                 counts["deferred_tpd"] += 1
                 return _tpd_fallback(tpd_reset_time[0])
             try:
-                result = await asyncio.to_thread(classify_finding, finding)
-                counts["succeeded"] += 1
-                return result
+                captured_exception: list[BaseException] = []
+                result = await asyncio.to_thread(
+                    classify_finding, finding, _capture_exception=captured_exception
+                )
             except Exception as exc:
                 logger.warning("AI triage call failed: %s", exc)
                 return _fallback(str(exc))
+
+            if captured_exception:
+                tpd_state = parse_tpd_state_from_error(captured_exception[0])
+                if tpd_state is not None:
+                    reset_dt = await rate_limiter.seed_real_tpd_usage(
+                        tpd_state.used, tpd_state.limit, tpd_state.retry_after_seconds
+                    )
+                    if not tpd_exhausted.is_set():
+                        tpd_reset_time.append(reset_dt.isoformat())
+                        tpd_exhausted.set()
+                    counts["deferred_tpd"] += 1
+                    return _tpd_fallback(tpd_reset_time[0])
+
+            counts["succeeded"] += 1
+            return result
 
     results = list(await asyncio.gather(*(_classify_one(f) for f in findings)))
     summary = {

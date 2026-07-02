@@ -27,9 +27,11 @@ different window sizes:
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from typing import NamedTuple
 
 from config import GROQ_TPD_LIMIT, GROQ_TPM_LIMIT
 
@@ -65,6 +67,68 @@ class TPDExhaustedException(Exception):
         super().__init__(
             f"Daily token quota (TPD) exhausted. Resets at {self.reset_time_iso}."
         )
+
+
+class TPDRealState(NamedTuple):
+    """Real TPD usage parsed from a genuine Groq 429 error, not a local estimate."""
+
+    used: int
+    limit: int
+    retry_after_seconds: float | None
+
+
+_TPD_MESSAGE_RE = re.compile(r"Limit (\d+), Used (\d+), Requested (\d+)")
+_TPD_RETRY_AFTER_TEXT_RE = re.compile(r"try again in (?:(\d+)m)?([\d.]+)s")
+
+
+def parse_tpd_state_from_error(exc: BaseException) -> TPDRealState | None:
+    """Extract real (used, limit, retry_after_seconds) from a Groq TPD 429 error.
+
+    Duck-typed on the groq SDK's error shape (`.status_code`, `.body`,
+    `.response.headers`) rather than importing `groq.RateLimitError` directly,
+    so this doesn't create a hard dependency on the SDK's exception hierarchy.
+    Returns None for anything that isn't recognizably a tokens-per-day 429 —
+    including a TPM 429 (different window, message says "(TPM)"/"per minute"),
+    a plain network error, or any other exception — so callers never seed the
+    TPD tracker from the wrong signal.
+
+    `retry_after_seconds` prefers the numeric `retry-after` response header
+    (seconds, e.g. "407") over parsing Groq's human-readable "Please try again
+    in 6m46.94s" text, since the header is exact and doesn't need regex on
+    prose that could change wording. Falls back to the text if the header is
+    missing, and to None if neither is present/parseable.
+    """
+    if getattr(exc, "status_code", None) != 429:
+        return None
+
+    body = getattr(exc, "body", None)
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    message = error.get("message", "") if isinstance(error, dict) else ""
+    if not message or "(TPD)" not in message:
+        return None
+
+    match = _TPD_MESSAGE_RE.search(message)
+    if not match:
+        return None
+    limit, used, _requested = (int(g) for g in match.groups())
+
+    retry_after_seconds: float | None = None
+    headers = getattr(getattr(exc, "response", None), "headers", None)
+    raw_retry_after = headers.get("retry-after") if headers is not None else None
+    if raw_retry_after is not None:
+        try:
+            retry_after_seconds = float(raw_retry_after)
+        except ValueError:
+            retry_after_seconds = None
+    if retry_after_seconds is None:
+        text_match = _TPD_RETRY_AFTER_TEXT_RE.search(message)
+        if text_match:
+            minutes = int(text_match.group(1)) if text_match.group(1) else 0
+            retry_after_seconds = minutes * 60 + float(text_match.group(2))
+
+    return TPDRealState(used=used, limit=limit, retry_after_seconds=retry_after_seconds)
 
 
 class TokenBucketLimiter:
@@ -113,6 +177,37 @@ class TokenBucketLimiter:
         oldest_ts, _ = self._tpd_events[0]
         seconds_until_reset = max(0.0, (oldest_ts + self.tpd_window_seconds) - now)
         return datetime.now(timezone.utc) + timedelta(seconds=seconds_until_reset)
+
+    async def seed_real_tpd_usage(
+        self, used: int, limit: int, retry_after_seconds: float | None = None
+    ) -> datetime:
+        """Seed the TPD window from a real 429's reported Used/Limit.
+
+        Without this, the tracked TPD window starts at 0 every process/batch
+        and has no way to know the real account is already near/at its daily
+        cap from usage outside this process — every call would then keep
+        hitting real 429s individually instead of failing fast locally (this
+        was confirmed live: an account already near TPD externally sailed
+        straight through the local tracker's `acquire()` checks and hit real
+        429s one by one, each going through the slow retry-then-fallback path
+        instead of the fast TPDExhaustedException path).
+
+        Replaces the tracked window with a single synthetic entry reflecting
+        the real observed usage, timed so the next `acquire()` reproduces
+        Groq's own reported retry-after (when available) instead of this
+        class's own from-zero window-aging guess. Returns the resulting reset
+        time so the caller (which already has this real 429 in hand) doesn't
+        need to duplicate the reset-time computation.
+        """
+        now = time.monotonic()
+        async with self._lock:
+            self.tpd_limit = limit
+            if retry_after_seconds is not None:
+                synthetic_ts = now + retry_after_seconds - self.tpd_window_seconds
+            else:
+                synthetic_ts = now
+            self._tpd_events = deque([(synthetic_ts, used)])
+            return self._tpd_reset_time(now)
 
     async def acquire(self, estimated_tokens: int) -> None:
         """Grant `estimated_tokens` against both windows, or block/raise.

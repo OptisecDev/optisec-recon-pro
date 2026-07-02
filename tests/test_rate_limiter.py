@@ -26,11 +26,44 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 
-from modules.ai.rate_limiter import TokenBucketLimiter, TPDExhaustedException
+from modules.ai.rate_limiter import (
+    TokenBucketLimiter,
+    TPDExhaustedException,
+    parse_tpd_state_from_error,
+)
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+class _FakeResponse:
+    def __init__(self, headers: dict):
+        self.headers = headers
+
+
+class _FakeGroqError(Exception):
+    """Duck-types groq.RateLimitError's shape (status_code/body/response.headers)
+    without importing the groq SDK, matching how parse_tpd_state_from_error
+    inspects real errors."""
+
+    def __init__(self, status_code, body, headers=None):
+        self.status_code = status_code
+        self.body = body
+        self.response = _FakeResponse(headers or {})
+
+
+def _tpd_body(message: str) -> dict:
+    return {"error": {"message": message, "type": "tokens", "code": "rate_limit_exceeded"}}
+
+
+_REAL_TPD_MESSAGE = (
+    "Rate limit reached for model `openai/gpt-oss-120b` in organization "
+    "`org_01khqb3angfebr3xqew9eg055t` service tier `on_demand` on tokens per "
+    "day (TPD): Limit 200000, Used 200000, Requested 942. Please try again "
+    "in 6m46.943999999s. Need more tokens? Upgrade to Dev Tier today at "
+    "https://console.groq.com/settings/billing"
+)
 
 
 def test_tpd_exhaustion_raises_immediately_without_sleeping(monkeypatch):
@@ -87,3 +120,73 @@ def test_tpm_only_exhaustion_still_waits_dynamically_and_succeeds():
     elapsed = time.monotonic() - start
 
     assert elapsed >= 0.05  # actually waited, did not raise or return instantly
+
+
+# ── parse_tpd_state_from_error ──────────────────────────────────────────────
+
+
+def test_parse_tpd_state_prefers_retry_after_header_over_message_text():
+    exc = _FakeGroqError(429, _tpd_body(_REAL_TPD_MESSAGE), headers={"retry-after": "407"})
+    state = parse_tpd_state_from_error(exc)
+    assert state is not None
+    assert state.used == 200000
+    assert state.limit == 200000
+    assert state.retry_after_seconds == 407.0  # header wins over "6m46.94s" in the message
+
+
+def test_parse_tpd_state_falls_back_to_message_text_without_header():
+    exc = _FakeGroqError(429, _tpd_body(_REAL_TPD_MESSAGE), headers={})
+    state = parse_tpd_state_from_error(exc)
+    assert state is not None
+    assert state.used == 200000
+    assert state.limit == 200000
+    assert state.retry_after_seconds == pytest.approx(6 * 60 + 46.943999999, abs=0.01)
+
+
+def test_parse_tpd_state_returns_none_for_non_429():
+    exc = _FakeGroqError(400, _tpd_body(_REAL_TPD_MESSAGE))
+    assert parse_tpd_state_from_error(exc) is None
+
+
+def test_parse_tpd_state_returns_none_for_tpm_message():
+    tpm_message = (
+        "Rate limit reached for model `openai/gpt-oss-120b` on tokens per "
+        "minute (TPM): Limit 8000, Used 8000, Requested 950. Please try "
+        "again in 3.2s."
+    )
+    exc = _FakeGroqError(429, _tpd_body(tpm_message), headers={"retry-after": "3.2"})
+    assert parse_tpd_state_from_error(exc) is None
+
+
+def test_parse_tpd_state_returns_none_for_unrelated_exception():
+    assert parse_tpd_state_from_error(ValueError("boom")) is None
+
+
+# ── seed_real_tpd_usage ──────────────────────────────────────────────────────
+
+
+def test_seed_real_tpd_usage_makes_next_acquire_raise_immediately_without_sleep(monkeypatch):
+    def fail_if_slept(*_args, **_kwargs):
+        raise AssertionError("must not sleep once TPD has been seeded from a real 429")
+
+    monkeypatch.setattr(asyncio, "sleep", fail_if_slept)
+
+    # Fresh limiter, no local usage tracked yet -- simulates a process that
+    # just started but whose real account is already maxed out externally.
+    limiter = TokenBucketLimiter(limit=8000, window_seconds=60.0, tpd_limit=200000, tpd_window_seconds=86400.0)
+
+    reset_dt = _run(limiter.seed_real_tpd_usage(used=200000, limit=200000, retry_after_seconds=300.0))
+
+    before = datetime.now(timezone.utc)
+    with pytest.raises(TPDExhaustedException) as exc_info:
+        _run(limiter.acquire(500))
+    assert (exc_info.value.reset_time - reset_dt).total_seconds() == pytest.approx(0.0, abs=1.0)
+    assert (reset_dt - before).total_seconds() == pytest.approx(300.0, abs=2.0)
+
+
+def test_seed_real_tpd_usage_without_retry_after_still_blocks():
+    limiter = TokenBucketLimiter(limit=8000, window_seconds=60.0, tpd_limit=200000, tpd_window_seconds=86400.0)
+    _run(limiter.seed_real_tpd_usage(used=200000, limit=200000, retry_after_seconds=None))
+
+    with pytest.raises(TPDExhaustedException):
+        _run(limiter.acquire(500))
