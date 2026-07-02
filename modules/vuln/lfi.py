@@ -1,6 +1,7 @@
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode
 from config import DEFAULT_TIMEOUT
+from modules.vuln.waf_aware_classifier import classify_signature_match
 
 LFI_PAYLOADS = [
     "../../../../etc/passwd",
@@ -51,17 +52,25 @@ def scan_lfi(url: str) -> list:
             try:
                 r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
                 body = r.text
-                for indicator in LFI_INDICATORS:
-                    if indicator in body:
-                        findings.append({
-                            "type": "LFI",
-                            "severity": "High",
-                            "url": test_url,
-                            "parameter": param,
-                            "payload": payload,
-                            "evidence": f"LFI indicator: '{indicator}'",
-                        })
-                        break
+                matched_indicator = next((ind for ind in LFI_INDICATORS if ind in body), None)
+                result = classify_signature_match(
+                    r.status_code, r.headers, r.text, matched_indicator,
+                    severity="High", signal_label="LFI indicator",
+                )
+                if result.verdict == "ENDPOINT_INVALID":
+                    break  # path itself is unreachable, no point trying more payloads
+                if result.should_report:
+                    findings.append({
+                        "type": "LFI",
+                        "severity": result.severity,
+                        "url": test_url,
+                        "parameter": param,
+                        "payload": payload,
+                        "evidence": result.reason,
+                        "waf_detected": result.waf_detected,
+                        "verdict": result.verdict,
+                    })
+                    break
             except Exception:
                 continue
 

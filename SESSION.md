@@ -230,6 +230,18 @@
 - `tests/test_sqli.py` — **جديد**: 13 اختبار تكامل لـ`sqli.py` نفسه (error-based/boolean-blind/time-based-blind/forms/scan_sqli end-to-end) عبر `monkeypatch` على `requests.Session.get/post` (بدون شبكة حقيقية)؛ التوقيت للفحص الزمني يُحاكى عبر `monkeypatch` على `sqli.time.time` بدل انتظار فعلي
 - **637/637 اختبار ناجح** على كامل test suite (608 سابق + 16 + 13 جديد) — لا regressions
 
+### ✅ المهمة 12 — تعميم `waf_aware_classifier` على ماسحَي LFI وSSRF
+- لاحظت أن `_error_based_scan` بـSQLi وماسحي LFI/SSRF لهما نفس الشكل تماماً: طلب واحد + بحث عن نص "توقيع" (signature) داخل جسم الاستجابة → فاستخرجت النواة المشتركة بدل تكرارها:
+  - `classify_signature_match(status_code, headers, body, matched_signal, *, severity, signal_label)` — دالة عامة جديدة في `waf_aware_classifier.py`، تقبل `severity`/`signal_label` مخصصين لكل نوع ثغرة (لا يوجد severity واحد موحّد: LFI=High، SQLi/SSRF=Critical)
+  - `classify_error_signature()` (الخاصة بـSQLi، المُستخدمة مسبقاً وبها اختبارات قائمة) أصبحت الآن مجرّد wrapper رقيق فوق `classify_signature_match()` بدل تكرار المنطق — بدون أي كسر توافقية (كل اختبارات SQLi السابقة ما زالت تعمل دون تعديل)
+- `modules/vuln/lfi.py` — عُدّل ليستدعي `classify_signature_match(..., severity="High", signal_label="LFI indicator")` بدل تسجيل أي مؤشر LFI (`root:x:0:0`، `[fonts]`، إلخ) كثغرة مباشرة؛ توقف مبكر عند ENDPOINT_INVALID
+- `modules/vuln/ssrf.py` — نفس الشيء مع `severity="Critical", signal_label="SSRF indicator"`؛ حافظ على المطابقة case-insensitive الأصلية (يقارن `.lower()` قبل تمرير `matched_indicator` للدالة)
+- `web/app.py` لم يحتج تعديلاً (كما في SQLi) — نقطة حفظ الـFinding عامة لأي ماسح
+- `tests/test_waf_aware_classifier.py` — 10 اختبار جديد لـ`classify_signature_match` (severity/label مخصصين، WAF_BLOCKED، ENDPOINT_INVALID يتغلب على تطابق الإشارة، عدم CONFIRMED مع WAF حاضر) + اختبار صريح يثبت أن `classify_error_signature` القديمة ما زالت تُفوّض بشكل صحيح بعد إعادة الهيكلة
+- `tests/test_lfi.py` و`tests/test_ssrf.py` — **جديدان**: 5 + 6 اختبارات تكامل (CONFIRMED حقيقي، تجاهل WAF_BLOCKED، توقف مبكر عند 404/400، لا نتائج بدون إشارة، مطابقة case-insensitive لـSSRF) عبر `monkeypatch` على `requests.Session.get`
+- **658/658 اختبار ناجح** على كامل test suite (637 سابق + 21 جديد) — لا regressions
+- المتبقي من الماسحات القديمة الأسلوب: `open_redirect.py` فقط (لم يُطلب في هذه الجلسة)
+
 ---
 
 ## المهام القادمة (جلسات مستقبلية)
@@ -238,4 +250,4 @@
 - [ ] إضافة email notifications
 - [ ] تحسين أداء الفحوصات الموازية
 - [ ] تفعيل Honeypot فعلياً على بيئة إنتاج معزولة (VPS/حاوية منفصلة) واختبار الالتقاط الحي
-- [ ] تعميم `waf_aware_classifier` على باقي الماسحات المتبقية (LFI/SSRF/Open Redirect) — نفس منطق تقليل false positives (XSS وSQLi أصبحا مُغطّيين)
+- [ ] تعميم `waf_aware_classifier` على `open_redirect.py` — آخر ماسح متبقٍ من نفس المنطق (XSS/SQLi/LFI/SSRF أصبحت مُغطّاة)

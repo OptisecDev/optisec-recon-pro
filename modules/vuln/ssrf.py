@@ -1,6 +1,7 @@
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode
 from config import DEFAULT_TIMEOUT
+from modules.vuln.waf_aware_classifier import classify_signature_match
 
 SSRF_PAYLOADS = [
     "http://127.0.0.1/",
@@ -44,18 +45,26 @@ def scan_ssrf(url: str) -> list:
             test_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(test_params)}"
             try:
                 r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
-                body = r.text
-                for indicator in SSRF_INDICATORS:
-                    if indicator.lower() in body.lower():
-                        findings.append({
-                            "type": "SSRF",
-                            "severity": "Critical",
-                            "url": test_url,
-                            "parameter": param,
-                            "payload": payload,
-                            "evidence": f"SSRF indicator found: '{indicator}'",
-                        })
-                        break
+                body_lower = r.text.lower()
+                matched_indicator = next((ind for ind in SSRF_INDICATORS if ind.lower() in body_lower), None)
+                result = classify_signature_match(
+                    r.status_code, r.headers, r.text, matched_indicator,
+                    severity="Critical", signal_label="SSRF indicator",
+                )
+                if result.verdict == "ENDPOINT_INVALID":
+                    break  # path itself is unreachable, no point trying more payloads
+                if result.should_report:
+                    findings.append({
+                        "type": "SSRF",
+                        "severity": result.severity,
+                        "url": test_url,
+                        "parameter": param,
+                        "payload": payload,
+                        "evidence": result.reason,
+                        "waf_detected": result.waf_detected,
+                        "verdict": result.verdict,
+                    })
+                    break
             except Exception:
                 continue
 

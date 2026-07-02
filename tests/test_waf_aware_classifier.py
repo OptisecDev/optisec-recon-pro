@@ -23,6 +23,7 @@ from modules.vuln.waf_aware_classifier import (
     classify_response,
     classify_error_signature,
     classify_blind_signal,
+    classify_signature_match,
     detect_waf,
 )
 
@@ -343,3 +344,73 @@ def test_blind_signal_not_confirmed_when_waf_present_without_blocking_status():
 
     assert result.verdict != "CONFIRMED"
     assert result.should_report is False
+
+
+# ── classify_signature_match() — generic single-response signature match
+# (shared by SQLi error-based via classify_error_signature, plus LFI/SSRF) ─
+
+def test_signature_match_confirmed_with_custom_severity_and_label():
+    result = classify_signature_match(200, {}, "...", "root:x:0:0", severity="High", signal_label="LFI indicator")
+
+    assert result.verdict == "CONFIRMED"
+    assert result.severity == "High"
+    assert result.should_report is True
+    assert result.waf_detected is None
+    assert "LFI indicator" in result.reason
+    assert "root:x:0:0" in result.reason
+
+
+def test_signature_match_no_match_is_inconclusive():
+    result = classify_signature_match(200, {}, "normal page", None, severity="Critical", signal_label="SSRF indicator")
+
+    assert result.verdict == "INCONCLUSIVE"
+    assert result.should_report is False
+
+
+@pytest.mark.parametrize("status_code", [403, 406, 429])
+def test_signature_match_waf_blocked(status_code):
+    result = classify_signature_match(
+        status_code, {"x-sucuri-id": "1"}, "Access Denied - Sucuri Website Firewall", None,
+        severity="Critical", signal_label="SSRF indicator",
+    )
+
+    assert result.verdict == "WAF_BLOCKED"
+    assert result.severity == "Medium"
+    assert result.should_report is False
+    assert result.waf_detected == "Sucuri"
+
+
+@pytest.mark.parametrize("status_code", [404, 400])
+def test_signature_match_endpoint_invalid(status_code):
+    result = classify_signature_match(status_code, {}, "Not Found", None, severity="High", signal_label="LFI indicator")
+
+    assert result.verdict == "ENDPOINT_INVALID"
+    assert result.should_report is False
+
+
+def test_signature_match_endpoint_invalid_beats_signal_match():
+    result = classify_signature_match(404, {}, "root:x:0:0", "root:x:0:0", severity="High", signal_label="LFI indicator")
+
+    assert result.verdict == "ENDPOINT_INVALID"
+    assert result.should_report is False
+
+
+def test_signature_match_not_confirmed_when_waf_present_even_with_match():
+    result = classify_signature_match(
+        200, {"cf-ray": "abc-DFW"}, "root:x:0:0", "root:x:0:0",
+        severity="High", signal_label="LFI indicator",
+    )
+
+    assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
+    assert result.waf_detected == "Cloudflare"
+
+
+def test_classify_error_signature_still_delegates_correctly():
+    """Backward-compat wrapper must still behave exactly as before the refactor."""
+    result = classify_error_signature(200, {}, "...", "you have an error in your sql syntax")
+
+    assert result.verdict == "CONFIRMED"
+    assert result.severity == "Critical"
+    assert result.should_report is True
+    assert "SQL error signature" in result.reason

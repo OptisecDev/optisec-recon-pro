@@ -200,9 +200,16 @@ def classify_response(response, payload: str) -> ClassificationResult:
     return classify(status_code, headers, body, payload)
 
 
-def classify_error_signature(status_code: int, headers: dict, body: str, matched_error: Optional[str]) -> ClassificationResult:
-    """Classify an error-based SQLi test: a DB error string was (or wasn't)
-    found in the response body of a single request."""
+def classify_signature_match(
+    status_code: int, headers: dict, body: str, matched_signal: Optional[str],
+    *, severity: str = "Critical", signal_label: str = "signature",
+) -> ClassificationResult:
+    """Classify a single-response, signature-in-body test — the shared shape
+    behind SQLi error-based detection, LFI (file-content indicators), and
+    SSRF (internal-service response indicators): a request was made, and the
+    caller already checked whether a known string shows up in the body.
+    `severity`/`signal_label` let each vuln type keep its own wording and
+    severity while sharing the WAF/validity gating logic."""
     waf_vendor = detect_waf(headers, body)
 
     if status_code in INVALID_STATUS_CODES:
@@ -223,13 +230,13 @@ def classify_error_signature(status_code: int, headers: dict, body: str, matched
             reason=f"Blocked by {waf_vendor} (HTTP {status_code})",
         )
 
-    if matched_error and status_code == 200 and not waf_vendor:
+    if matched_signal and status_code == 200 and not waf_vendor:
         return ClassificationResult(
             verdict="CONFIRMED",
-            severity="Critical",
+            severity=severity,
             should_report=True,
             waf_detected=None,
-            reason=f"SQL error signature detected: '{matched_error}'",
+            reason=f"{signal_label} detected: '{matched_signal}'",
         )
 
     return ClassificationResult(
@@ -237,7 +244,17 @@ def classify_error_signature(status_code: int, headers: dict, body: str, matched
         severity=None,
         should_report=False,
         waf_detected=waf_vendor,
-        reason="No conclusive SQL error signature, WAF block, or invalid-endpoint signal detected",
+        reason=f"No conclusive {signal_label.lower()}, WAF block, or invalid-endpoint signal detected",
+    )
+
+
+def classify_error_signature(status_code: int, headers: dict, body: str, matched_error: Optional[str]) -> ClassificationResult:
+    """Classify an error-based SQLi test: a DB error string was (or wasn't)
+    found in the response body of a single request. Thin wrapper over
+    classify_signature_match() kept for backward compatibility."""
+    return classify_signature_match(
+        status_code, headers, body, matched_error,
+        severity="Critical", signal_label="SQL error signature",
     )
 
 
