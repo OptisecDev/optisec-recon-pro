@@ -143,7 +143,7 @@ function renderScanResults(results, target) {
     <div class="tab" data-tab="subs" data-group="results">Subdomains (${subs.length})</div>
     <div class="tab" data-tab="ports-tab" data-group="results">Ports (${openPortsCount})</div>
     <div class="tab" data-tab="ssl-tab" data-group="results">SSL/TLS</div>
-    <div class="tab" data-tab="headers-tab" data-group="results">HTTP Headers${headers ? ' ('+headers.grade+')' : ''}</div>
+    <div class="tab" data-tab="headers-tab" data-group="results">HTTP Headers${headers && !headers.error ? ' ('+headers.grade+')' : ''}</div>
     <div class="tab" data-tab="dns-tab" data-group="results">DNS</div>
     <div class="tab" data-tab="osint-tab" data-group="results">OSINT</div>
   </div>`;
@@ -238,7 +238,9 @@ function renderScanResults(results, target) {
 
   // Security Headers
   html += `<div class="tab-content" data-tab="headers-tab">`;
-  if (headers) {
+  if (headers && headers.error) {
+    html += `<div class="alert alert-error">Headers scan failed: ${esc(headers.error)}</div>`;
+  } else if (headers) {
     const gradeColor = {'A+':'#00d4aa','A':'#00d4aa','B':'#7bc67e','C':'#ffa000','D':'#ff7043','F':'#ff4d4d'}[headers.grade]||'#888';
     html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
       <div style="font-size:48px;font-weight:900;color:${gradeColor}">${esc(headers.grade)}</div>

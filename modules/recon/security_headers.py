@@ -1,7 +1,11 @@
 """HTTP Security Headers Analysis."""
 
+import logging
+
 import requests
 from config import DEFAULT_TIMEOUT
+
+logger = logging.getLogger(__name__)
 
 SECURITY_HEADERS = {
     "Strict-Transport-Security": {
@@ -94,10 +98,16 @@ def check_security_headers(url: str) -> dict:
             break
         except requests.exceptions.ConnectionError as e:
             last_error = e
+            logger.warning("Connection error fetching headers for candidate=%s: %s", candidate, e)
         except Exception as e:
+            logger.error("Unexpected error fetching headers for candidate=%s: %s", candidate, e)
             return {"url": candidate, "error": str(e)}
 
     if resp is None:
+        logger.warning(
+            "All connection attempts failed for headers scan, candidates=%s, last_error=%s",
+            candidates, last_error,
+        )
         return {"url": url, "error": str(last_error)}
 
     status_code = resp.status_code

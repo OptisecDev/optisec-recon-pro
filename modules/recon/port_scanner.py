@@ -1,7 +1,10 @@
 """Fast port scanner using socket — top 100 common ports."""
 
+import logging
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+logger = logging.getLogger(__name__)
 
 TOP_100_PORTS = {
     21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
@@ -47,7 +50,8 @@ def _probe_port(host: str, port: int, timeout: float = 0.8) -> tuple[int, bool, 
             except Exception:
                 pass
             return port, True, banner
-    except Exception:
+    except Exception as e:
+        logger.debug("Port probe failed for %s:%s — %s: %s", host, port, type(e).__name__, e)
         return port, False, ""
 
 
@@ -62,6 +66,7 @@ def scan_ports(
     try:
         ip = socket.gethostbyname(host)
     except Exception as e:
+        logger.error("DNS resolution failed for target=%s (host=%s): %s", target, host, e)
         return {"target": target, "error": f"DNS resolution failed: {e}"}
 
     port_list = ports or list(TOP_100_PORTS.keys())
