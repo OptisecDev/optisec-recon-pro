@@ -1425,6 +1425,8 @@ async def _run_scan_task(
                     parameter=v.get("parameter", ""),
                     payload=v.get("payload", ""),
                     evidence=v.get("evidence", ""),
+                    waf_detected=v.get("waf_detected"),
+                    verdict=v.get("verdict"),
                 ))
             scan = await db.get(Scan, scan_id)
             if scan:

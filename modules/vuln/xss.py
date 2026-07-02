@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlencode, urlparse, parse_qs
 from config import DEFAULT_TIMEOUT
+from modules.vuln.waf_aware_classifier import classify
 
 XSS_PAYLOADS = [
     "<script>alert(1)</script>",
@@ -20,19 +21,6 @@ XSS_PAYLOADS = [
 _MARKERS = ["optisecxss49", "xsstestopti"]
 
 
-def _check_reflection(text: str, payload: str) -> bool:
-    """Check if payload or a key portion is reflected."""
-    tl = text.lower()
-    pl = payload.lower()
-    if pl in tl:
-        return True
-    # Check partial reflection of dangerous parts
-    for frag in ["<script", "onerror=", "onload=", "alert(", "<svg", "<img"]:
-        if frag in pl and frag in tl:
-            return True
-    return False
-
-
 def _scan_url_params(session: requests.Session, url: str) -> list:
     """Test XSS via URL query parameters."""
     findings = []
@@ -49,14 +37,19 @@ def _scan_url_params(session: requests.Session, url: str) -> list:
             test_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(test_params)}"
             try:
                 r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
-                if _check_reflection(r.text, payload):
+                result = classify(r.status_code, r.headers, r.text, payload)
+                if result.verdict == "ENDPOINT_INVALID":
+                    break  # path itself is unreachable, no point trying more payloads
+                if result.should_report:
                     findings.append({
                         "type": "XSS",
-                        "severity": "High",
+                        "severity": result.severity,
                         "url": test_url,
                         "parameter": param,
                         "payload": payload,
-                        "evidence": f"Payload reflected in GET response (HTTP {r.status_code})",
+                        "evidence": f"{result.reason} (HTTP {r.status_code})",
+                        "waf_detected": result.waf_detected,
+                        "verdict": result.verdict,
                     })
                     break
             except Exception:
@@ -101,14 +94,19 @@ def _scan_forms(session: requests.Session, base_url: str) -> list:
                         resp = session.post(form_url, data=test_data, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
                     else:
                         resp = session.get(form_url, params=test_data, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
-                    if _check_reflection(resp.text, payload):
+                    result = classify(resp.status_code, resp.headers, resp.text, payload)
+                    if result.verdict == "ENDPOINT_INVALID":
+                        break
+                    if result.should_report:
                         findings.append({
                             "type": "XSS",
-                            "severity": "High",
+                            "severity": result.severity,
                             "url": form_url,
                             "parameter": param,
                             "payload": payload,
-                            "evidence": f"Payload reflected via {method.upper()} form submission (HTTP {resp.status_code})",
+                            "evidence": f"{result.reason} via {method.upper()} form submission (HTTP {resp.status_code})",
+                            "waf_detected": result.waf_detected,
+                            "verdict": result.verdict,
                         })
                         break
                 except Exception:
@@ -129,14 +127,17 @@ def _scan_headers(session: requests.Session, url: str) -> list:
     for header, value in headers_to_test.items():
         try:
             r = session.get(url, headers={header: value}, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
-            if _check_reflection(r.text, payload):
+            result = classify(r.status_code, r.headers, r.text, payload)
+            if result.should_report:
                 findings.append({
                     "type": "XSS",
-                    "severity": "Medium",
+                    "severity": result.severity,
                     "url": url,
                     "parameter": header,
                     "payload": payload,
-                    "evidence": f"Payload reflected from {header} header (HTTP {r.status_code})",
+                    "evidence": f"{result.reason} from {header} header (HTTP {r.status_code})",
+                    "waf_detected": result.waf_detected,
+                    "verdict": result.verdict,
                 })
         except Exception:
             continue

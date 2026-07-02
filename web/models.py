@@ -73,6 +73,10 @@ class Finding(Base):
     parameter = Column(String(200))
     payload = Column(Text)
     evidence = Column(Text)
+    # Populated by modules/vuln/waf_aware_classifier.py for XSS findings —
+    # see that module for the CONFIRMED/WAF_BLOCKED/ENDPOINT_INVALID/ENCODED_SAFE verdicts.
+    waf_detected = Column(String(50), nullable=True)
+    verdict = Column(String(30), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     scan = relationship("Scan", back_populates="findings")

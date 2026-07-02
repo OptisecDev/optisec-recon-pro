@@ -200,9 +200,31 @@
 
 ---
 
+## المنجز (جلسة 2026-07-02)
+
+### ✅ المهمة 10 — تحسين دقة الكشف: تصنيف XSS الحقيقي مقابل المحجوب بـ WAF
+- الماسح الفعلي هو `modules/vuln/xss.py` (وليس `modules/scanners/xss_scanner.py` كما كان مفترضاً — لا يوجد مسار `modules/scanners/` في هذا المشروع أصلاً)
+- `modules/vuln/waf_aware_classifier.py` — **جديد**: يصنّف كل استجابة اختبار XSS إلى واحدة من 4 حالات بدل تسجيل أي reflection كثغرة مباشرة:
+  - `CONFIRMED` — payload خام غير مرمز + HTTP 200 + لا WAF → severity=High، should_report=True
+  - `WAF_BLOCKED` — HTTP 403/406/429 + توقيع WAF معروف → severity=Medium، should_report=False
+  - `ENDPOINT_INVALID` — HTTP 404/400 → false positive، يُستبعد تلقائياً (ويُنهي محاولة باقي الـpayloads لنفس النقطة فوراً لتوفير الطلبات)
+  - `ENCODED_SAFE` — payload موجود لكن مرمز HTML entities → لا توجد ثغرة
+  - + حالة أمان احتياطية خامسة `INCONCLUSIVE` (should_report=False) لأي استجابة لا تُطابق أياً من الحالات الأربع بوضوح
+  - كشف WAF عبر `detect_waf()`: headers أولاً (الأكثر موثوقية: `cf-ray`، `akamai-grn`، `x-iinfo`، `x-amzn-waf-action`، `x-sucuri-id`، `x-wa-info`)، ثم `server` header tokens، ثم نصوص صفحة الحجب (Cloudflare/Akamai/Imperva/AWS WAF/Sucuri/F5 BIG-IP ASM)
+  - **إصلاح أثناء الاختبار**: كانت علامة Akamai العامة `"access denied"` تتصادم مع صفحات حجب Sucuri (نفس العبارة)، فتُنسب خطأً لـ Akamai — أُزيلت العلامات العامة، أُبقيت فقط `"akamai reference #"` المميزة
+- `modules/vuln/xss.py` — عُدّل ليستدعي `classify()` بدل `_check_reflection()` القديمة في الاستعلامات الثلاثة (URL params / forms / headers)؛ فقط النتائج بـ`should_report=True` تُضاف لقائمة النتائج المُعادة
+- `web/app.py` — نقطة حفظ الـ Finding الفعلية (حول السطر 1420) تمرّر الآن `waf_detected`/`verdict` من نتيجة الماسح إلى الصف المخزّن
+- `web/models.py` — عمودان جديدان على `Finding`: `waf_detected` (String(50), nullable) و`verdict` (String(30), nullable)
+- `web/migrate_add_finding_waf_columns.py` — **جديد**: المشروع لا يستخدم Alembic (`init_db()` يعتمد `create_all` فقط الذي لا يُعدّل جداول موجودة)، فهذا سكريبت مستقل idempotent يضيف العمودين عبر `ALTER TABLE` — يعمل على sqlite (تطوير) و Postgres (إنتاج) على حدٍ سواء. طُبّق فعلياً على `data/optisec.db` الحالي بعد موافقة صريحة (يحتوي بيانات ديمو/ترخيص حقيقية)
+- `tests/test_waf_aware_classifier.py` — **جديد**: 40 اختبار (الحالات الأربع + INCONCLUSIVE، كل موردي WAF عبر header/server-token/body-marker، أولوية ENDPOINT_INVALID فوق أي إشارة WAF، عدم تصنيف CONFIRMED إذا كان WAF حاضراً حتى مع reflection خام وHTTP 200، عمل `classify_response()` مع كائنات بأسلوب `requests.Response` وليس فقط `httpx`) — عبر `httpx.MockTransport` بدون أي اتصال شبكة حقيقي
+- **608/608 اختبار ناجح** على كامل test suite (568 سابق + 40 جديد) — لا regressions
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
 - [ ] إضافة email notifications
 - [ ] تحسين أداء الفحوصات الموازية
 - [ ] تفعيل Honeypot فعلياً على بيئة إنتاج معزولة (VPS/حاوية منفصلة) واختبار الالتقاط الحي
+- [ ] تعميم `waf_aware_classifier` على باقي الماسحات (SQLi/LFI/SSRF/Open Redirect) — نفس منطق تقليل false positives
