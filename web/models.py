@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index, Float
 from sqlalchemy.orm import relationship
 from web.database import Base
 
@@ -77,6 +77,10 @@ class Finding(Base):
     # see that module for the CONFIRMED/WAF_BLOCKED/ENDPOINT_INVALID/ENCODED_SAFE verdicts.
     waf_detected = Column(String(50), nullable=True)
     verdict = Column(String(30), nullable=True)
+    # Populated by the AI Triage Engine (not yet implemented — schema-only for now).
+    triage_verdict = Column(String(30), nullable=True)
+    triage_confidence = Column(Float, nullable=True)
+    triage_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     scan = relationship("Scan", back_populates="findings")
