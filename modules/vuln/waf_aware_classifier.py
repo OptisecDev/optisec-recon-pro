@@ -1,15 +1,23 @@
-"""WAF-aware classification of reflected XSS test responses.
+"""WAF-aware classification of vulnerability-scan test responses.
 
-Turns a raw HTTP response + payload into one of four verdicts so the XSS
-scanner stops treating every reflection as an exploitable vulnerability:
+Turns a raw HTTP response (+ payload/signal) into a verdict so scanners stop
+treating every reflection/error/timing signal as an exploitable
+vulnerability outright. Two families of checks share the same WAF-detection
+core (detect_waf/WAF_SIGNATURES/BLOCKING_STATUS_CODES/INVALID_STATUS_CODES):
 
+XSS reflection — classify()/classify_response(), four verdicts:
   CONFIRMED        raw (unencoded) payload reflected, HTTP 200, no WAF seen
   WAF_BLOCKED       known WAF signature + a blocking status code
   ENDPOINT_INVALID  HTTP 404/400 — nothing was actually tested
   ENCODED_SAFE      payload present only in HTML-entity-encoded form
 
-Only CONFIRMED sets should_report=True; the scanner should persist a
-Finding only in that case.
+SQLi (error-based/blind) — classify_error_signature()/classify_blind_signal(),
+same WAF_BLOCKED/ENDPOINT_INVALID verdicts, but no ENCODED_SAFE equivalent
+(there's no "encoded" form of a DB error string or a timing delay) — an
+unconfirmed signal falls through to INCONCLUSIVE instead.
+
+Only CONFIRMED sets should_report=True; scanners should persist a Finding
+only in that case.
 """
 
 from dataclasses import dataclass
@@ -190,3 +198,97 @@ def classify_response(response, payload: str) -> ClassificationResult:
     headers = dict(getattr(response, "headers", {}) or {})
     body = getattr(response, "text", "") or ""
     return classify(status_code, headers, body, payload)
+
+
+def classify_error_signature(status_code: int, headers: dict, body: str, matched_error: Optional[str]) -> ClassificationResult:
+    """Classify an error-based SQLi test: a DB error string was (or wasn't)
+    found in the response body of a single request."""
+    waf_vendor = detect_waf(headers, body)
+
+    if status_code in INVALID_STATUS_CODES:
+        return ClassificationResult(
+            verdict="ENDPOINT_INVALID",
+            severity=None,
+            should_report=False,
+            waf_detected=waf_vendor,
+            reason=f"HTTP {status_code} — endpoint not reachable/valid, not a real test",
+        )
+
+    if status_code in BLOCKING_STATUS_CODES and waf_vendor:
+        return ClassificationResult(
+            verdict="WAF_BLOCKED",
+            severity="Medium",
+            should_report=False,
+            waf_detected=waf_vendor,
+            reason=f"Blocked by {waf_vendor} (HTTP {status_code})",
+        )
+
+    if matched_error and status_code == 200 and not waf_vendor:
+        return ClassificationResult(
+            verdict="CONFIRMED",
+            severity="Critical",
+            should_report=True,
+            waf_detected=None,
+            reason=f"SQL error signature detected: '{matched_error}'",
+        )
+
+    return ClassificationResult(
+        verdict="INCONCLUSIVE",
+        severity=None,
+        should_report=False,
+        waf_detected=waf_vendor,
+        reason="No conclusive SQL error signature, WAF block, or invalid-endpoint signal detected",
+    )
+
+
+def classify_blind_signal(
+    status_code_a: int, headers_a: dict, body_a: str,
+    status_code_b: int, headers_b: dict, body_b: str,
+    signal_detected: bool, technique: str,
+) -> ClassificationResult:
+    """Classify a boolean- or time-based blind SQLi test: `signal_detected`
+    is the caller's differential (length/status diff, or timing delta past
+    threshold) between two requests (true/false or normal/delayed). Both
+    responses are checked for WAF/invalid-endpoint noise before trusting the
+    differential — a WAF challenge page can easily produce a content-length
+    or timing difference that has nothing to do with SQLi.
+
+    Note: ENDPOINT_INVALID requires *both* responses to be 404/400 — a
+    status-code split (e.g. true=200/false=404) caused by the injected
+    condition is exactly the boolean-based signal being tested for, not
+    proof the endpoint doesn't exist."""
+    if status_code_a in INVALID_STATUS_CODES and status_code_b in INVALID_STATUS_CODES:
+        return ClassificationResult(
+            verdict="ENDPOINT_INVALID",
+            severity=None,
+            should_report=False,
+            waf_detected=detect_waf(headers_a, body_a) or detect_waf(headers_b, body_b),
+            reason=f"HTTP {status_code_a}/{status_code_b} on both requests — endpoint not reachable/valid, not a real test",
+        )
+
+    waf_vendor = detect_waf(headers_a, body_a) or detect_waf(headers_b, body_b)
+    if waf_vendor and (status_code_a in BLOCKING_STATUS_CODES or status_code_b in BLOCKING_STATUS_CODES):
+        return ClassificationResult(
+            verdict="WAF_BLOCKED",
+            severity="Medium",
+            should_report=False,
+            waf_detected=waf_vendor,
+            reason=f"Blocked by {waf_vendor} during {technique} probe",
+        )
+
+    if signal_detected and not waf_vendor:
+        return ClassificationResult(
+            verdict="CONFIRMED",
+            severity="Critical",
+            should_report=True,
+            waf_detected=None,
+            reason=f"{technique} confirmed",
+        )
+
+    return ClassificationResult(
+        verdict="INCONCLUSIVE",
+        severity=None,
+        should_report=False,
+        waf_detected=waf_vendor,
+        reason=f"No conclusive {technique} signal after WAF/validity checks",
+    )

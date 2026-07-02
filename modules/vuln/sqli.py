@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs, urlencode, urljoin
 from config import DEFAULT_TIMEOUT
+from modules.vuln.waf_aware_classifier import classify_error_signature, classify_blind_signal
 
 SQLI_ERROR_PAYLOADS = [
     "'",
@@ -62,17 +63,22 @@ def _error_based_scan(session: requests.Session, parsed, params: dict) -> list:
             try:
                 r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
                 body = r.text.lower()
-                for err in SQL_ERRORS:
-                    if err in body:
-                        findings.append({
-                            "type": "SQL Injection",
-                            "severity": "Critical",
-                            "url": test_url,
-                            "parameter": param,
-                            "payload": payload,
-                            "evidence": f"SQL error signature detected: '{err}'",
-                        })
-                        break
+                matched_error = next((err for err in SQL_ERRORS if err in body), None)
+                result = classify_error_signature(r.status_code, r.headers, r.text, matched_error)
+                if result.verdict == "ENDPOINT_INVALID":
+                    break  # path itself is unreachable, no point trying more payloads
+                if result.should_report:
+                    findings.append({
+                        "type": "SQL Injection",
+                        "severity": result.severity,
+                        "url": test_url,
+                        "parameter": param,
+                        "payload": payload,
+                        "evidence": result.reason,
+                        "waf_detected": result.waf_detected,
+                        "verdict": result.verdict,
+                    })
+                    break
             except Exception:
                 continue
     return findings
@@ -95,14 +101,24 @@ def _blind_scan(session: requests.Session, parsed, params: dict) -> list:
             r_true = session.get(true_url, timeout=DEFAULT_TIMEOUT)
             r_false = session.get(false_url, timeout=DEFAULT_TIMEOUT)
             len_diff = abs(len(r_true.text) - len(r_false.text))
-            if len_diff > 50 and r_true.status_code != r_false.status_code:
+            signal = len_diff > 50 and r_true.status_code != r_false.status_code
+            result = classify_blind_signal(
+                r_true.status_code, r_true.headers, r_true.text,
+                r_false.status_code, r_false.headers, r_false.text,
+                signal, "Boolean-based blind SQLi",
+            )
+            if result.verdict == "ENDPOINT_INVALID":
+                continue  # endpoint itself unreachable, skip time-based too
+            if result.should_report:
                 findings.append({
                     "type": "SQL Injection (Blind)",
-                    "severity": "Critical",
+                    "severity": result.severity,
                     "url": true_url,
                     "parameter": param,
                     "payload": "1 AND 1=1 vs 1 AND 1=2",
-                    "evidence": f"Boolean-based blind: response length differs by {len_diff} bytes between true/false conditions",
+                    "evidence": f"{result.reason}: response length differs by {len_diff} bytes between true/false conditions",
+                    "waf_detected": result.waf_detected,
+                    "verdict": result.verdict,
                 })
                 continue
         except Exception:
@@ -116,22 +132,30 @@ def _blind_scan(session: requests.Session, parsed, params: dict) -> list:
         try:
             normal_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(normal_params)}"
             t0 = time.time()
-            session.get(normal_url, timeout=8)
+            r_normal = session.get(normal_url, timeout=8)
             normal_time = time.time() - t0
 
             sleep_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(sleep_params)}"
             t0 = time.time()
-            session.get(sleep_url, timeout=8)
+            r_sleep = session.get(sleep_url, timeout=8)
             sleep_time = time.time() - t0
 
-            if sleep_time - normal_time >= 2.5:
+            signal = (sleep_time - normal_time) >= 2.5
+            result = classify_blind_signal(
+                r_normal.status_code, r_normal.headers, r_normal.text,
+                r_sleep.status_code, r_sleep.headers, r_sleep.text,
+                signal, "MySQL time-based blind SQLi",
+            )
+            if result.should_report:
                 findings.append({
                     "type": "SQL Injection (Time-Based Blind)",
-                    "severity": "Critical",
+                    "severity": result.severity,
                     "url": sleep_url,
                     "parameter": param,
                     "payload": "1 AND SLEEP(3)--",
-                    "evidence": f"Time-based blind: response delayed {sleep_time:.1f}s vs baseline {normal_time:.1f}s",
+                    "evidence": f"{result.reason}: response delayed {sleep_time:.1f}s vs baseline {normal_time:.1f}s",
+                    "waf_detected": result.waf_detected,
+                    "verdict": result.verdict,
                 })
         except Exception:
             pass
@@ -170,17 +194,22 @@ def _scan_forms(session: requests.Session, base_url: str) -> list:
                 else:
                     resp = session.get(form_url, params=test_data, timeout=DEFAULT_TIMEOUT)
                 body = resp.text.lower()
-                for err in SQL_ERRORS:
-                    if err in body:
-                        findings.append({
-                            "type": "SQL Injection",
-                            "severity": "Critical",
-                            "url": form_url,
-                            "parameter": param,
-                            "payload": payload,
-                            "evidence": f"SQL error in {method.upper()} form: '{err}'",
-                        })
-                        break
+                matched_error = next((err for err in SQL_ERRORS if err in body), None)
+                result = classify_error_signature(resp.status_code, resp.headers, resp.text, matched_error)
+                if result.verdict == "ENDPOINT_INVALID":
+                    break
+                if result.should_report:
+                    findings.append({
+                        "type": "SQL Injection",
+                        "severity": result.severity,
+                        "url": form_url,
+                        "parameter": param,
+                        "payload": payload,
+                        "evidence": f"{result.reason} via {method.upper()} form",
+                        "waf_detected": result.waf_detected,
+                        "verdict": result.verdict,
+                    })
+                    break
             except Exception:
                 continue
     return findings

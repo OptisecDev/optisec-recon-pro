@@ -219,6 +219,17 @@
 - `tests/test_waf_aware_classifier.py` — **جديد**: 40 اختبار (الحالات الأربع + INCONCLUSIVE، كل موردي WAF عبر header/server-token/body-marker، أولوية ENDPOINT_INVALID فوق أي إشارة WAF، عدم تصنيف CONFIRMED إذا كان WAF حاضراً حتى مع reflection خام وHTTP 200، عمل `classify_response()` مع كائنات بأسلوب `requests.Response` وليس فقط `httpx`) — عبر `httpx.MockTransport` بدون أي اتصال شبكة حقيقي
 - **608/608 اختبار ناجح** على كامل test suite (568 سابق + 40 جديد) — لا regressions
 
+### ✅ المهمة 11 — تعميم `waf_aware_classifier` على ماسح SQLi
+- `modules/vuln/waf_aware_classifier.py` — أُضيفت دالتان جديدتان تُعيدان استخدام نفس نواة كشف WAF (`detect_waf`/`WAF_SIGNATURES`/`BLOCKING_STATUS_CODES`/`INVALID_STATUS_CODES`) بدل تكرارها، بلا مفهوم "ترميز HTML" (غير منطقي لـSQLi):
+  - `classify_error_signature(status_code, headers, body, matched_error)` — للفحص القائم على أخطاء SQL الظاهرة في نص الاستجابة (error-based + form scan): CONFIRMED (severity=Critical) فقط عند تطابق نص خطأ SQL + HTTP 200 + لا WAF
+  - `classify_blind_signal(status_a, headers_a, body_a, status_b, headers_b, body_b, signal_detected, technique)` — للفحص الأعمى (boolean-based / time-based)، يفحص **كلا** الاستجابتين بحثاً عن WAF قبل الوثوق بالفارق
+  - **إصلاح أثناء الكتابة/الاختبار**: التصميم الأول جعل `ENDPOINT_INVALID` يتفعّل إذا كانت **أي واحدة** من الاستجابتين 404/400 — لكن انقسام الحالة (مثلاً true=200 / false=404) الناتج عن الشرط المحقون هو **بالضبط** إشارة الـboolean-based blind المطلوب اكتشافها، وليس دليلاً على أن نقطة النهاية معطوبة. صُحّح ليتطلب فشل **كلا** الاستجابتين بنفس الحالة قبل اعتباره ENDPOINT_INVALID
+- `modules/vuln/sqli.py` — عُدّلت الدوال الثلاث (`_error_based_scan`/`_blind_scan`/`_scan_forms`) لاستدعاء الدالتين الجديدتين بدل تسجيل أي إشارة (خطأ SQL / فارق محتوى / تأخير زمني) كثغرة مباشرة؛ فقط `should_report=True` (CONFIRMED) يُضاف للنتائج؛ توقف مبكر عند ENDPOINT_INVALID لتوفير الطلبات (مطابق لسلوك `xss.py`)
+- `web/app.py` لم يحتج تعديلاً — نقطة حفظ الـFinding تقرأ `waf_detected`/`verdict` من قاموس النتيجة بشكل عام لأي نوع ماسح
+- `tests/test_waf_aware_classifier.py` — 16 اختبار جديد لـ`classify_error_signature`/`classify_blind_signal` (CONFIRMED/WAF_BLOCKED/ENDPOINT_INVALID(كلا الطرفين فقط)/INCONCLUSIVE، وتحديداً اختبار صريح لسيناريو "انقسام الحالة 200/404 = تأكيد وليس استبعاد")
+- `tests/test_sqli.py` — **جديد**: 13 اختبار تكامل لـ`sqli.py` نفسه (error-based/boolean-blind/time-based-blind/forms/scan_sqli end-to-end) عبر `monkeypatch` على `requests.Session.get/post` (بدون شبكة حقيقية)؛ التوقيت للفحص الزمني يُحاكى عبر `monkeypatch` على `sqli.time.time` بدل انتظار فعلي
+- **637/637 اختبار ناجح** على كامل test suite (608 سابق + 16 + 13 جديد) — لا regressions
+
 ---
 
 ## المهام القادمة (جلسات مستقبلية)
@@ -227,4 +238,4 @@
 - [ ] إضافة email notifications
 - [ ] تحسين أداء الفحوصات الموازية
 - [ ] تفعيل Honeypot فعلياً على بيئة إنتاج معزولة (VPS/حاوية منفصلة) واختبار الالتقاط الحي
-- [ ] تعميم `waf_aware_classifier` على باقي الماسحات (SQLi/LFI/SSRF/Open Redirect) — نفس منطق تقليل false positives
+- [ ] تعميم `waf_aware_classifier` على باقي الماسحات المتبقية (LFI/SSRF/Open Redirect) — نفس منطق تقليل false positives (XSS وSQLi أصبحا مُغطّيين)

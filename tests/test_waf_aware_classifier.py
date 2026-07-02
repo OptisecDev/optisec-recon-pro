@@ -1,11 +1,13 @@
 """
-Tests for WAF-aware XSS classification (modules/vuln/waf_aware_classifier.py).
+Tests for WAF-aware vulnerability classification
+(modules/vuln/waf_aware_classifier.py).
 
-Covers the four verdicts — CONFIRMED, WAF_BLOCKED, ENDPOINT_INVALID,
-ENCODED_SAFE — plus the INCONCLUSIVE safety-net fallback. No real network
-calls: responses are built via httpx.MockTransport, mirroring the project's
-existing "never hit real APIs in tests" convention (see
-tests/test_darkweb_monitor.py).
+Covers the XSS reflection verdicts — CONFIRMED, WAF_BLOCKED,
+ENDPOINT_INVALID, ENCODED_SAFE — plus the INCONCLUSIVE safety-net fallback,
+and the SQLi error-based/blind classification functions that share the same
+WAF-detection core. No real network calls: responses are built via
+httpx.MockTransport, mirroring the project's existing "never hit real APIs
+in tests" convention (see tests/test_darkweb_monitor.py).
 """
 
 import os
@@ -19,6 +21,8 @@ import pytest
 from modules.vuln.waf_aware_classifier import (
     classify,
     classify_response,
+    classify_error_signature,
+    classify_blind_signal,
     detect_waf,
 )
 
@@ -208,3 +212,134 @@ def test_detect_waf_case_insensitive_headers():
 
 def test_detect_waf_body_marker_case_insensitive():
     assert detect_waf({}, "SORRY, YOU HAVE BEEN BLOCKED") == "Cloudflare"
+
+
+# ── classify_error_signature() — SQLi error-based ────────────────────────
+
+def test_sqli_error_confirmed():
+    result = classify_error_signature(200, {}, "...", "you have an error in your sql syntax")
+
+    assert result.verdict == "CONFIRMED"
+    assert result.severity == "Critical"
+    assert result.should_report is True
+    assert result.waf_detected is None
+
+
+def test_sqli_error_no_match_is_inconclusive():
+    result = classify_error_signature(200, {}, "normal page", None)
+
+    assert result.verdict == "INCONCLUSIVE"
+    assert result.should_report is False
+
+
+@pytest.mark.parametrize("status_code", [403, 406, 429])
+def test_sqli_error_waf_blocked(status_code):
+    result = classify_error_signature(status_code, {"cf-ray": "abc-DFW"}, "Sorry, you have been blocked", None)
+
+    assert result.verdict == "WAF_BLOCKED"
+    assert result.severity == "Medium"
+    assert result.should_report is False
+    assert result.waf_detected == "Cloudflare"
+
+
+@pytest.mark.parametrize("status_code", [404, 400])
+def test_sqli_error_endpoint_invalid(status_code):
+    result = classify_error_signature(status_code, {}, "Not Found", None)
+
+    assert result.verdict == "ENDPOINT_INVALID"
+    assert result.should_report is False
+
+
+def test_sqli_error_endpoint_invalid_beats_error_match():
+    """A stray SQL-error-looking string on a 404 page must not be CONFIRMED."""
+    result = classify_error_signature(404, {}, "you have an error in your sql syntax", "you have an error in your sql syntax")
+
+    assert result.verdict == "ENDPOINT_INVALID"
+    assert result.should_report is False
+
+
+def test_sqli_error_not_confirmed_when_waf_present_even_with_match():
+    result = classify_error_signature(200, {"cf-ray": "abc-DFW"}, "you have an error in your sql syntax", "you have an error in your sql syntax")
+
+    assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
+    assert result.waf_detected == "Cloudflare"
+
+
+# ── classify_blind_signal() — SQLi boolean/time-based blind ─────────────
+
+def test_blind_signal_confirmed():
+    result = classify_blind_signal(
+        200, {}, "true-condition-page",
+        200, {}, "false-condition-page-shorter",
+        True, "Boolean-based blind SQLi",
+    )
+
+    assert result.verdict == "CONFIRMED"
+    assert result.severity == "Critical"
+    assert result.should_report is True
+    assert result.waf_detected is None
+
+
+def test_blind_signal_no_differential_is_inconclusive():
+    result = classify_blind_signal(
+        200, {}, "same page",
+        200, {}, "same page",
+        False, "Boolean-based blind SQLi",
+    )
+
+    assert result.verdict == "INCONCLUSIVE"
+    assert result.should_report is False
+
+
+def test_blind_signal_waf_blocked_on_either_response():
+    result = classify_blind_signal(
+        200, {}, "normal response",
+        403, {"cf-ray": "abc-DFW"}, "Sorry, you have been blocked",
+        True, "MySQL time-based blind SQLi",
+    )
+
+    assert result.verdict == "WAF_BLOCKED"
+    assert result.should_report is False
+    assert result.waf_detected == "Cloudflare"
+
+
+@pytest.mark.parametrize("status_code", [404, 400])
+def test_blind_signal_endpoint_invalid_when_both_responses_fail(status_code):
+    """Only when *both* requests hit the same invalid status is the endpoint
+    itself considered broken, independent of the injected payload."""
+    result = classify_blind_signal(
+        status_code, {}, "Not Found",
+        status_code, {}, "Not Found",
+        True, "Boolean-based blind SQLi",
+    )
+
+    assert result.verdict == "ENDPOINT_INVALID"
+    assert result.should_report is False
+
+
+def test_blind_signal_confirmed_on_status_split_not_misread_as_invalid():
+    """A true=200 / false=404 split caused by the injected condition is the
+    boolean-based signal itself — must be CONFIRMED, not ENDPOINT_INVALID."""
+    result = classify_blind_signal(
+        200, {}, "true-condition-page",
+        404, {}, "Not Found",
+        True, "Boolean-based blind SQLi",
+    )
+
+    assert result.verdict == "CONFIRMED"
+    assert result.should_report is True
+
+
+def test_blind_signal_not_confirmed_when_waf_present_without_blocking_status():
+    """WAF header present but status 200 (not actually blocked) with a real
+    differential should still not be trusted as CONFIRMED — the WAF cookie
+    alone means the target is behind a WAF that could be interfering."""
+    result = classify_blind_signal(
+        200, {"cf-ray": "abc-DFW"}, "true-condition-page",
+        200, {"cf-ray": "abc-DFW"}, "false-condition-page-shorter",
+        True, "Boolean-based blind SQLi",
+    )
+
+    assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
