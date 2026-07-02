@@ -101,6 +101,19 @@ def _parse_narrative_json(content: str | None) -> dict | None:
     try:
         return json.loads(content)
     except json.JSONDecodeError:
+        pass
+
+    # Some models wrap the JSON object in prose despite explicit
+    # instructions and response_format={"type": "json_object"} — recover
+    # the embedded object by slicing from the first "{" to the last "}"
+    # (mirrors the intent of groq_analyzer.py's natural_language_to_command()
+    # fallback for malformed responses).
+    start, end = content.find("{"), content.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        return json.loads(content[start:end + 1])
+    except json.JSONDecodeError:
         return None
 
 
