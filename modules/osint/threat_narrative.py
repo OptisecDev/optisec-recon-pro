@@ -3,10 +3,10 @@ AI Threat Narrative — Groq-generated executive threat report.
 
 Turns raw scan_results + MITRE ATT&CK mapping + CVE intelligence into a
 structured, PTES/OWASP/MITRE-ATT&CK-style narrative for a human reader
-(both English and Arabic). Uses Groq's llama-3.3-70b-versatile
-(modules/ai/groq_analyzer.py's model, reused via config.GROQ_MODEL) the
-same way the rest of the codebase's AI features do — sync client call, no
-network access of its own beyond the Groq API.
+(both English and Arabic). Uses Groq's configured model (config.GROQ_MODEL,
+same model as modules/ai/groq_analyzer.py) the same way the rest of the
+codebase's AI features do — sync client call, no network access of its
+own beyond the Groq API.
 
 This is the only module in the Vulnerability Intelligence feature set
 that involves an LLM; map_service_to_cves() and map_finding_to_attack()
@@ -120,7 +120,7 @@ def _fallback_narrative(error: str) -> dict:
 
 def generate_threat_narrative(scan_results: dict, mitre_mapping: Any, cve_results: Any) -> dict:
     """
-    Ask Groq (llama-3.3-70b-versatile, temperature 0.3, max 2000 tokens)
+    Ask Groq (config.GROQ_MODEL, temperature 0.3, max 2000 tokens)
     to turn `scan_results` + `mitre_mapping` (map_finding_to_attack()/
     generate_attack_path() output) + `cve_results`
     (map_service_to_cves() output) into a structured threat narrative.
