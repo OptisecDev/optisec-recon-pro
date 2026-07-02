@@ -242,6 +242,17 @@
 - **658/658 اختبار ناجح** على كامل test suite (637 سابق + 21 جديد) — لا regressions
 - المتبقي من الماسحات القديمة الأسلوب: `open_redirect.py` فقط (لم يُطلب في هذه الجلسة)
 
+### ✅ المهمة 13 — تعميم `waf_aware_classifier` على ماسح Open Redirect (آخر ماسح متبقٍ)
+- شكل الكشف هنا مختلف: التأكيد يعتمد على حالة **إعادة توجيه 3xx** (301/302/303/307/308) + رأس `Location` وليس HTTP 200 + نص في الجسم — فـ`classify_signature_match()` احتاجت تعميماً إضافياً بدل دالة منفصلة كاملة:
+  - أُضيف بارامتر جديد `expected_status_codes` (افتراضياً `frozenset({200})` — يحافظ على سلوك SQLi/LFI/SSRF دون أي تغيير؛ تحقّق ذلك اختبار صريح `test_signature_match_default_status_200_still_required_when_unset`) يسمح لـOpen Redirect بتمرير `{301,302,303,307,308}` بدلاً من ذلك
+- `modules/vuln/open_redirect.py` — عُدّل ليستدعي `classify_signature_match(..., severity="Medium", signal_label="Open Redirect Location header", expected_status_codes=REDIRECT_STATUS_CODES)`
+  - **إصلاح false-positive حقيقي كان موجوداً في الكود القديم أثناء إعادة الكتابة**: الشرط الأصلي كان `"evil.com" in loc OR (status in 3xx and loc)` — أي أن أي إعادة توجيه 3xx تحمل رأس `Location` **لأي وجهة كانت** (حتى `/login` على نفس الموقع) كانت تُسجَّل كثغرة! أصبح الشرط الآن يتطلب أن يحتوي `Location` فعلياً على العلامة الخارجية (`evil.com`) — لا إشارة = لا تأكيد
+- `web/app.py` لم يحتج تعديلاً
+- `tests/test_waf_aware_classifier.py` — 4 اختبار جديد لـ`expected_status_codes` (تأكيد عبر 302، عدم كسر الافتراضي 200، عدم CONFIRMED بدون تطابق Location، عدم CONFIRMED مع WAF حاضر)
+- `tests/test_open_redirect.py` — **جديد**: 6 اختبار تكامل، أبرزها `test_scan_open_redirect_ignores_same_site_redirect` الذي يثبت إصلاح الـfalse-positive أعلاه
+- **668/668 اختبار ناجح** على كامل test suite (658 سابق + 10 جديد) — لا regressions
+- **الماسحات الخمسة (XSS/SQLi/LFI/SSRF/Open Redirect) أصبحت كلها تستخدم `waf_aware_classifier` الآن** — لا يوجد ماسح متبقٍ من الأسلوب القديم (تسجيل أي إشارة كثغرة مباشرة)
+
 ---
 
 ## المهام القادمة (جلسات مستقبلية)
@@ -250,4 +261,3 @@
 - [ ] إضافة email notifications
 - [ ] تحسين أداء الفحوصات الموازية
 - [ ] تفعيل Honeypot فعلياً على بيئة إنتاج معزولة (VPS/حاوية منفصلة) واختبار الالتقاط الحي
-- [ ] تعميم `waf_aware_classifier` على `open_redirect.py` — آخر ماسح متبقٍ من نفس المنطق (XSS/SQLi/LFI/SSRF أصبحت مُغطّاة)

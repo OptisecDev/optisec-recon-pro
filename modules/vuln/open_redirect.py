@@ -1,6 +1,9 @@
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode
 from config import DEFAULT_TIMEOUT
+from modules.vuln.waf_aware_classifier import classify_signature_match
+
+REDIRECT_STATUS_CODES = frozenset({301, 302, 303, 307, 308})
 
 REDIRECT_PAYLOADS = [
     "https://evil.com",
@@ -39,14 +42,28 @@ def scan_open_redirect(url: str) -> list:
             try:
                 r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
                 loc = r.headers.get("Location", "")
-                if "evil.com" in loc or (r.status_code in (301, 302, 303, 307, 308) and loc):
+                # Only a Location actually pointing at our external marker is
+                # real evidence of an open redirect — any 3xx with *some*
+                # Location (even same-site, e.g. redirecting to /login) is
+                # not, and was a false-positive source in the old check.
+                matched_signal = loc if "evil.com" in loc else None
+                result = classify_signature_match(
+                    r.status_code, r.headers, r.text, matched_signal,
+                    severity="Medium", signal_label="Open Redirect Location header",
+                    expected_status_codes=REDIRECT_STATUS_CODES,
+                )
+                if result.verdict == "ENDPOINT_INVALID":
+                    break  # path itself is unreachable, no point trying more payloads
+                if result.should_report:
                     findings.append({
                         "type": "Open Redirect",
-                        "severity": "Medium",
+                        "severity": result.severity,
                         "url": test_url,
                         "parameter": param,
                         "payload": payload,
                         "evidence": f"Redirect to: {loc} (status {r.status_code})",
+                        "waf_detected": result.waf_detected,
+                        "verdict": result.verdict,
                     })
                     break
             except Exception:

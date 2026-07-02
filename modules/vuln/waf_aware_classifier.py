@@ -203,13 +203,18 @@ def classify_response(response, payload: str) -> ClassificationResult:
 def classify_signature_match(
     status_code: int, headers: dict, body: str, matched_signal: Optional[str],
     *, severity: str = "Critical", signal_label: str = "signature",
+    expected_status_codes=frozenset({200}),
 ) -> ClassificationResult:
-    """Classify a single-response, signature-in-body test — the shared shape
-    behind SQLi error-based detection, LFI (file-content indicators), and
-    SSRF (internal-service response indicators): a request was made, and the
-    caller already checked whether a known string shows up in the body.
-    `severity`/`signal_label` let each vuln type keep its own wording and
-    severity while sharing the WAF/validity gating logic."""
+    """Classify a single-response, signature-in-<something> test — the
+    shared shape behind SQLi error-based detection, LFI (file-content
+    indicators), SSRF (internal-service response indicators), and open
+    redirect (Location header pointing off-site): a request was made, and
+    the caller already checked whether a known string shows up wherever the
+    signal lives for that vuln type. `severity`/`signal_label` let each vuln
+    type keep its own wording and severity; `expected_status_codes` lets it
+    define what "the test actually happened as expected" means — 200 for a
+    reflected body, 3xx for a followed redirect — while sharing the same
+    WAF/validity gating logic."""
     waf_vendor = detect_waf(headers, body)
 
     if status_code in INVALID_STATUS_CODES:
@@ -230,7 +235,7 @@ def classify_signature_match(
             reason=f"Blocked by {waf_vendor} (HTTP {status_code})",
         )
 
-    if matched_signal and status_code == 200 and not waf_vendor:
+    if matched_signal and status_code in expected_status_codes and not waf_vendor:
         return ClassificationResult(
             verdict="CONFIRMED",
             severity=severity,

@@ -414,3 +414,49 @@ def test_classify_error_signature_still_delegates_correctly():
     assert result.severity == "Critical"
     assert result.should_report is True
     assert "SQL error signature" in result.reason
+
+
+# ── classify_signature_match() — expected_status_codes (open redirect) ───
+
+def test_signature_match_confirmed_on_redirect_status():
+    result = classify_signature_match(
+        302, {}, "", "https://evil.com/",
+        severity="Medium", signal_label="Open Redirect Location header",
+        expected_status_codes=frozenset({301, 302, 303, 307, 308}),
+    )
+
+    assert result.verdict == "CONFIRMED"
+    assert result.severity == "Medium"
+    assert result.should_report is True
+
+
+def test_signature_match_default_status_200_still_required_when_unset():
+    """Without overriding expected_status_codes, a 302 must not confirm —
+    this is the exact backward-compat guarantee the SQLi/LFI/SSRF callers rely on."""
+    result = classify_signature_match(302, {}, "", "some signal", severity="Critical", signal_label="signature")
+
+    assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
+
+
+def test_signature_match_redirect_status_but_no_matching_location_is_inconclusive():
+    result = classify_signature_match(
+        302, {}, "", None,
+        severity="Medium", signal_label="Open Redirect Location header",
+        expected_status_codes=frozenset({301, 302, 303, 307, 308}),
+    )
+
+    assert result.verdict == "INCONCLUSIVE"
+    assert result.should_report is False
+
+
+def test_signature_match_redirect_not_confirmed_when_waf_present():
+    result = classify_signature_match(
+        302, {"cf-ray": "abc-DFW"}, "", "https://evil.com/",
+        severity="Medium", signal_label="Open Redirect Location header",
+        expected_status_codes=frozenset({301, 302, 303, 307, 308}),
+    )
+
+    assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
+    assert result.waf_detected == "Cloudflare"
