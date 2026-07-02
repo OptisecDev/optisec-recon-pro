@@ -77,6 +77,8 @@ def _error_based_scan(session: requests.Session, parsed, params: dict) -> list:
                         "evidence": result.reason,
                         "waf_detected": result.waf_detected,
                         "verdict": result.verdict,
+                        "status_code": r.status_code,
+                        "response_body": r.text[:3000],
                     })
                     break
             except Exception:
@@ -119,6 +121,8 @@ def _blind_scan(session: requests.Session, parsed, params: dict) -> list:
                     "evidence": f"{result.reason}: response length differs by {len_diff} bytes between true/false conditions",
                     "waf_detected": result.waf_detected,
                     "verdict": result.verdict,
+                    "status_code": r_true.status_code,
+                    "response_body": r_true.text[:3000],
                 })
                 continue
         except Exception:
@@ -156,6 +160,8 @@ def _blind_scan(session: requests.Session, parsed, params: dict) -> list:
                     "evidence": f"{result.reason}: response delayed {sleep_time:.1f}s vs baseline {normal_time:.1f}s",
                     "waf_detected": result.waf_detected,
                     "verdict": result.verdict,
+                    "status_code": r_sleep.status_code,
+                    "response_body": r_sleep.text[:3000],
                 })
         except Exception:
             pass
@@ -208,6 +214,8 @@ def _scan_forms(session: requests.Session, base_url: str) -> list:
                         "evidence": f"{result.reason} via {method.upper()} form",
                         "waf_detected": result.waf_detected,
                         "verdict": result.verdict,
+                        "status_code": resp.status_code,
+                        "response_body": resp.text[:3000],
                     })
                     break
             except Exception:

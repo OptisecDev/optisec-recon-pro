@@ -69,6 +69,8 @@ def scan_lfi(url: str) -> list:
                         "evidence": result.reason,
                         "waf_detected": result.waf_detected,
                         "verdict": result.verdict,
+                        "status_code": r.status_code,
+                        "response_body": r.text[:3000],
                     })
                     break
             except Exception:

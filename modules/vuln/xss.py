@@ -50,6 +50,8 @@ def _scan_url_params(session: requests.Session, url: str) -> list:
                         "evidence": f"{result.reason} (HTTP {r.status_code})",
                         "waf_detected": result.waf_detected,
                         "verdict": result.verdict,
+                        "status_code": r.status_code,
+                        "response_body": r.text[:3000],
                     })
                     break
             except Exception:
@@ -107,6 +109,8 @@ def _scan_forms(session: requests.Session, base_url: str) -> list:
                             "evidence": f"{result.reason} via {method.upper()} form submission (HTTP {resp.status_code})",
                             "waf_detected": result.waf_detected,
                             "verdict": result.verdict,
+                            "status_code": resp.status_code,
+                            "response_body": resp.text[:3000],
                         })
                         break
                 except Exception:
@@ -138,6 +142,8 @@ def _scan_headers(session: requests.Session, url: str) -> list:
                     "evidence": f"{result.reason} from {header} header (HTTP {r.status_code})",
                     "waf_detected": result.waf_detected,
                     "verdict": result.verdict,
+                    "status_code": r.status_code,
+                    "response_body": r.text[:3000],
                 })
         except Exception:
             continue

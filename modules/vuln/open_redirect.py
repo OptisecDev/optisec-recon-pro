@@ -64,6 +64,8 @@ def scan_open_redirect(url: str) -> list:
                         "evidence": f"Redirect to: {loc} (status {r.status_code})",
                         "waf_detected": result.waf_detected,
                         "verdict": result.verdict,
+                        "status_code": r.status_code,
+                        "response_body": r.text[:3000],
                     })
                     break
             except Exception:
