@@ -19,6 +19,11 @@ WORKDIR /build
 
 COPY requirements.txt .
 
+# git is required to install theHarvester from GitHub (git+https dependency)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install Python packages into /install prefix
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir --prefix=/install -r requirements.txt
