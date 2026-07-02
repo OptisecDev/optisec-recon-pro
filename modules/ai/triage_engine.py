@@ -8,10 +8,11 @@ existing signal, not vulnerability discovery — the model is only ever
 asked to judge evidence that's already in front of it.
 """
 
+import asyncio
 import json
 import logging
 
-from config import GROQ_MODEL
+from config import GROQ_CONCURRENCY_LIMIT, GROQ_MODEL
 from modules.ai.groq_analyzer import _client
 from modules.ai.groq_client_utils import call_groq_sync_with_retry
 
@@ -109,3 +110,28 @@ def classify_finding(finding: dict) -> dict:
     except Exception as exc:
         logger.warning("AI triage call failed: %s", exc)
         return _fallback(str(exc))
+
+
+async def classify_findings_batch(
+    findings: list[dict], concurrency_limit: int | None = None
+) -> list[dict]:
+    """Classify multiple findings concurrently, preserving input order.
+
+    classify_finding itself is a sync call (sync Groq client), so each call
+    is run in a worker thread via asyncio.to_thread; a semaphore caps how
+    many run at once. One finding's failure never affects the others — it
+    just gets the same NEEDS_MANUAL_REVIEW fallback classify_finding already
+    returns on error.
+    """
+    limit = concurrency_limit if concurrency_limit is not None else GROQ_CONCURRENCY_LIMIT
+    semaphore = asyncio.Semaphore(limit)
+
+    async def _classify_one(finding: dict) -> dict:
+        async with semaphore:
+            try:
+                return await asyncio.to_thread(classify_finding, finding)
+            except Exception as exc:
+                logger.warning("AI triage call failed: %s", exc)
+                return _fallback(str(exc))
+
+    return await asyncio.gather(*(_classify_one(f) for f in findings))

@@ -15,6 +15,7 @@ DATA_DIR.mkdir(exist_ok=True)
 # AI
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 GROQ_MODEL = "openai/gpt-oss-120b"
+GROQ_CONCURRENCY_LIMIT = int(os.environ.get("GROQ_CONCURRENCY_LIMIT", "20"))
 
 # Threat Intelligence
 OTX_API_KEY = os.environ.get("OTX_API_KEY", "")

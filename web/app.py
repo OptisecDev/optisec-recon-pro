@@ -54,7 +54,7 @@ from modules.vuln.sqli import scan_sqli
 from modules.vuln.ssrf import scan_ssrf
 from modules.vuln.lfi import scan_lfi
 from modules.vuln.open_redirect import scan_open_redirect
-from modules.ai.triage_engine import classify_finding
+from modules.ai.triage_engine import classify_findings_batch
 from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
@@ -1419,14 +1419,14 @@ async def _run_scan_task(
 
         results["vulnerabilities"] = all_vulns
 
-        async with SessionLocal() as db:
-            for v in all_vulns:
-                triage = None
-                try:
-                    triage = await asyncio.to_thread(classify_finding, v)
-                except Exception as exc:
-                    logger.warning("AI triage failed for finding %r: %s", v.get("type"), exc)
+        try:
+            triage_results = await classify_findings_batch(all_vulns)
+        except Exception as exc:
+            logger.warning("AI triage batch failed: %s", exc)
+            triage_results = [None] * len(all_vulns)
 
+        async with SessionLocal() as db:
+            for v, triage in zip(all_vulns, triage_results):
                 db.add(Finding(
                     scan_id=scan_id, target_id=target_id,
                     vuln_type=v.get("type", "Unknown"),
