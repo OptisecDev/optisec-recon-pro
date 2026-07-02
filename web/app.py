@@ -1,6 +1,7 @@
 import sys
 import os
 import asyncio
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +54,7 @@ from modules.vuln.sqli import scan_sqli
 from modules.vuln.ssrf import scan_ssrf
 from modules.vuln.lfi import scan_lfi
 from modules.vuln.open_redirect import scan_open_redirect
+from modules.ai.triage_engine import classify_finding
 from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
@@ -66,6 +68,8 @@ from web.routers import cve_submission as cve_router
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
+
+logger = logging.getLogger("web.app")
 
 # ─── OpenAPI Tags ─────────────────────────────────────────────────────────────
 
@@ -1417,6 +1421,12 @@ async def _run_scan_task(
 
         async with SessionLocal() as db:
             for v in all_vulns:
+                triage = None
+                try:
+                    triage = await asyncio.to_thread(classify_finding, v)
+                except Exception as exc:
+                    logger.warning("AI triage failed for finding %r: %s", v.get("type"), exc)
+
                 db.add(Finding(
                     scan_id=scan_id, target_id=target_id,
                     vuln_type=v.get("type", "Unknown"),
@@ -1427,6 +1437,9 @@ async def _run_scan_task(
                     evidence=v.get("evidence", ""),
                     waf_detected=v.get("waf_detected"),
                     verdict=v.get("verdict"),
+                    triage_verdict=(triage or {}).get("triage_verdict"),
+                    triage_confidence=(triage or {}).get("triage_confidence"),
+                    triage_reason=(triage or {}).get("triage_reason"),
                 ))
             scan = await db.get(Scan, scan_id)
             if scan:

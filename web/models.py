@@ -73,11 +73,14 @@ class Finding(Base):
     parameter = Column(String(200))
     payload = Column(Text)
     evidence = Column(Text)
-    # Populated by modules/vuln/waf_aware_classifier.py for XSS findings —
-    # see that module for the CONFIRMED/WAF_BLOCKED/ENDPOINT_INVALID/ENCODED_SAFE verdicts.
+    # Populated by modules/vuln/waf_aware_classifier.py for all five scanners
+    # (XSS/SQLi/LFI/SSRF/Open Redirect). verdict is CONFIRMED/WAF_BLOCKED/
+    # ENDPOINT_INVALID plus either ENCODED_SAFE (XSS only) or INCONCLUSIVE
+    # (signature/blind-based scans) — see that module for details.
     waf_detected = Column(String(50), nullable=True)
     verdict = Column(String(30), nullable=True)
-    # Populated by the AI Triage Engine (not yet implemented — schema-only for now).
+    # Populated by modules/ai/triage_engine.py (classify_finding), called from
+    # web/app.py's scan pipeline for every finding before it's persisted.
     triage_verdict = Column(String(30), nullable=True)
     triage_confidence = Column(Float, nullable=True)
     triage_reason = Column(Text, nullable=True)
