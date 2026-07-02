@@ -253,6 +253,33 @@
 - **668/668 اختبار ناجح** على كامل test suite (658 سابق + 10 جديد) — لا regressions
 - **الماسحات الخمسة (XSS/SQLi/LFI/SSRF/Open Redirect) أصبحت كلها تستخدم `waf_aware_classifier` الآن** — لا يوجد ماسح متبقٍ من الأسلوب القديم (تسجيل أي إشارة كثغرة مباشرة)
 
+### ✅ المهمة 14 — JSON mode حقيقي + retry logic لكل استدعاءات Groq API (تحضيراً لتبديل الموديل المهجور)
+- تحقّقت أولاً من توثيق Groq الحالي: `response_format={"type": "json_object"}` مدعوم من **كل** موديلات Groq (وليس فقط بعضها)، ويتطلب فقط ذكر كلمة "json" صراحة في الـsystem أو الـuser prompt — وكل الاستدعاءات الخمسة كانت تذكرها أصلاً
+- `modules/ai/groq_client_utils.py` — **جديد**: دالتا retry مشتركتان `call_groq_sync_with_retry`/`call_groq_async_with_retry` (3 محاولات إجمالي افتراضياً، backoff 1s ثم 2s) تُستخدم من الملفات الخمسة بدل تكرار المنطق؛ تعيد رفع الاستثناء الأخير بعد استنفاد المحاولات فقط، فمعالجة الفشل النهائي في كل موقع استدعاء تبقى كما كانت تماماً
+- استُبدل الاعتماد على regex (`re.search(r'\{.*\}', ...)`) لاستخراج JSON من الاستجابة بـ`json.loads(content)` مباشرة في كل استدعاء يتوقع JSON، بعد إضافة `response_format=json_object`:
+  - `modules/ai/groq_analyzer.py::natural_language_to_command` (الوحيدة من دوال هذا الملف التي تتوقع JSON؛ `analyze_findings`/`summarize_recon` نص حر فقط أُضيف لهما retry بدون response_format)
+  - `modules/osint/threat_narrative.py::generate_threat_narrative`
+  - `modules/ai_advanced/autonomous_redteam.py::_ai_attack_analysis`
+  - `modules/ai_advanced/red_team.py::_ai_generate_plan`
+  - `modules/ai_advanced/zero_day.py::_ai_zero_day_analysis`
+- لا استدعاء استُبعد من json_object mode (كلها مدعومة)
+- `GROQ_MODEL` في `config.py` لم يُمس في هذه المهمة كما طُلب صراحةً
+
+### ✅ المهمة 15 — تبديل الموديل المهجور: `llama-3.3-70b-versatile` → `openai/gpt-oss-120b`
+- تحقّقت من توثيق Groq قبل التنفيذ: الموديل البديل الموصى به رسمياً من Groq بعد إهمال `llama-3.3-70b-versatile`؛ نافذة سياق 131K، يدعم `response_format=json_object` (المشاكل الموثقة في مجتمع Groq تخص تحديداً `json_schema`/structured outputs الصارم، وليس `json_object` المستخدم هنا)، وموديل reasoning لكن الـreasoning content يُرجع افتراضياً في حقل منفصل عن `message.content` لموديلات GPT-OSS — فلا حاجة لأي تعديل على كود القراءة الحالي
+- `config.py` — `GROQ_MODEL = "openai/gpt-oss-120b"`
+- `modules/osint/threat_narrative.py` — تحديث تعليقين توثيقيين (docstrings) كانا يذكران اسم الموديل القديم صراحةً ليشيرا إلى `config.GROQ_MODEL` بدلاً من ذلك
+- تأكدت أنه لا يوجد أي مرجع آخر متبقٍ لاسم الموديل القديم في الكود
+
+### ✅ المهمة 16 — اختبار الملفات الخمسة عبر endpoints حقيقية على السيرفر المحلي + اكتشاف وإصلاح bug حقيقي
+- اختبرت 5 endpoints حقيقية (تسجيل دخول عبر `/demo`، ثم طلبات فعلية تصل Groq API الحي): `POST /ai-security/api/zero-day/predict`، `POST /ai-security/api/red-team/engagements`، `POST /api/nlp` و`POST /api/ai/analyze` (كلاهما من `groq_analyzer.py`)، `POST /api/osint/threat-analysis` (مع `include_ai:true`)، `POST /autonomous-redteam/api/start` — كلها نجحت (`source`/محتوى الاستجابة يؤكدان المرور الفعلي عبر Groq، وليس أي fallback)
+- **اكتُشف bug حقيقي وقابل لإعادة الإنتاج أثناء الاختبار**: Groq يرفض مخرجات `openai/gpt-oss-120b` بخطأ HTTP 400 `json_validate_failed` بمعدل 50-100% تحديداً في `natural_language_to_command` عندما يحتاج `scan_types` لعنصرين أو أكثر (تم عزل المتغير بأكثر من 40 استدعاء API حي لتأكيد السبب والنسبة)
+- **السبب الجذري**: أمثلة الـfew-shot في الـprompt كانت بصيغة نصية حرة (`"input" → action: xss, target: ...`) بدل JSON، وهذا التنسيق يبدو أنه يُشجّع الموديل على إخراج JSON غير سليم عند الحاجة لقائمة متعددة العناصر
+- **الإصلاح** (بعد اختبار عدة صيغ حية لعزل الأثر): إعادة كتابة الأمثلة بصيغة JSON كاملة مع مثال ثنائي اللغة (عربي + إنجليزي) يوضح كلاهما قائمة `scan_types` بعنصرين — خفّض نسبة الفشل من 100%/50% (عربي/إنجليزي) إلى 0%/~12%؛ ولأن نسبة الفشل الإنجليزية المتبقية ليست صفراً، أُضيف بارامتر `retry_delays` اختياري لـ`call_groq_sync_with_retry`/`call_groq_async_with_retry` (الافتراضي يبقى 3 محاولات لبقية المواقع الأربعة دون أي تغيير) واستُخدم `retry_delays=(1,2,4,8)` (5 محاولات) في `natural_language_to_command` تحديداً، ليصبح احتمال الفشل المتبقي ~0.12⁴
+- تم التحقق من الإصلاح مباشرة (6/6 نجاح) وعبر endpoint `/api/nlp` الفعلي (رجع الآن نتيجة الذكاء الاصطناعي `confidence: 0.97` بدل السقوط الصامت السابق لـparser محلي)
+- اختبار موثوقية لبقية الاستدعاءات (`threat_narrative`/`autonomous_redteam`): 6/6 نجاح لكل منهما، بدون أي فشل — المشكلة مقتصرة على `natural_language_to_command`
+- شُغّل test suite بفلترة `-k "groq or nlp or ai"` (96 اختبار ذو صلة من أصل 668) بعد كل هذه التعديلات: **96/96 ناجح** — لا regressions (لم يُشغَّل كامل الـ668 من جديد في هذه المهمة تحديداً)
+
 ---
 
 ## قرار: أعمدة WAF Classifier (waf_detected / verdict) - نهائي
