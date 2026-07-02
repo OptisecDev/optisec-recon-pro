@@ -1563,8 +1563,7 @@ async def scan_ports(request: Request, user: User = Depends(web_user)):
     target = data.get("target", "").strip()
     if not target:
         raise HTTPException(400, "Target is required")
-    from modules.recon.port_scanner import scan_ports as do_scan
-    result = await asyncio.to_thread(do_scan, target)
+    result = await asyncio.to_thread(nmap_scan, target)
     return JSONResponse(result)
 
 

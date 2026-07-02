@@ -1,9 +1,12 @@
+import logging
 import socket
 import subprocess
 import shutil
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # Common ports to check when nmap is unavailable
 COMMON_PORTS = [
@@ -37,8 +40,8 @@ def _check_port(host: str, port: int, timeout: float = 1.5) -> Optional[dict]:
             try:
                 s.settimeout(0.5)
                 banner = s.recv(256).decode("utf-8", errors="ignore").strip()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Banner grab failed for %s:%s — %s: %s", host, port, type(e).__name__, e)
             return {
                 "port": str(port),
                 "protocol": "tcp",
@@ -47,7 +50,8 @@ def _check_port(host: str, port: int, timeout: float = 1.5) -> Optional[dict]:
                 "product": banner[:60] if banner else "",
                 "version": "",
             }
-    except Exception:
+    except Exception as e:
+        logger.debug("Socket-scan probe failed for %s:%s — %s: %s", host, port, type(e).__name__, e)
         return None
 
 
@@ -55,7 +59,8 @@ def socket_scan(target: str) -> dict:
     """Socket-based port scanner used when nmap is not available."""
     try:
         ip = socket.gethostbyname(target)
-    except Exception:
+    except Exception as e:
+        logger.warning("DNS resolution failed for target=%s, using target as-is: %s", target, e)
         ip = target
 
     ports = []
@@ -77,8 +82,9 @@ def socket_scan(target: str) -> dict:
     }
 
 
-def nmap_scan(target: str, flags: str = "-sV --open -T4 --top-ports 1000") -> dict:
+def nmap_scan(target: str, flags: str = "-sT -sV --open -T4 --top-ports 1000") -> dict:
     if not is_nmap_available():
+        logger.warning("nmap binary not found on PATH — falling back to socket scanner for target=%s", target)
         result = socket_scan(target)
         result["note"] = "nmap not found — used socket scanner for common ports"
         return result
@@ -88,15 +94,21 @@ def nmap_scan(target: str, flags: str = "-sV --open -T4 --top-ports 1000") -> di
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0 and not result.stdout:
             # Fall back to socket scan on nmap failure
+            logger.error(
+                "nmap exited with code %s for target=%s, stderr=%s",
+                result.returncode, target, result.stderr[:500],
+            )
             r = socket_scan(target)
             r["note"] = f"nmap error — used socket scanner: {result.stderr[:100]}"
             return r
         return _parse_xml(result.stdout, target)
     except subprocess.TimeoutExpired:
+        logger.warning("nmap scan timed out after 120s for target=%s", target)
         r = socket_scan(target)
         r["note"] = "nmap timed out — used socket scanner"
         return r
     except Exception as e:
+        logger.exception("Unexpected error running nmap for target=%s", target)
         return {"error": str(e), "ports": []}
 
 
@@ -128,7 +140,7 @@ def _parse_xml(xml_output: str, target: str) -> dict:
                     "product": svc.get("product", "") if svc is not None else "",
                     "version": svc.get("version", "") if svc is not None else "",
                 })
-    except ET.ParseError:
-        pass
+    except ET.ParseError as e:
+        logger.error("Failed to parse nmap XML output for target=%s: %s", target, e)
 
     return {**host_info, "ports": ports}
