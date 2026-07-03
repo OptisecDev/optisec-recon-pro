@@ -297,6 +297,22 @@
 
 ---
 
+### ✅ المهمة 17 — إصلاح 429 في AI Analysis (`analyze_findings` / `POST /api/ai/analyze`)
+- المهمة المطلوبة افترضت أن الموديل الحالي `llama-3.3-70b-versatile` (نفس Threat Narrative) — غير صحيح: المهمة 15 (2026-07-02) بدّلت `config.GROQ_MODEL` بالكامل إلى `openai/gpt-oss-120b` لأن الموديل القديم مهجور من Groq، و`threat_narrative.py` يستخدم نفس `config.GROQ_MODEL`. **لم يُغيَّر الموديل** — بقي `openai/gpt-oss-120b`
+- `modules/ai/groq_analyzer.py::analyze_findings`:
+  - البرومبت أصبح يرسل ملخصاً مختصراً (type/severity/parameter فقط) بحد أقصى 5 ثغرات + عدد إجمالي للباقي، بدل JSON كامل بكل evidence لكل الثغرات — هذا هو السبب الأكبر لاستهلاك التوكنز
+  - `max_tokens=400` صراحة (بدل 2048)
+  - `retry_delays=(1,2,4)` + `retry_on` جديد يمنع إعادة المحاولة إذا كان الخطأ 429 يومي (TPD) فعلياً — يُكتشف عبر إعادة استخدام `parse_tpd_state_from_error` الموجودة أصلاً في `rate_limiter.py` بدل تكرار منطق الكشف
+  - `generate_static_summary()` — fallback بدون AI (severity counts + أكثر نوع تكراراً + توصية عامة) يُستخدم إذا فشل Groq نهائياً، بدل إرجاع نص الخطأ الخام
+  - cache بسيط في الذاكرة (`OrderedDict` بحد 200 عنصر) مبني على `sha256(findings+target+lang)` يمنع استدعاء Groq مرتين لنفس نتائج الفحص
+- `modules/ai/rate_limiter.py` — أُضيف `DailyTokenBudget` (تعقّب تقديري بـ`threading.Lock` بدل `asyncio.Lock`، لأن `analyze_findings` دالة sync تُستدعى عبر `asyncio.to_thread` من ثريد عامل وليس event loop — لا يمكنها مشاركة `TokenBucketLimiter` الحالي بأمان عبر الثريدز)، يرفض استباقياً عند تجاوز 90% من `GROQ_TPD_LIMIT` (180000/200000 حالياً)، ورسالة عربية/إنجليزية واضحة بدل خطأ Groq الخام؛ `get_default_daily_budget()` singleton على مستوى العملية. لم يُعدَّل `TokenBucketLimiter`/`triage_engine.py` — بقيا كما هما (تعقّب TPD منفصل لكل batch، غير موحّد مع `analyze_findings`، قرار واعٍ لتفادي تعقيد asyncio.Lock عبر ثريدز)
+- `modules/ai/groq_client_utils.py::call_groq_sync_with_retry` — بارامتر اختياري جديد `retry_on` (افتراضي `None` = إعادة المحاولة على أي استثناء، نفس السلوك القديم تماماً لبقية 4 مواقع الاستدعاء)
+- `tests/test_groq_client_utils.py` — **جديد**: 7 اختبارات لـ`retry_on`/توقيت الـbackoff
+- `tests/test_groq_analyzer.py` — **جديد**: ~19 اختبار (ملخص الثغرات المختصر، `generate_static_summary`، الكاش، رفض ميزانية التوكن اليومية، عدم إعادة المحاولة لخطأ TPD تحديداً مقابل إعادة المحاولة لخطأ TPM عادي)
+- `tests/test_rate_limiter.py` — 9 اختبارات جديدة لـ`DailyTokenBudget`/`estimate_tokens_from_text`/`get_default_daily_budget`
+- **717/717 اختبار ناجح** على كامل test suite (682 سابق + 35 جديد) — لا regressions
+- Commit: `83a0dac` — تم push إلى `origin/master`
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
