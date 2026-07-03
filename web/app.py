@@ -2043,3 +2043,27 @@ async def get_correlation_cluster(
         "generated_at": data.get("generated_at"),
         "otx_enabled":  data.get("otx_enabled"),
     })
+
+
+# ── TEMPORARY — one-off migration trigger, DELETE AFTER USE ──────────────────
+# Render's free plan has no Shell access, so this token-gated endpoint is the
+# only way to run web.migrate_normalize_demo_severity.migrate() on production.
+# Only registered when running on Render (or GROQ_ENV=production) so it never
+# appears in local/dev. Remove this whole block + MIGRATION_SECRET_TOKEN env
+# var once the migration has been run against production.
+if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
+    import secrets as _secrets_compare
+
+    @app.post("/internal/run-migration", include_in_schema=False)
+    async def run_one_off_migration(request: Request):
+        """TEMPORARY endpoint — see block comment above. Delete after use."""
+        expected_token = os.environ.get("MIGRATION_SECRET_TOKEN")
+        provided_token = request.headers.get("X-Migration-Token")
+        if not expected_token or not provided_token or not _secrets_compare.compare_digest(
+            provided_token, expected_token
+        ):
+            raise HTTPException(403, "Forbidden")
+
+        from web.migrate_normalize_demo_severity import migrate as _run_migration
+        counts = await _run_migration()
+        return JSONResponse({"normalized": counts, "total_updated": sum(counts.values())})

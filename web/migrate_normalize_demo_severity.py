@@ -31,7 +31,9 @@ SEVERITY_MAP = {
 }
 
 
-async def migrate():
+async def migrate() -> dict:
+    """Run the backfill and return a dict of {lowercase_severity: rows_updated}."""
+    counts = {}
     async with engine.begin() as conn:
         for lower, title in SEVERITY_MAP.items():
             result = await conn.execute(
@@ -42,10 +44,12 @@ async def migrate():
                 ),
                 {"title": title, "lower": lower},
             )
+            counts[lower] = result.rowcount
             if result.rowcount:
                 print(f"[migrate] normalized {result.rowcount} demo finding(s): '{lower}' -> '{title}'")
             else:
                 print(f"[migrate] no demo findings with severity='{lower}' — skipping")
+    return counts
 
 
 if __name__ == "__main__":
