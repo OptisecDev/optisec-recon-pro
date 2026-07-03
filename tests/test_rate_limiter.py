@@ -27,8 +27,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 
 from modules.ai.rate_limiter import (
+    DailyTokenBudget,
     TokenBucketLimiter,
     TPDExhaustedException,
+    estimate_tokens_from_text,
+    get_default_daily_budget,
     parse_tpd_state_from_error,
 )
 
@@ -190,3 +193,73 @@ def test_seed_real_tpd_usage_without_retry_after_still_blocks():
 
     with pytest.raises(TPDExhaustedException):
         _run(limiter.acquire(500))
+
+
+# ── DailyTokenBudget ──────────────────────────────────────────────────────────
+# Sync, threading.Lock-based counterpart to TokenBucketLimiter's TPD window,
+# for callers (like groq_analyzer.analyze_findings) that run in a worker
+# thread rather than the asyncio event loop.
+
+
+def test_would_exceed_false_when_well_under_the_safe_limit():
+    budget = DailyTokenBudget(limit=200000)
+    assert budget.would_exceed(1000) is False
+
+
+def test_safe_limit_is_ninety_percent_of_the_configured_limit():
+    budget = DailyTokenBudget(limit=200000)
+    assert budget.safe_limit == 180000
+
+
+def test_would_exceed_true_once_recorded_usage_crosses_the_safety_margin():
+    budget = DailyTokenBudget(limit=200000)
+    budget.record(179000)
+    assert budget.would_exceed(500) is False  # 179500 <= 180000
+    assert budget.would_exceed(2000) is True  # 181000 > 180000
+
+
+def test_record_accumulates_across_multiple_calls():
+    budget = DailyTokenBudget(limit=1000, safety_margin=1.0)
+    budget.record(300)
+    budget.record(300)
+    budget.record(300)
+    assert budget.would_exceed(50) is False  # 900 + 50 <= 1000
+    assert budget.would_exceed(150) is True  # 900 + 150 > 1000
+
+
+def test_entries_older_than_the_window_are_pruned(monkeypatch):
+    budget = DailyTokenBudget(limit=1000, window_seconds=86400.0, safety_margin=1.0)
+
+    now = [1_000_000.0]
+    monkeypatch.setattr("modules.ai.rate_limiter.time.monotonic", lambda: now[0])
+
+    budget.record(900)
+    assert budget.would_exceed(200) is True  # still within the 24h window
+
+    now[0] += 86400.0 + 1.0  # advance past the window
+    assert budget.would_exceed(200) is False  # old usage aged out
+
+
+def test_would_exceed_never_raises_and_never_blocks():
+    budget = DailyTokenBudget(limit=100)
+    # A single request far larger than the whole daily limit should just
+    # report True, not raise -- this is a preflight check, not an enforcement
+    # gate that throws.
+    result = budget.would_exceed(10_000)
+    assert result is True
+
+
+def test_get_default_daily_budget_returns_the_same_instance_across_calls():
+    first = get_default_daily_budget()
+    second = get_default_daily_budget()
+    assert first is second
+
+
+def test_estimate_tokens_from_text_uses_four_chars_per_token_heuristic():
+    text = "a" * 800  # 800 chars -> 200 tokens under the 4-chars-per-token rule
+    assert estimate_tokens_from_text(text, completion_tokens=50) == 250
+
+
+def test_estimate_tokens_from_text_respects_minimum_floor():
+    tiny = estimate_tokens_from_text("hi", completion_tokens=0)
+    assert tiny >= 200  # _MIN_ESTIMATED_TOKENS floor, same as estimate_tokens()

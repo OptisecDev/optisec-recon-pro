@@ -27,9 +27,19 @@ T = TypeVar("T")
 
 
 def call_groq_sync_with_retry(
-    func: Callable[..., T], *args: Any, retry_delays: tuple[float, ...] = DEFAULT_RETRY_DELAYS, **kwargs: Any
+    func: Callable[..., T],
+    *args: Any,
+    retry_delays: tuple[float, ...] = DEFAULT_RETRY_DELAYS,
+    retry_on: Callable[[Exception], bool] | None = None,
+    **kwargs: Any,
 ) -> T:
-    """Call a synchronous Groq request function, retrying transient failures."""
+    """Call a synchronous Groq request function, retrying transient failures.
+
+    `retry_on`, if given, is consulted before each retry: when it returns
+    False the exception is raised immediately without waiting out the
+    remaining backoff delays. Defaults to None (retry every exception, the
+    original behavior) so existing callers are unaffected.
+    """
     max_attempts = len(retry_delays) + 1
     last_exc: Exception | None = None
     for attempt in range(max_attempts):
@@ -37,12 +47,14 @@ def call_groq_sync_with_retry(
             return func(*args, **kwargs)
         except Exception as exc:
             last_exc = exc
-            if attempt < len(retry_delays):
+            if attempt < len(retry_delays) and (retry_on is None or retry_on(exc)):
                 logger.warning(
                     "Groq call failed (attempt %d/%d): %s — retrying in %ds",
                     attempt + 1, max_attempts, exc, retry_delays[attempt],
                 )
                 time.sleep(retry_delays[attempt])
+            else:
+                break
     assert last_exc is not None
     raise last_exc
 

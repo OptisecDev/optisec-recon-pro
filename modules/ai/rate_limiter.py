@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -256,3 +257,73 @@ def estimate_tokens(finding: dict) -> int:
     estimated_prompt_tokens = prompt_chars // 4
 
     return max(_MIN_ESTIMATED_TOKENS, estimated_prompt_tokens + _COMPLETION_TOKENS)
+
+
+_DAILY_BUDGET_SAFETY_MARGIN = 0.9  # reject locally at 90% of GROQ_TPD_LIMIT, before Groq itself would 429
+
+
+class DailyTokenBudget:
+    """Thread-safe local estimate of a Groq account's daily (TPD) usage.
+
+    TokenBucketLimiter above does the same 24h-sliding-window accounting,
+    but is asyncio-native (asyncio.Lock, `async def acquire`) for
+    triage_engine's batch/event-loop use. Callers that are plain sync
+    functions run from a worker thread (e.g. groq_analyzer.analyze_findings,
+    invoked via asyncio.to_thread) can't safely share that asyncio.Lock
+    across threads/event loops, so this mirrors the same window+limit logic
+    with threading.Lock instead. `would_exceed` is a preflight check only —
+    it never blocks or raises, it just answers whether recording
+    `estimated_tokens` now would cross the safety margin, so the caller can
+    show a clear message instead of attempting (and failing) the real call.
+    """
+
+    def __init__(
+        self,
+        limit: int | None = None,
+        window_seconds: float = _TPD_WINDOW_SECONDS,
+        safety_margin: float = _DAILY_BUDGET_SAFETY_MARGIN,
+    ):
+        self.limit = limit if limit is not None else GROQ_TPD_LIMIT
+        self.safe_limit = int(self.limit * safety_margin)
+        self.window_seconds = window_seconds
+        self._events: deque[tuple[float, int]] = deque()
+        self._lock = threading.Lock()
+
+    def _prune(self, now: float) -> int:
+        cutoff = now - self.window_seconds
+        while self._events and self._events[0][0] < cutoff:
+            self._events.popleft()
+        return sum(tokens for _, tokens in self._events)
+
+    def would_exceed(self, estimated_tokens: int) -> bool:
+        with self._lock:
+            used = self._prune(time.monotonic())
+            return used + max(1, estimated_tokens) > self.safe_limit
+
+    def record(self, tokens: int) -> None:
+        with self._lock:
+            self._events.append((time.monotonic(), max(1, tokens)))
+
+
+_default_daily_budget: DailyTokenBudget | None = None
+_default_daily_budget_lock = threading.Lock()
+
+
+def get_default_daily_budget() -> DailyTokenBudget:
+    """Process-wide DailyTokenBudget shared by all sync Groq callers that opt in."""
+    global _default_daily_budget
+    if _default_daily_budget is None:
+        with _default_daily_budget_lock:
+            if _default_daily_budget is None:
+                _default_daily_budget = DailyTokenBudget()
+    return _default_daily_budget
+
+
+def estimate_tokens_from_text(text: str, *, completion_tokens: int) -> int:
+    """Rough 4-chars-per-token estimate for prompt text plus a completion budget.
+
+    Same heuristic as estimate_tokens() above, generalized for callers whose
+    prompt shape doesn't match triage_engine's per-finding template (e.g.
+    groq_analyzer's multi-finding analysis prompt).
+    """
+    return max(_MIN_ESTIMATED_TOKENS, len(text) // 4 + completion_tokens)
