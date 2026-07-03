@@ -612,7 +612,8 @@ One-click deployment on [Render.com](https://render.com):
 |----------|----------|-------------|
 | `JWT_SECRET` | ✅ | Random string ≥ 32 characters |
 | `DATABASE_URL` | ✅ | Render PostgreSQL URL (`postgresql+asyncpg://...`) |
-| `FIRST_ADMIN_PASSWORD` | ✅ | Initial admin password |
+| `FIRST_ADMIN_PASSWORD` | ✅ | Initial admin password — set this yourself; if omitted, a random one is generated and written once to a local file (see [SECURITY.md](SECURITY.md)), never to logs |
+| `DEMO_INITIAL_PASSWORD` | Optional | Initial demo account password; the "Try Demo" button bypasses this entirely |
 | `GROQ_API_KEY` | Optional | Enables AI analysis features |
 | `OTX_API_KEY` | Optional | AlienVault OTX threat feed |
 | `HACKERONE_API_TOKEN` | Optional | HackerOne integration |

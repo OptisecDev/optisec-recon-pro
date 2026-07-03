@@ -515,13 +515,33 @@ async def shutdown():
     await stop_honeypots()
 
 
+def _write_initial_credentials_file(role: str, username: str, password: str) -> None:
+    """Persist a freshly auto-generated initial password somewhere other than
+    the logs, since it must never be printed/logged in plaintext. Written
+    outside any logs/ directory with chmod 600; the operator must delete this
+    file manually after the first login — it must not remain on the server.
+    """
+    import stat
+    ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    path = f"/tmp/optisec_initial_creds_{role}_{ts}.txt"
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, stat.S_IRUSR | stat.S_IWUSR)
+    with os.fdopen(fd, "w") as f:
+        f.write(f"role={role}\nusername={username}\npassword={password}\n")
+    logger.warning(
+        f"[OPTISEC] Auto-generated initial {role} password written to {path} "
+        "(chmod 600). Log in once, then delete this file manually — it must "
+        "not be left on the server."
+    )
+
+
 async def _ensure_first_admin():
     async with SessionLocal() as db:
         count = (await db.execute(select(func.count()).select_from(User))).scalar()
         if count == 0:
             import secrets as _secrets
             username = os.environ.get("FIRST_ADMIN_USER", "admin")
-            password = os.environ.get("FIRST_ADMIN_PASSWORD") or (
+            env_password = os.environ.get("FIRST_ADMIN_PASSWORD")
+            password = env_password or (
                 _secrets.token_urlsafe(12) + "!A1"  # meets strength requirements
             )
             email = os.environ.get("FIRST_ADMIN_EMAIL", "admin@optisec.local")
@@ -535,7 +555,9 @@ async def _ensure_first_admin():
             )
             db.add(admin)
             await db.commit()
-            print(f"[OPTISEC] Initial admin created → {username} / {password}")
+            if not env_password:
+                _write_initial_credentials_file("admin", username, password)
+            logger.warning(f"[OPTISEC] Initial admin account created: username={username}")
             log_auth_event("INIT_ADMIN", username, "localhost", True, "first admin created")
 
 
@@ -568,10 +590,14 @@ async def _ensure_demo_account():
         if demo:
             return
 
+        import secrets as _secrets
+        demo_env_password = os.environ.get("DEMO_INITIAL_PASSWORD")
+        demo_password = demo_env_password or (_secrets.token_urlsafe(12) + "!A1")
+
         demo = User(
             username="demo",
             email="demo@optisec.local",
-            password_hash=hash_password("Demo@optisec1"),
+            password_hash=hash_password(demo_password),
             role="analyst",
             api_key=generate_api_key(),
             is_active=True,
@@ -617,7 +643,9 @@ async def _ensure_demo_account():
             ))
 
         await db.commit()
-        print("[OPTISEC] Demo account created → demo / Demo@optisec1")
+        if not demo_env_password:
+            _write_initial_credentials_file("demo", "demo", demo_password)
+        logger.warning("[OPTISEC] Initial demo account created: username=demo")
 
 
 # ─── Exception Handlers ───────────────────────────────────────────────────────
