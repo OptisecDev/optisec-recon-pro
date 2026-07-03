@@ -4,6 +4,12 @@ modules/vuln/waf_aware_classifier.py's classify_signature_match().
 
 No real network calls: requests.Session.get is monkeypatched to a canned
 responder, same convention as tests/test_sqli.py.
+
+Non-CONFIRMED verdicts (WAF_BLOCKED/ENDPOINT_INVALID/INCONCLUSIVE) are now
+retained in the scanner's return value instead of being discarded — only
+web/app.py's include_in_report flag hides them from the client-facing
+report. So these tests assert on the *verdict* of what comes back (never
+CONFIRMED for a blocked/inconclusive probe) rather than `findings == []`.
 """
 
 import os
@@ -52,15 +58,24 @@ def test_scan_lfi_confirms_real_lfi(monkeypatch):
     assert findings[0]["waf_detected"] is None
 
 
-def test_scan_lfi_skips_waf_blocked(monkeypatch):
+def test_scan_lfi_retains_waf_blocked_without_confirming(monkeypatch):
+    calls = []
+
     def responder(url, kwargs):
+        calls.append(url)
         return _FakeResponse(403, {"cf-ray": "abc-DFW"}, "Sorry, you have been blocked")
 
     _patch_session(monkeypatch, responder)
 
     findings = lfi.scan_lfi("https://example.com/view?file=readme.txt")
 
-    assert findings == []
+    # WAF_BLOCKED doesn't stop the scan early (unlike ENDPOINT_INVALID) — all
+    # payloads are still tried — but only the last one is kept as the
+    # retained record, not one row per payload.
+    assert len(calls) == len(lfi.LFI_PAYLOADS)
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "WAF_BLOCKED"
+    assert findings[0]["waf_detected"] == "Cloudflare"
 
 
 def test_scan_lfi_stops_early_on_endpoint_invalid(monkeypatch):
@@ -74,16 +89,18 @@ def test_scan_lfi_stops_early_on_endpoint_invalid(monkeypatch):
 
     findings = lfi.scan_lfi("https://example.com/missing?file=readme.txt")
 
-    assert findings == []
     assert len(calls) == 1  # broke after the first payload instead of trying all of them
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "ENDPOINT_INVALID"
 
 
-def test_scan_lfi_no_signal_yields_no_findings(monkeypatch):
+def test_scan_lfi_no_signal_retained_as_inconclusive(monkeypatch):
     _patch_session(monkeypatch, lambda url, kwargs: _FakeResponse(200, {}, "ordinary page, nothing sensitive"))
 
     findings = lfi.scan_lfi("https://example.com/view?file=readme.txt")
 
-    assert findings == []
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "INCONCLUSIVE"
 
 
 def test_scan_lfi_uses_file_related_param_names():

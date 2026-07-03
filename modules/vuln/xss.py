@@ -31,6 +31,10 @@ def _scan_url_params(session: requests.Session, url: str) -> list:
         params = {"q": ["test"], "search": ["test"], "id": ["1"], "input": ["test"]}
 
     for param in params:
+        # Only the CONFIRMED entry (if any) or the last non-reporting verdict
+        # tried for this param is kept — one row per param, not one per
+        # payload, so retaining WAF_BLOCKED/etc. doesn't multiply findings.
+        pending = None
         for payload in XSS_PAYLOADS:
             test_params = {k: v[0] for k, v in params.items()}
             test_params[param] = payload
@@ -38,24 +42,30 @@ def _scan_url_params(session: requests.Session, url: str) -> list:
             try:
                 r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
                 result = classify(r.status_code, r.headers, r.text, payload)
+                entry = {
+                    "type": "XSS",
+                    "severity": result.severity,
+                    "url": test_url,
+                    "parameter": param,
+                    "payload": payload,
+                    "evidence": f"{result.reason} (HTTP {r.status_code})",
+                    "waf_detected": result.waf_detected,
+                    "verdict": result.verdict,
+                    "status_code": r.status_code,
+                    "response_body": r.text[:3000],
+                }
                 if result.verdict == "ENDPOINT_INVALID":
-                    break  # path itself is unreachable, no point trying more payloads
-                if result.should_report:
-                    findings.append({
-                        "type": "XSS",
-                        "severity": result.severity,
-                        "url": test_url,
-                        "parameter": param,
-                        "payload": payload,
-                        "evidence": f"{result.reason} (HTTP {r.status_code})",
-                        "waf_detected": result.waf_detected,
-                        "verdict": result.verdict,
-                        "status_code": r.status_code,
-                        "response_body": r.text[:3000],
-                    })
+                    pending = entry  # path itself is unreachable, no point trying more payloads
                     break
+                if result.should_report:
+                    findings.append(entry)
+                    pending = None
+                    break
+                pending = entry
             except Exception:
                 continue
+        if pending is not None:
+            findings.append(pending)
     return findings
 
 
@@ -88,6 +98,7 @@ def _scan_forms(session: requests.Session, base_url: str) -> list:
             continue
 
         for param in inputs:
+            pending = None
             for payload in XSS_PAYLOADS[:5]:  # fewer payloads for form scanning
                 test_data = dict(inputs)
                 test_data[param] = payload
@@ -97,24 +108,30 @@ def _scan_forms(session: requests.Session, base_url: str) -> list:
                     else:
                         resp = session.get(form_url, params=test_data, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
                     result = classify(resp.status_code, resp.headers, resp.text, payload)
+                    entry = {
+                        "type": "XSS",
+                        "severity": result.severity,
+                        "url": form_url,
+                        "parameter": param,
+                        "payload": payload,
+                        "evidence": f"{result.reason} via {method.upper()} form submission (HTTP {resp.status_code})",
+                        "waf_detected": result.waf_detected,
+                        "verdict": result.verdict,
+                        "status_code": resp.status_code,
+                        "response_body": resp.text[:3000],
+                    }
                     if result.verdict == "ENDPOINT_INVALID":
+                        pending = entry
                         break
                     if result.should_report:
-                        findings.append({
-                            "type": "XSS",
-                            "severity": result.severity,
-                            "url": form_url,
-                            "parameter": param,
-                            "payload": payload,
-                            "evidence": f"{result.reason} via {method.upper()} form submission (HTTP {resp.status_code})",
-                            "waf_detected": result.waf_detected,
-                            "verdict": result.verdict,
-                            "status_code": resp.status_code,
-                            "response_body": resp.text[:3000],
-                        })
+                        findings.append(entry)
+                        pending = None
                         break
+                    pending = entry
                 except Exception:
                     continue
+            if pending is not None:
+                findings.append(pending)
 
     return findings
 
@@ -132,19 +149,18 @@ def _scan_headers(session: requests.Session, url: str) -> list:
         try:
             r = session.get(url, headers={header: value}, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
             result = classify(r.status_code, r.headers, r.text, payload)
-            if result.should_report:
-                findings.append({
-                    "type": "XSS",
-                    "severity": result.severity,
-                    "url": url,
-                    "parameter": header,
-                    "payload": payload,
-                    "evidence": f"{result.reason} from {header} header (HTTP {r.status_code})",
-                    "waf_detected": result.waf_detected,
-                    "verdict": result.verdict,
-                    "status_code": r.status_code,
-                    "response_body": r.text[:3000],
-                })
+            findings.append({
+                "type": "XSS",
+                "severity": result.severity,
+                "url": url,
+                "parameter": header,
+                "payload": payload,
+                "evidence": f"{result.reason} from {header} header (HTTP {r.status_code})",
+                "waf_detected": result.waf_detected,
+                "verdict": result.verdict,
+                "status_code": r.status_code,
+                "response_body": r.text[:3000],
+            })
         except Exception:
             continue
     return findings

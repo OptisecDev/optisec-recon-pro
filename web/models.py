@@ -79,6 +79,12 @@ class Finding(Base):
     # (signature/blind-based scans) — see that module for details.
     waf_detected = Column(String(50), nullable=True)
     verdict = Column(String(30), nullable=True)
+    # True only when verdict == "CONFIRMED". Every classifier verdict is now
+    # persisted (WAF_BLOCKED/ENDPOINT_INVALID/ENCODED_SAFE/INCONCLUSIVE
+    # included, for bug-bounty evidence and future intelligence), but
+    # client-facing reads (dashboard, PDF report, /api/findings) must filter
+    # on this column to reproduce the pre-existing CONFIRMED-only behavior.
+    include_in_report = Column(Boolean, nullable=False, default=True)
     # Populated by modules/ai/triage_engine.py (classify_finding), called from
     # web/app.py's scan pipeline for every finding before it's persisted.
     triage_verdict = Column(String(30), nullable=True)

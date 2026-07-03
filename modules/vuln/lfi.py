@@ -45,6 +45,10 @@ def scan_lfi(url: str) -> list:
     session.headers["User-Agent"] = "OPTISEC-ReconPro/1.0 (Security Testing)"
 
     for param in file_params:
+        # Only the CONFIRMED entry (if any) or the last non-reporting verdict
+        # tried for this param is kept — one row per param, not one per
+        # payload, so retaining WAF_BLOCKED/etc. doesn't multiply findings.
+        pending = None
         for payload in LFI_PAYLOADS:
             test_params = {k: v[0] for k, v in params.items()}
             test_params[param] = payload
@@ -57,23 +61,29 @@ def scan_lfi(url: str) -> list:
                     r.status_code, r.headers, r.text, matched_indicator,
                     severity="High", signal_label="LFI indicator",
                 )
+                entry = {
+                    "type": "LFI",
+                    "severity": result.severity,
+                    "url": test_url,
+                    "parameter": param,
+                    "payload": payload,
+                    "evidence": result.reason,
+                    "waf_detected": result.waf_detected,
+                    "verdict": result.verdict,
+                    "status_code": r.status_code,
+                    "response_body": r.text[:3000],
+                }
                 if result.verdict == "ENDPOINT_INVALID":
-                    break  # path itself is unreachable, no point trying more payloads
-                if result.should_report:
-                    findings.append({
-                        "type": "LFI",
-                        "severity": result.severity,
-                        "url": test_url,
-                        "parameter": param,
-                        "payload": payload,
-                        "evidence": result.reason,
-                        "waf_detected": result.waf_detected,
-                        "verdict": result.verdict,
-                        "status_code": r.status_code,
-                        "response_body": r.text[:3000],
-                    })
+                    pending = entry  # path itself is unreachable, no point trying more payloads
                     break
+                if result.should_report:
+                    findings.append(entry)
+                    pending = None
+                    break
+                pending = entry
             except Exception:
                 continue
+        if pending is not None:
+            findings.append(pending)
 
     return findings

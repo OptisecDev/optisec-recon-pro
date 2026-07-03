@@ -5,6 +5,12 @@ through modules/vuln/waf_aware_classifier.py's classify_signature_match()
 
 No real network calls: requests.Session.get is monkeypatched to a canned
 responder, same convention as tests/test_sqli.py / test_lfi.py / test_ssrf.py.
+
+Non-CONFIRMED verdicts (WAF_BLOCKED/ENDPOINT_INVALID/INCONCLUSIVE) are now
+retained in the scanner's return value instead of being discarded — only
+web/app.py's include_in_report flag hides them from the client-facing
+report. So these tests assert on the *verdict* of what comes back (never
+CONFIRMED for a blocked/inconclusive probe) rather than `findings == []`.
 """
 
 import os
@@ -56,8 +62,9 @@ def test_scan_open_redirect_confirms_real_redirect(monkeypatch):
 
 def test_scan_open_redirect_ignores_same_site_redirect(monkeypatch):
     """A 3xx with a Location header that does NOT point off-site must not be
-    reported — this was a real false-positive source in the old check
-    (`status in 3xx and loc` regardless of where `loc` pointed)."""
+    confirmed — this was a real false-positive source in the old check
+    (`status in 3xx and loc` regardless of where `loc` pointed). It's still
+    retained as an INCONCLUSIVE record now, just never CONFIRMED."""
     def responder(url, kwargs):
         return _FakeResponse(302, {"Location": "/login"}, "")
 
@@ -65,18 +72,28 @@ def test_scan_open_redirect_ignores_same_site_redirect(monkeypatch):
 
     findings = open_redirect.scan_open_redirect("https://example.com/go?redirect=/home")
 
-    assert findings == []
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "INCONCLUSIVE"
 
 
-def test_scan_open_redirect_skips_waf_blocked(monkeypatch):
+def test_scan_open_redirect_retains_waf_blocked_without_confirming(monkeypatch):
+    calls = []
+
     def responder(url, kwargs):
+        calls.append(url)
         return _FakeResponse(403, {"cf-ray": "abc-DFW"}, "Sorry, you have been blocked")
 
     _patch_session(monkeypatch, responder)
 
     findings = open_redirect.scan_open_redirect("https://example.com/go?redirect=/home")
 
-    assert findings == []
+    # WAF_BLOCKED doesn't stop the scan early (unlike ENDPOINT_INVALID) — all
+    # payloads are still tried — but only the last one is kept as the
+    # retained record, not one row per payload.
+    assert len(calls) == len(open_redirect.REDIRECT_PAYLOADS)
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "WAF_BLOCKED"
+    assert findings[0]["waf_detected"] == "Cloudflare"
 
 
 def test_scan_open_redirect_stops_early_on_endpoint_invalid(monkeypatch):
@@ -90,16 +107,18 @@ def test_scan_open_redirect_stops_early_on_endpoint_invalid(monkeypatch):
 
     findings = open_redirect.scan_open_redirect("https://example.com/missing?redirect=/home")
 
-    assert findings == []
     assert len(calls) == 1
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "ENDPOINT_INVALID"
 
 
-def test_scan_open_redirect_no_redirect_yields_no_findings(monkeypatch):
+def test_scan_open_redirect_no_redirect_retained_as_inconclusive(monkeypatch):
     _patch_session(monkeypatch, lambda url, kwargs: _FakeResponse(200, {}, "ordinary page"))
 
     findings = open_redirect.scan_open_redirect("https://example.com/go?redirect=/home")
 
-    assert findings == []
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "INCONCLUSIVE"
 
 
 def test_scan_open_redirect_not_confirmed_when_waf_present_even_with_evil_location(monkeypatch):
@@ -113,4 +132,4 @@ def test_scan_open_redirect_not_confirmed_when_waf_present_even_with_evil_locati
 
     findings = open_redirect.scan_open_redirect("https://example.com/go?redirect=/home")
 
-    assert findings == []
+    assert all(f["verdict"] != "CONFIRMED" for f in findings)

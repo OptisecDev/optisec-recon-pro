@@ -56,6 +56,10 @@ SQL_ERRORS = [
 def _error_based_scan(session: requests.Session, parsed, params: dict) -> list:
     findings = []
     for param in params:
+        # Only the CONFIRMED entry (if any) or the last non-reporting verdict
+        # tried for this param is kept — one row per param, not one per
+        # payload, so retaining WAF_BLOCKED/etc. doesn't multiply findings.
+        pending = None
         for payload in SQLI_ERROR_PAYLOADS:
             test_params = {k: v[0] for k, v in params.items()}
             test_params[param] = payload
@@ -65,24 +69,30 @@ def _error_based_scan(session: requests.Session, parsed, params: dict) -> list:
                 body = r.text.lower()
                 matched_error = next((err for err in SQL_ERRORS if err in body), None)
                 result = classify_error_signature(r.status_code, r.headers, r.text, matched_error)
+                entry = {
+                    "type": "SQL Injection",
+                    "severity": result.severity,
+                    "url": test_url,
+                    "parameter": param,
+                    "payload": payload,
+                    "evidence": result.reason,
+                    "waf_detected": result.waf_detected,
+                    "verdict": result.verdict,
+                    "status_code": r.status_code,
+                    "response_body": r.text[:3000],
+                }
                 if result.verdict == "ENDPOINT_INVALID":
-                    break  # path itself is unreachable, no point trying more payloads
-                if result.should_report:
-                    findings.append({
-                        "type": "SQL Injection",
-                        "severity": result.severity,
-                        "url": test_url,
-                        "parameter": param,
-                        "payload": payload,
-                        "evidence": result.reason,
-                        "waf_detected": result.waf_detected,
-                        "verdict": result.verdict,
-                        "status_code": r.status_code,
-                        "response_body": r.text[:3000],
-                    })
+                    pending = entry  # path itself is unreachable, no point trying more payloads
                     break
+                if result.should_report:
+                    findings.append(entry)
+                    pending = None
+                    break
+                pending = entry
             except Exception:
                 continue
+        if pending is not None:
+            findings.append(pending)
     return findings
 
 
@@ -109,21 +119,21 @@ def _blind_scan(session: requests.Session, parsed, params: dict) -> list:
                 r_false.status_code, r_false.headers, r_false.text,
                 signal, "Boolean-based blind SQLi",
             )
+            findings.append({
+                "type": "SQL Injection (Blind)",
+                "severity": result.severity,
+                "url": true_url,
+                "parameter": param,
+                "payload": "1 AND 1=1 vs 1 AND 1=2",
+                "evidence": f"{result.reason}: response length differs by {len_diff} bytes between true/false conditions",
+                "waf_detected": result.waf_detected,
+                "verdict": result.verdict,
+                "status_code": r_true.status_code,
+                "response_body": r_true.text[:3000],
+            })
             if result.verdict == "ENDPOINT_INVALID":
                 continue  # endpoint itself unreachable, skip time-based too
             if result.should_report:
-                findings.append({
-                    "type": "SQL Injection (Blind)",
-                    "severity": result.severity,
-                    "url": true_url,
-                    "parameter": param,
-                    "payload": "1 AND 1=1 vs 1 AND 1=2",
-                    "evidence": f"{result.reason}: response length differs by {len_diff} bytes between true/false conditions",
-                    "waf_detected": result.waf_detected,
-                    "verdict": result.verdict,
-                    "status_code": r_true.status_code,
-                    "response_body": r_true.text[:3000],
-                })
                 continue
         except Exception:
             pass
@@ -150,19 +160,18 @@ def _blind_scan(session: requests.Session, parsed, params: dict) -> list:
                 r_sleep.status_code, r_sleep.headers, r_sleep.text,
                 signal, "MySQL time-based blind SQLi",
             )
-            if result.should_report:
-                findings.append({
-                    "type": "SQL Injection (Time-Based Blind)",
-                    "severity": result.severity,
-                    "url": sleep_url,
-                    "parameter": param,
-                    "payload": "1 AND SLEEP(3)--",
-                    "evidence": f"{result.reason}: response delayed {sleep_time:.1f}s vs baseline {normal_time:.1f}s",
-                    "waf_detected": result.waf_detected,
-                    "verdict": result.verdict,
-                    "status_code": r_sleep.status_code,
-                    "response_body": r_sleep.text[:3000],
-                })
+            findings.append({
+                "type": "SQL Injection (Time-Based Blind)",
+                "severity": result.severity,
+                "url": sleep_url,
+                "parameter": param,
+                "payload": "1 AND SLEEP(3)--",
+                "evidence": f"{result.reason}: response delayed {sleep_time:.1f}s vs baseline {normal_time:.1f}s",
+                "waf_detected": result.waf_detected,
+                "verdict": result.verdict,
+                "status_code": r_sleep.status_code,
+                "response_body": r_sleep.text[:3000],
+            })
         except Exception:
             pass
 
@@ -202,21 +211,21 @@ def _scan_forms(session: requests.Session, base_url: str) -> list:
                 body = resp.text.lower()
                 matched_error = next((err for err in SQL_ERRORS if err in body), None)
                 result = classify_error_signature(resp.status_code, resp.headers, resp.text, matched_error)
+                findings.append({
+                    "type": "SQL Injection",
+                    "severity": result.severity,
+                    "url": form_url,
+                    "parameter": param,
+                    "payload": payload,
+                    "evidence": f"{result.reason} via {method.upper()} form",
+                    "waf_detected": result.waf_detected,
+                    "verdict": result.verdict,
+                    "status_code": resp.status_code,
+                    "response_body": resp.text[:3000],
+                })
                 if result.verdict == "ENDPOINT_INVALID":
                     break
                 if result.should_report:
-                    findings.append({
-                        "type": "SQL Injection",
-                        "severity": result.severity,
-                        "url": form_url,
-                        "parameter": param,
-                        "payload": payload,
-                        "evidence": f"{result.reason} via {method.upper()} form",
-                        "waf_detected": result.waf_detected,
-                        "verdict": result.verdict,
-                        "status_code": resp.status_code,
-                        "response_body": resp.text[:3000],
-                    })
                     break
             except Exception:
                 continue
@@ -242,7 +251,11 @@ def scan_sqli(url: str) -> list:
             seen.add(key)
             findings.append(f)
 
-    if not findings:
+    # Blind scan is a fallback for when error-based scanning didn't confirm
+    # anything — now that non-CONFIRMED entries (WAF_BLOCKED/ENDPOINT_INVALID/
+    # INCONCLUSIVE) are retained too, `findings` is rarely empty, so check for
+    # an actual CONFIRMED result rather than "any entries at all".
+    if not any(f.get("verdict") == "CONFIRMED" for f in findings):
         for f in _blind_scan(session, parsed, params):
             key = (f["url"], f["parameter"])
             if key not in seen:

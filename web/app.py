@@ -1018,26 +1018,30 @@ async def index(request: Request, user: User = Depends(web_user), db: AsyncSessi
     scan_count = (await db.execute(
         select(func.count()).select_from(Scan).where(Scan.user_id == user.id)
     )).scalar()
+    # include_in_report filters out non-CONFIRMED verdicts (WAF_BLOCKED/
+    # ENDPOINT_INVALID/ENCODED_SAFE/INCONCLUSIVE) that are now persisted as
+    # evidence but were never shown on the dashboard before.
     finding_count = (await db.execute(
-        select(func.count()).select_from(Finding).join(Scan).where(Scan.user_id == user.id)
+        select(func.count()).select_from(Finding).join(Scan)
+        .where(Scan.user_id == user.id, Finding.include_in_report.is_(True))
     )).scalar()
     # case-insensitive: scanner modules write Title Case ("High"/"Critical", via
     # waf_aware_classifier.py) while older rows/demo data may be lowercase.
     critical_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "critical")
+        .where(Scan.user_id == user.id, Finding.include_in_report.is_(True), func.lower(Finding.severity) == "critical")
     )).scalar()
     high_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "high")
+        .where(Scan.user_id == user.id, Finding.include_in_report.is_(True), func.lower(Finding.severity) == "high")
     )).scalar()
     medium_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "medium")
+        .where(Scan.user_id == user.id, Finding.include_in_report.is_(True), func.lower(Finding.severity) == "medium")
     )).scalar()
     low_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "low")
+        .where(Scan.user_id == user.id, Finding.include_in_report.is_(True), func.lower(Finding.severity) == "low")
     )).scalar()
     report_count = (await db.execute(
         select(func.count()).select_from(Report).where(Report.user_id == user.id)
@@ -1192,6 +1196,9 @@ async def admin_panel(request: Request, user: User = Depends(web_user), db: Asyn
     require_admin(user)
     users = (await db.execute(select(User).order_by(User.created_at))).scalars().all()
     total_scans = (await db.execute(select(func.count()).select_from(Scan))).scalar()
+    # Admin-only internal overview, intentionally unfiltered by
+    # include_in_report — this is the operator's system-wide count, not a
+    # client-facing report, so it should reflect every persisted verdict.
     total_findings = (await db.execute(select(func.count()).select_from(Finding))).scalar()
     return templates.TemplateResponse(request, "admin.html", {
         "app_name": APP_NAME, "active": "admin", "user": user,
@@ -1324,7 +1331,8 @@ async def list_scans(user: User = Depends(web_user), db: AsyncSession = Depends(
 )
 async def list_findings(user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     findings = (await db.execute(
-        select(Finding).join(Scan).where(Scan.user_id == user.id)
+        select(Finding).join(Scan)
+        .where(Scan.user_id == user.id, Finding.include_in_report.is_(True))
         .order_by(Finding.created_at.desc()).limit(200)
     )).scalars().all()
     return JSONResponse([{
@@ -1342,6 +1350,33 @@ _STEP_PROGRESS = {
     "xss": 58, "sqli": 66, "ssrf": 74, "lfi": 80,
     "redirect": 87, "osint": 94,
 }
+
+
+def _finding_kwargs_from_vuln(v: dict, scan_id: str, target_id: Optional[int], triage: Optional[dict]) -> dict:
+    """Build Finding(**kwargs) for one scanner result dict.
+
+    Every WAF-aware classifier verdict (CONFIRMED/WAF_BLOCKED/ENDPOINT_INVALID/
+    ENCODED_SAFE/INCONCLUSIVE) is now persisted as a Finding row — kept as
+    evidence/intelligence instead of being discarded pre-save. Only CONFIRMED
+    sets include_in_report=True, which is what client-facing reads (dashboard
+    counts, PDF report, /api/findings) must filter on to reproduce the
+    previous CONFIRMED-only behavior.
+    """
+    return dict(
+        scan_id=scan_id, target_id=target_id,
+        vuln_type=v.get("type", "Unknown"),
+        severity=v.get("severity", "Medium"),
+        url=v.get("url", ""),
+        parameter=v.get("parameter", ""),
+        payload=v.get("payload", ""),
+        evidence=v.get("evidence", ""),
+        waf_detected=v.get("waf_detected"),
+        verdict=v.get("verdict"),
+        include_in_report=(v.get("verdict") == "CONFIRMED"),
+        triage_verdict=(triage or {}).get("triage_verdict"),
+        triage_confidence=(triage or {}).get("triage_confidence"),
+        triage_reason=(triage or {}).get("triage_reason"),
+    )
 
 
 async def _run_scan_task(
@@ -1450,10 +1485,20 @@ async def _run_scan_task(
             results["osint"] = {"emails": emails, "social": social}
             await push("osint", _STEP_PROGRESS["osint"], results["osint"])
 
-        results["vulnerabilities"] = all_vulns
+        # all_vulns now carries every classifier verdict (CONFIRMED plus
+        # WAF_BLOCKED/ENDPOINT_INVALID/ENCODED_SAFE/INCONCLUSIVE) — the five
+        # scanner modules stopped discarding non-CONFIRMED results before
+        # returning them. scan.results["vulnerabilities"] (used by the live
+        # progress feed, scans.html's vuln_count, and the PDF report) must
+        # stay CONFIRMED-only to keep that client-facing surface unchanged.
+        confirmed_vulns = [v for v in all_vulns if v.get("verdict") == "CONFIRMED"]
+        results["vulnerabilities"] = confirmed_vulns
 
         try:
-            triage_results, triage_summary = await classify_findings_batch(all_vulns)
+            # AI triage is a second opinion on already-CONFIRMED findings —
+            # running it on WAF_BLOCKED/etc. too would burn Groq's TPD quota
+            # (see SESSION.md's TPD saga) on verdicts that don't need one.
+            triage_results, triage_summary = await classify_findings_batch(confirmed_vulns)
             if triage_summary["deferred_tpd"]:
                 logger.warning(
                     "AI triage batch hit daily token quota (TPD): %s succeeded, "
@@ -1464,24 +1509,19 @@ async def _run_scan_task(
                 )
         except Exception as exc:
             logger.warning("AI triage batch failed: %s", exc)
-            triage_results = [None] * len(all_vulns)
+            triage_results = [None] * len(confirmed_vulns)
+
+        # Map by identity rather than mutating the vuln dicts in place — they
+        # (the CONFIRMED subset) are the same objects stored in
+        # results["vulnerabilities"] above, and that dict is serialized
+        # straight into scan.results JSON for the client; stashing triage
+        # data on the dicts themselves would leak an internal-only field into
+        # that response.
+        triage_by_id = {id(v): t for v, t in zip(confirmed_vulns, triage_results)}
 
         async with SessionLocal() as db:
-            for v, triage in zip(all_vulns, triage_results):
-                db.add(Finding(
-                    scan_id=scan_id, target_id=target_id,
-                    vuln_type=v.get("type", "Unknown"),
-                    severity=v.get("severity", "Medium"),
-                    url=v.get("url", ""),
-                    parameter=v.get("parameter", ""),
-                    payload=v.get("payload", ""),
-                    evidence=v.get("evidence", ""),
-                    waf_detected=v.get("waf_detected"),
-                    verdict=v.get("verdict"),
-                    triage_verdict=(triage or {}).get("triage_verdict"),
-                    triage_confidence=(triage or {}).get("triage_confidence"),
-                    triage_reason=(triage or {}).get("triage_reason"),
-                ))
+            for v in all_vulns:
+                db.add(Finding(**_finding_kwargs_from_vuln(v, scan_id, target_id, triage_by_id.get(id(v)))))
             scan = await db.get(Scan, scan_id)
             if scan:
                 scan.status = "done"

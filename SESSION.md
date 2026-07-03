@@ -313,6 +313,88 @@
 - **717/717 اختبار ناجح** على كامل test suite (682 سابق + 35 جديد) — لا regressions
 - Commit: `83a0dac` — تم push إلى `origin/master`
 
+## المنجز (جلسة 2026-07-03، تكملة) — الاحتفاظ بسجلات WAF_BLOCKED بقاعدة البيانات
+
+**المشكلة:** الماسحات الخمسة (XSS/SQLi/LFI/SSRF/Open Redirect) كانت تستبعد أي
+نتيجة `should_report=False` (أي verdict غير CONFIRMED: WAF_BLOCKED،
+ENDPOINT_INVALID، ENCODED_SAFE، INCONCLUSIVE — انظر قسم "WAF-aware XSS
+classification" أعلاه في هذا الملف) *قبل* أن تصل أصلاً لقائمة النتائج
+المُعادة من الماسح، فلا تُحفظ أبداً
+في جدول `findings`. **تصحيح مهم لوصف المهمة الأصلي**: الاستبعاد لم يكن في
+`web/app.py` (نقطة الحفظ هناك تُنشئ Finding لكل عنصر تستلمه بدون شرط)، بل في
+الماسحات نفسها (`modules/vuln/*.py`) عبر `if result.should_report:` قبل
+`findings.append(...)`.
+
+**السبب للاحتفاظ:** قيمة استخباراتية (اسم WAF المكتشف، الأدلة على أن الفحص
+تم فعلاً) وتوثيق أدلة لتقارير bug bounty — مع عدم تغيير أي شيء ظاهر للعميل.
+
+**الحل:**
+1. عمود جديد `Finding.include_in_report` (Boolean, NOT NULL, DEFAULT TRUE) —
+   `web/models.py`. Migration منفصل idempotent:
+   `web/migrate_add_finding_include_in_report_column.py` (نفس نمط
+   `migrate_add_finding_waf_columns.py`) — طُبّق فعلياً على `data/optisec.db`
+   بعد موافقة صريحة، الصفوف الـ65 الموجودة مسبقاً كلها CONFIRMED فبُقّيت
+   `include_in_report=True`.
+2. الماسحات الخمسة عُدّلت لتُبقي *كل* نتيجة classify() بدل استبعاد
+   `should_report=False`، لكن بشكل محدود الحجم: لكل باراميتر/متجه يُختبر،
+   تُحفظ فقط النتيجة CONFIRMED (إن وُجدت) **أو** آخر نتيجة غير-مؤكدة جُرّبت
+   (نمط `pending` — سطر واحد لكل باراميتر، وليس سطراً لكل payload) — تفادياً
+   لتضخيم عدد الصفوف بلا داعٍ (10 payloads × عدة باراميترات لكل ماسح). سلوك
+   الفحص نفسه (عدد الطلبات، التوقف المبكر عند ENDPOINT_INVALID) لم يتغير.
+   - **Bug حقيقي اكتُشف ومُصلح أثناء الكتابة**: `scan_sqli()` كان يتخطى
+     `_blind_scan()` كلياً بشرط `if not findings` — كان هذا صحيحاً فقط عندما
+     `findings` تحتوي CONFIRMED حصراً؛ بعد التعديل تكاد `findings` لا تكون
+     فارغة أبداً (كل باراميتر يترك سجلاً الآن)، فكان `_blind_scan` سيتوقف عن
+     العمل فعلياً في الإنتاج. صُحّح ليتحقق من وجود CONFIRMED تحديداً
+     (`if not any(f.get("verdict")=="CONFIRMED" for f in findings)`) — مغطّى
+     باختبار تكامل جديد `test_scan_sqli_end_to_end_retains_waf_blocked_and_still_runs_blind_scan`.
+3. `web/app.py`: `_finding_kwargs_from_vuln()` دالة نقية جديدة تحوّل نتيجة
+   ماسح واحدة إلى `Finding(**kwargs)`، مع `include_in_report=(verdict=="CONFIRMED")`.
+   نقطة حفظ الـFinding تحفظ الآن *كل* عناصر `all_vulns` (وليس فقط ما كان
+   `should_report=True` قديماً). لكن `scan.results["vulnerabilities"]`
+   (تستخدمها scans.html لعدّ الثغرات، وتقرير PDF عبر `modules/report/pdf_generator.py`
+   الذي يقرأ `scan_data.get("vulnerabilities")` مباشرة — **لا** يستعلم جدول
+   Finding إطلاقاً) بقيت مبنية من `confirmed_vulns` فقط — نفس السلوك الظاهر
+   للعميل بالضبط. كذلك AI triage (`classify_findings_batch`) يعمل الآن على
+   `confirmed_vulns` فقط بدل `all_vulns` — تجنّباً لاستهلاك حصة Groq اليومية
+   (TPD، انظر ملاحظات الجلسات السابقة) على نتائج WAF_BLOCKED/إلخ لا تحتاج
+   رأياً ثانياً من الذكاء الاصطناعي أصلاً.
+   - **Bug اكتُشف بالتحقق الحي (وليس بالاختبارات) وأُصلح**: أول تنفيذ ربط
+     نتائج الـtriage بالـdicts عبر `v["_triage"] = triage` (تعديل مباشر على
+     نفس الكائنات المخزّنة في `results["vulnerabilities"]`) — هذا كان يُسرّب
+     حقل `_triage` داخلي إلى JSON الذي يراه العميل فعلياً (تأكّد بفحص استجابة
+     `GET /api/scan/{id}` الحية). صُحّح باستخدام `{id(v): t for v, t in zip(...)}`
+     بدل التعديل المباشر على الـdicts.
+4. `/api/findings` (`web/app.py`) ولوحة التحكم الرئيسية (`index()` —
+   finding_count/critical_count/high_count/medium_count/low_count) أُضيف لها
+   فلتر `Finding.include_in_report.is_(True)`. لوحة `/admin` (`total_findings`)
+   تُركت **بلا فلتر عمداً** — نظرة عامة داخلية للمشغّل (admin)، وليست تقرير
+   عميل. `web/routers/cve_submission.py`'s `get_finding_for_user` تُرك أيضاً
+   بلا فلتر (لم يُطلب في هذه المهمة، ولا خطر أمني حقيقي — مستخدم يصوغ CVE من
+   نتيجة WAF-blocked خاصة به فقط).
+5. **تحقّق حي فعلي (وليس اختبارات فقط)**: شُغّل السيرفر محلياً، أُطلق فحص XSS
+   حقيقي ضد target محلي (`http.server` بسيط) يحاكي WAF على باراميتر ويعكس
+   XSS خام على آخر. تأكّد مباشرة من جدول `findings`: 5 صفوف محفوظة
+   (CONFIRMED + WAF_BLOCKED + 3×INCONCLUSIVE)، `include_in_report` صحيح لكل
+   واحد. `GET /api/findings` و`GET /` (لوحة التحكم) عرضا رقماً واحداً فقط
+   (المؤكَّد) — مطابق تماماً للعدّ اليدوي المفلتَر من قاعدة البيانات.
+6. **729/729 اختبار ناجح** (كان 720 قبل هذه المهمة؛ +9 صافي: ملف جديد
+   بـ7 اختبارات + إضافات صافية في ملفات الماسحات المعدَّلة) —
+   `tests/test_finding_include_in_report.py` **جديد** (7 اختبارات لـ
+   `_finding_kwargs_from_vuln`)، `tests/test_sqli.py`/`test_lfi.py`/
+   `test_ssrf.py`/`test_open_redirect.py` عُدّلت (لم تعد تفترض `findings==[]`
+   عند WAF_BLOCKED/INCONCLUSIVE — بل تتحقق من الـverdict الصحيح مع عدم وجود
+   CONFIRMED). لا ملف اختبار مخصص لـ`xss.py` كان موجوداً أصلاً (فجوة موجودة
+   من قبل هذه الجلسة).
+   - **Gotcha اختباري غير متعلق بالكود**: إضافة ملف اختبار جديد يستورد
+     `web.app` (`test_finding_include_in_report.py`) قبل
+     `test_migration_endpoint.py` أبجدياً كسر ذاك الأخير — `web.app` وحدة
+     singleton تُسجَّل مساراتها عند الاستيراد، و`test_migration_endpoint.py`
+     يعتمد على تعيين `GROQ_ENV=production` *قبل* أول استيراد لـ`web.app` في
+     كامل جلسة pytest. أُصلح بتعيين نفس المتغير (`os.environ.setdefault(...)`)
+     في الملف الجديد أيضاً.
+- لم يُدفع (push) — بانتظار مراجعة المستخدم.
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker

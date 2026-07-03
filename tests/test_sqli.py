@@ -7,6 +7,14 @@ No real network calls: requests.Session.get/post are monkeypatched to a
 canned responder, same "never hit real APIs in tests" convention as the
 rest of the suite. Timing for the time-based blind path is controlled via
 monkeypatching time.time() instead of actually sleeping.
+
+Non-CONFIRMED verdicts (WAF_BLOCKED/ENDPOINT_INVALID/INCONCLUSIVE) are now
+retained in the scanner's return value instead of being discarded (see
+web/migrate_add_finding_include_in_report_column.py and
+_finding_kwargs_from_vuln() in web/app.py) — only web/app.py's
+include_in_report flag hides them from the client-facing report. So these
+tests assert on the *verdict* of what comes back (never CONFIRMED for a
+blocked/inconclusive probe) rather than asserting `findings == []`.
 """
 
 import os
@@ -64,8 +72,11 @@ def test_error_based_scan_confirms_real_sqli(monkeypatch):
     assert findings[0]["type"] == "SQL Injection"
 
 
-def test_error_based_scan_skips_waf_blocked(monkeypatch):
+def test_error_based_scan_retains_waf_blocked_without_confirming(monkeypatch):
+    calls = []
+
     def responder(url, kwargs):
+        calls.append(url)
         return _FakeResponse(403, {"cf-ray": "abc-DFW"}, "Sorry, you have been blocked")
 
     _patch_session(monkeypatch, get_responder=responder)
@@ -75,7 +86,13 @@ def test_error_based_scan_skips_waf_blocked(monkeypatch):
 
     findings = sqli._error_based_scan(session, parsed, params)
 
-    assert findings == []
+    # WAF_BLOCKED doesn't stop the scan early (unlike ENDPOINT_INVALID) — all
+    # 10 payloads for the param are still tried — but only the last one is
+    # kept as the retained record, not one row per payload.
+    assert len(calls) == 10
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "WAF_BLOCKED"
+    assert findings[0]["waf_detected"] == "Cloudflare"
 
 
 def test_error_based_scan_stops_early_on_endpoint_invalid(monkeypatch):
@@ -92,11 +109,12 @@ def test_error_based_scan_stops_early_on_endpoint_invalid(monkeypatch):
 
     findings = sqli._error_based_scan(session, parsed, params)
 
-    assert findings == []
     assert len(calls) == 1  # broke after the first payload instead of trying all 10
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "ENDPOINT_INVALID"
 
 
-def test_error_based_scan_no_signal_yields_no_findings(monkeypatch):
+def test_error_based_scan_no_signal_retained_as_inconclusive(monkeypatch):
     _patch_session(monkeypatch, get_responder=lambda url, kwargs: _FakeResponse(200, {}, "ordinary page"))
     session = requests.Session()
     parsed = urlparse("https://example.com/item?id=1")
@@ -104,7 +122,8 @@ def test_error_based_scan_no_signal_yields_no_findings(monkeypatch):
 
     findings = sqli._error_based_scan(session, parsed, params)
 
-    assert findings == []
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "INCONCLUSIVE"
 
 
 # ── _blind_scan — boolean-based ──────────────────────────────────────────
@@ -145,7 +164,15 @@ def test_blind_scan_boolean_based_waf_blocked_not_reported(monkeypatch):
 
     findings = sqli._blind_scan(session, parsed, params)
 
-    assert findings == []
+    # Boolean check is retained as WAF_BLOCKED (not a real signal), and since
+    # it wasn't should_report/ENDPOINT_INVALID the scan still falls through
+    # to the time-based check too (same request-count behavior as before) —
+    # that one is retained as INCONCLUSIVE (identical normal/sleep timing,
+    # no WAF on either side). Neither is CONFIRMED.
+    assert len(findings) == 2
+    assert all(f["verdict"] != "CONFIRMED" for f in findings)
+    boolean_findings = [f for f in findings if f["type"] == "SQL Injection (Blind)"]
+    assert boolean_findings[0]["verdict"] == "WAF_BLOCKED"
 
 
 def test_blind_scan_status_split_from_404_is_still_confirmed(monkeypatch):
@@ -169,7 +196,7 @@ def test_blind_scan_status_split_from_404_is_still_confirmed(monkeypatch):
     assert boolean_findings[0]["verdict"] == "CONFIRMED"
 
 
-def test_blind_scan_both_invalid_reports_nothing(monkeypatch):
+def test_blind_scan_both_invalid_retained_as_endpoint_invalid(monkeypatch):
     _patch_session(monkeypatch, get_responder=lambda url, kwargs: _FakeResponse(404, {}, "Not Found"))
     session = requests.Session()
     parsed = urlparse("https://example.com/missing?id=1")
@@ -177,7 +204,10 @@ def test_blind_scan_both_invalid_reports_nothing(monkeypatch):
 
     findings = sqli._blind_scan(session, parsed, params)
 
-    assert findings == []
+    # ENDPOINT_INVALID on the boolean check skips the time-based check too
+    # (same early-exit behavior as before), retained as one record.
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "ENDPOINT_INVALID"
 
 
 # ── _blind_scan — time-based (timing controlled via time.time patch) ────
@@ -226,7 +256,13 @@ def test_blind_scan_time_based_waf_blocked_not_reported(monkeypatch):
 
     findings = sqli._blind_scan(session, parsed, params)
 
-    assert findings == []
+    # Boolean check sees identical responses -> retained as INCONCLUSIVE and
+    # falls through; time-based check is retained as WAF_BLOCKED. Neither
+    # is CONFIRMED.
+    assert len(findings) == 2
+    assert all(f["verdict"] != "CONFIRMED" for f in findings)
+    time_findings = [f for f in findings if f["type"] == "SQL Injection (Time-Based Blind)"]
+    assert time_findings[0]["verdict"] == "WAF_BLOCKED"
 
 
 # ── _scan_forms ───────────────────────────────────────────────────────────
@@ -279,7 +315,9 @@ def test_scan_forms_waf_blocked_not_reported(monkeypatch):
 
     findings = sqli._scan_forms(session, "https://example.com/search")
 
-    assert findings == []
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "WAF_BLOCKED"
+    assert findings[0]["waf_detected"] == "Akamai"
 
 
 # ── scan_sqli — end-to-end wiring ────────────────────────────────────────
@@ -297,3 +335,25 @@ def test_scan_sqli_end_to_end_only_reports_confirmed(monkeypatch):
     assert len(findings) == 1
     assert findings[0]["verdict"] == "CONFIRMED"
     assert findings[0]["type"] == "SQL Injection"
+
+
+def test_scan_sqli_end_to_end_retains_waf_blocked_and_still_runs_blind_scan(monkeypatch):
+    """Regression test for a bug caught while wiring this up: scan_sqli()
+    used to skip _blind_scan() entirely whenever `findings` (accumulated from
+    _error_based_scan) was non-empty. That was fine when only CONFIRMED
+    entries were ever appended, but now that WAF_BLOCKED/etc. are retained
+    too, `findings` is essentially always non-empty — so the guard had to
+    become "no CONFIRMED result yet", not "no results at all", or blind
+    scanning would silently stop running in production."""
+    def get_responder(url, kwargs):
+        return _FakeResponse(403, {"cf-ray": "abc-DFW"}, "Sorry, you have been blocked")
+
+    _patch_session(monkeypatch, get_responder=get_responder)
+
+    findings = sqli.scan_sqli("https://example.com/item?id=1")
+
+    # error-based contributes 1 retained WAF_BLOCKED row; blind_scan (which
+    # must still have run) contributes 2 more (boolean + time-based), all
+    # distinct urls so none collide in scan_sqli's (url, parameter) dedup.
+    assert len(findings) == 3
+    assert all(f["verdict"] == "WAF_BLOCKED" for f in findings)
