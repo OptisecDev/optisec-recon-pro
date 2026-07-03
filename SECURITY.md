@@ -63,6 +63,18 @@ code, treat those credentials as compromised and rotate them:
 
 3. Run this against the same `DATABASE_URL` your deployment uses (set it in
    the shell environment first if it isn't already, e.g. on a Render shell).
+
+   A standalone script wrapping the same steps (same `hash_password`/
+   `validate_password_strength` from `web/auth.py`, same `SessionLocal`,
+   updates only the `password_hash` column, never prints the password) is
+   also available at `scripts/rotate_admin_password.py`:
+
+   ```bash
+   ROTATE_USERNAME=admin ROTATE_NEW_PASSWORD='...' python scripts/rotate_admin_password.py
+   ```
+
+   Run it once for `admin` and once more with `ROTATE_USERNAME=demo` if the
+   demo account also needs rotating.
 4. Invalidate any existing sessions for that account by rotating `JWT_SECRET`
    (this logs out **all** users, admin and non-admin) if you suspect the
    session token itself — not just the password — may have been exposed.
