@@ -547,14 +547,17 @@ _DEMO_TARGETS = [
     ("amazon.com",    "Amazon AWS"),
 ]
 _DEMO_FINDINGS = [
-    ("XSS",           "high",     "https://tesla.com/search?q=test", "q",      "<script>alert(1)</script>"),
-    ("SQLi",          "critical", "https://tesla.com/api/user",      "id",     "' OR 1=1--"),
-    ("SSRF",          "high",     "https://tesla.com/fetch",         "url",    "http://169.254.169.254/"),
-    ("Open Redirect", "medium",   "https://tesla.com/redirect",      "next",   "//evil.com"),
-    ("XSS",           "medium",   "https://google.com/search",       "q",      "\"><img src=x onerror=alert(1)>"),
-    ("LFI",           "critical", "https://google.com/page",         "file",   "../../etc/passwd"),
-    ("SQLi",          "high",     "https://microsoft.com/api/login", "user",   "admin'--"),
-    ("XSS",           "low",      "https://apple.com/feedback",      "msg",    "<b>test</b>"),
+    # severity uses the same Title Case convention the real scanners write
+    # (modules/vuln/*.py via waf_aware_classifier.py: "Critical"/"High"/"Medium"/"Low"),
+    # so demo findings don't mix casing with real scan findings on the same account.
+    ("XSS",           "High",     "https://tesla.com/search?q=test", "q",      "<script>alert(1)</script>"),
+    ("SQLi",          "Critical", "https://tesla.com/api/user",      "id",     "' OR 1=1--"),
+    ("SSRF",          "High",     "https://tesla.com/fetch",         "url",    "http://169.254.169.254/"),
+    ("Open Redirect", "Medium",   "https://tesla.com/redirect",      "next",   "//evil.com"),
+    ("XSS",           "Medium",   "https://google.com/search",       "q",      "\"><img src=x onerror=alert(1)>"),
+    ("LFI",           "Critical", "https://google.com/page",         "file",   "../../etc/passwd"),
+    ("SQLi",          "High",     "https://microsoft.com/api/login", "user",   "admin'--"),
+    ("XSS",           "Low",      "https://apple.com/feedback",      "msg",    "<b>test</b>"),
 ]
 
 async def _ensure_demo_account():
@@ -990,21 +993,23 @@ async def index(request: Request, user: User = Depends(web_user), db: AsyncSessi
     finding_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan).where(Scan.user_id == user.id)
     )).scalar()
+    # case-insensitive: scanner modules write Title Case ("High"/"Critical", via
+    # waf_aware_classifier.py) while older rows/demo data may be lowercase.
     critical_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, Finding.severity == "critical")
+        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "critical")
     )).scalar()
     high_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, Finding.severity == "high")
+        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "high")
     )).scalar()
     medium_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, Finding.severity == "medium")
+        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "medium")
     )).scalar()
     low_count = (await db.execute(
         select(func.count()).select_from(Finding).join(Scan)
-        .where(Scan.user_id == user.id, Finding.severity == "low")
+        .where(Scan.user_id == user.id, func.lower(Finding.severity) == "low")
     )).scalar()
     report_count = (await db.execute(
         select(func.count()).select_from(Report).where(Report.user_id == user.id)
