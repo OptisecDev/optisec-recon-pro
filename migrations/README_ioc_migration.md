@@ -1,9 +1,15 @@
 # IOC Detection — `iocs` table migration plan
 
-Status: **not applied**. Nothing in this file has been executed against any
-database (local SQLite or Render Postgres). This is Phase 1 (architecture +
-data model) of the IOC Detection feature — the `Ioc` model now exists in
-`web/models.py`, but the table itself does not exist anywhere yet.
+Status: **applied to production**. On 2026-07-04 `web/migrate_add_ioc_table.py`
+was run against the Render production database via a temporary token-gated
+endpoint (`POST /internal/run-ioc-migration` in `web/app.py`), which returned
+`{"success": true, "table": "iocs", ...}`. The `iocs` table is confirmed to
+exist on the production database. That endpoint (and its diagnostic logging)
+was purely a one-off deployment tool and has since been deleted from
+`web/app.py` — it is not part of the application. `web/migrate_add_ioc_table.py`
+itself remains in the codebase as the standalone, reusable migration script
+(see "Run `web/migrate_add_ioc_table.py` manually" below) in case it ever
+needs to be re-run against another database (e.g. a fresh environment).
 
 ## Why this is *not* like the previous `web/migrate_add_finding_*.py` scripts
 
