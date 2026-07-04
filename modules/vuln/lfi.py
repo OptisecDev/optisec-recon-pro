@@ -1,3 +1,4 @@
+import re
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode
 from config import DEFAULT_TIMEOUT
@@ -30,6 +31,32 @@ LFI_INDICATORS = [
     "localhost",
 ]
 
+# "127.0.0.1"/"localhost" show up in countless ordinary pages (config blurbs,
+# dev-mode banners, contact footers...) with zero relation to a real LFI —
+# unlike the other indicators above they are not evidence of file content by
+# themselves. Trusting a match on one of these requires the body to also
+# contain the actual multi-field structure of a real /etc/passwd or
+# windows\win.ini, not just the bare word.
+LFI_WEAK_INDICATORS = {"127.0.0.1", "localhost"}
+
+# Real /etc/passwd lines: name:x:uid:gid:gecos:home:shell
+_PASSWD_STRUCTURE_RE = re.compile(r"^[a-zA-Z_][\w-]*:x:\d+:\d+:[^\n:]*:[^\n:]*:[^\n:]*$", re.MULTILINE)
+# Real win.ini: a [fonts]/[extensions] section header followed by key=value entries
+_INI_STRUCTURE_RE = re.compile(r"\[(?:fonts|extensions)\][^\[]{0,300}=", re.IGNORECASE)
+
+
+def _looks_like_real_file_structure(body: str) -> bool:
+    return bool(_PASSWD_STRUCTURE_RE.search(body or "") or _INI_STRUCTURE_RE.search(body or ""))
+
+
+def _lfi_indicator_confirmed(body: str, matched_indicator: str) -> bool:
+    """Weak/generic indicators need real file-structure evidence in the body
+    before being trusted; the other, more specific indicators are trusted
+    as-is (unchanged behavior)."""
+    if matched_indicator not in LFI_WEAK_INDICATORS:
+        return True
+    return _looks_like_real_file_structure(body)
+
 
 def scan_lfi(url: str) -> list:
     findings = []
@@ -57,6 +84,8 @@ def scan_lfi(url: str) -> list:
                 r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
                 body = r.text
                 matched_indicator = next((ind for ind in LFI_INDICATORS if ind in body), None)
+                if matched_indicator and not _lfi_indicator_confirmed(body, matched_indicator):
+                    matched_indicator = None
                 result = classify_signature_match(
                     r.status_code, r.headers, r.text, matched_indicator,
                     severity="High", signal_label="LFI indicator",

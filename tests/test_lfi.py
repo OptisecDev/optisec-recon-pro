@@ -103,6 +103,41 @@ def test_scan_lfi_no_signal_retained_as_inconclusive(monkeypatch):
     assert findings[0]["verdict"] == "INCONCLUSIVE"
 
 
+def test_scan_lfi_weak_indicator_alone_is_inconclusive_not_confirmed(monkeypatch):
+    # "127.0.0.1" is a real LFI_INDICATORS entry but shows up on countless
+    # ordinary pages unrelated to file disclosure — without real file
+    # structure alongside it, this must not be CONFIRMED.
+    _patch_session(monkeypatch, lambda url, kwargs: _FakeResponse(
+        200, {}, "Server default bind address is 127.0.0.1 for local testing",
+    ))
+
+    findings = lfi.scan_lfi("https://example.com/view?file=readme.txt")
+
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "INCONCLUSIVE"
+
+
+def test_scan_lfi_weak_indicator_confirmed_with_real_passwd_structure(monkeypatch):
+    # Same weak "127.0.0.1" indicator, but this time it's accompanied by a
+    # real /etc/passwd-shaped line (name:x:uid:gid:gecos:home:shell) — that
+    # structural evidence is enough to trust the match and CONFIRM.
+    def responder(url, kwargs):
+        if _param(url) == "/etc/passwd":
+            return _FakeResponse(
+                200, {},
+                "127.0.0.1 localhost\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin",
+            )
+        return _FakeResponse(200, {}, "<html>not found in page</html>")
+
+    _patch_session(monkeypatch, responder)
+
+    findings = lfi.scan_lfi("https://example.com/view?file=readme.txt")
+
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "CONFIRMED"
+    assert findings[0]["severity"] == "High"
+
+
 def test_scan_lfi_uses_file_related_param_names():
     from urllib.parse import urlparse, parse_qs
     parsed = urlparse("https://example.com/view?id=1&file=readme.txt&unrelated=x")

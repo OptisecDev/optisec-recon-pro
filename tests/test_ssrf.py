@@ -14,6 +14,7 @@ CONFIRMED for a blocked/inconclusive probe) rather than `findings == []`.
 
 import os
 import sys
+from datetime import timedelta
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -24,10 +25,11 @@ from modules.vuln import ssrf
 
 
 class _FakeResponse:
-    def __init__(self, status_code=200, headers=None, text=""):
+    def __init__(self, status_code=200, headers=None, text="", elapsed_seconds=0.0):
         self.status_code = status_code
         self.headers = headers or {}
         self.text = text
+        self.elapsed = timedelta(seconds=elapsed_seconds)
 
 
 def _patch_session(monkeypatch, responder):
@@ -59,9 +61,11 @@ def test_scan_ssrf_confirms_real_ssrf(monkeypatch):
 
 
 def test_scan_ssrf_indicator_match_is_case_insensitive(monkeypatch):
+    # "ami-id" is a specific (non-generic) indicator, so it doesn't need the
+    # secondary corroboration required for the weak/generic indicators below.
     def responder(url, kwargs):
         if _param(url) == "http://127.0.0.1/":
-            return _FakeResponse(200, {}, "CONNECTION REFUSED")
+            return _FakeResponse(200, {}, "AMI-ID: ami-0abcd1234")
         return _FakeResponse(200, {}, "<html>normal page</html>")
 
     _patch_session(monkeypatch, responder)
@@ -85,8 +89,9 @@ def test_scan_ssrf_retains_waf_blocked_without_confirming(monkeypatch):
 
     # WAF_BLOCKED doesn't stop the scan early (unlike ENDPOINT_INVALID) — all
     # payloads are still tried — but only the last one is kept as the
-    # retained record, not one row per payload.
-    assert len(calls) == len(ssrf.SSRF_PAYLOADS)
+    # retained record, not one row per payload. +1 call for the baseline
+    # (unmodified) request used for SSRF timing comparison.
+    assert len(calls) == len(ssrf.SSRF_PAYLOADS) + 1
     assert len(findings) == 1
     assert findings[0]["verdict"] == "WAF_BLOCKED"
     assert findings[0]["waf_detected"] == "AWS WAF"
@@ -103,7 +108,9 @@ def test_scan_ssrf_stops_early_on_endpoint_invalid(monkeypatch):
 
     findings = ssrf.scan_ssrf("https://example.com/missing?url=https://example.com/image.png")
 
-    assert len(calls) == 1
+    # +1 call for the baseline (unmodified) request before the first payload
+    # trips ENDPOINT_INVALID and breaks out of the payload loop.
+    assert len(calls) == 2
     assert len(findings) == 1
     assert findings[0]["verdict"] == "ENDPOINT_INVALID"
 
@@ -115,6 +122,52 @@ def test_scan_ssrf_no_signal_retained_as_inconclusive(monkeypatch):
 
     assert len(findings) == 1
     assert findings[0]["verdict"] == "INCONCLUSIVE"
+
+
+def test_scan_ssrf_weak_indicator_alone_is_inconclusive_not_confirmed(monkeypatch):
+    # "Connection refused" is a real SSRF_INDICATORS entry but plenty of
+    # ordinary pages emit it for their own unrelated upstream failures.
+    # Without a real timing gap vs. baseline or an AWS-metadata-shaped body,
+    # this must not be CONFIRMED.
+    def responder(url, kwargs):
+        if _param(url) == "http://127.0.0.1/":
+            return _FakeResponse(200, {}, "Error: Connection refused", elapsed_seconds=0.05)
+        return _FakeResponse(200, {}, "<html>normal page</html>", elapsed_seconds=0.05)
+
+    _patch_session(monkeypatch, responder)
+
+    findings = ssrf.scan_ssrf("https://example.com/fetch?url=https://example.com/image.png")
+
+    assert all(f["verdict"] != "CONFIRMED" for f in findings)
+    assert any(f["verdict"] == "INCONCLUSIVE" for f in findings)
+
+
+def test_scan_ssrf_weak_indicator_confirmed_with_real_timing_gap(monkeypatch):
+    # Same weak "Connection refused" indicator, but this time the payload
+    # request took meaningfully longer than the baseline request — a real
+    # timing differential is corroborating evidence, so this should CONFIRM.
+    def responder(url, kwargs):
+        if _param(url) == "http://127.0.0.1/":
+            return _FakeResponse(200, {}, "Error: Connection refused", elapsed_seconds=5.0)
+        return _FakeResponse(200, {}, "<html>normal page</html>", elapsed_seconds=0.05)
+
+    _patch_session(monkeypatch, responder)
+
+    findings = ssrf.scan_ssrf("https://example.com/fetch?url=https://example.com/image.png")
+
+    assert len(findings) == 1
+    assert findings[0]["verdict"] == "CONFIRMED"
+
+
+def test_ssrf_indicator_confirmed_helper_gates_weak_indicators_only():
+    # Strong/specific indicators are trusted unconditionally.
+    assert ssrf._ssrf_indicator_confirmed("anything", "ami-id", None, None) is True
+
+    # Weak indicators need one of: AWS-metadata-shaped body, or a real timing gap.
+    assert ssrf._ssrf_indicator_confirmed("plain error page", "Connection refused", None, None) is False
+    assert ssrf._ssrf_indicator_confirmed("plain error page", "Connection refused", 0.05, 0.10) is False
+    assert ssrf._ssrf_indicator_confirmed("plain error page", "Connection refused", 0.05, 5.0) is True
+    assert ssrf._ssrf_indicator_confirmed("ami-id\ninstance-id\ninstance-type", "Connection refused", None, None) is True
 
 
 def test_scan_ssrf_not_confirmed_when_waf_present_even_with_matching_indicator(monkeypatch):

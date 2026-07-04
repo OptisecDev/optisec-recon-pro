@@ -72,6 +72,20 @@ BASE_DIR = Path(__file__).parent
 
 logger = logging.getLogger("web.app")
 
+# ─── Dark Web scheduler logging ────────────────────────────────────────────
+# modules/darkweb/scheduler.py logs under "darkweb.scheduler" but nothing
+# configured a level/handler for that namespace, so under uvicorn's default
+# logging setup (root already has handlers, but no level below WARNING) its
+# info()/warning() calls were silently dropped before reaching any handler.
+# Configure the "darkweb" namespace explicitly here so every child logger
+# (darkweb.scheduler, ...) inherits INFO level + a real handler.
+_darkweb_logger = logging.getLogger("darkweb")
+if not _darkweb_logger.handlers:
+    _darkweb_handler = logging.StreamHandler()
+    _darkweb_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _darkweb_logger.addHandler(_darkweb_handler)
+    _darkweb_logger.setLevel(logging.INFO)
+
 # ─── OpenAPI Tags ─────────────────────────────────────────────────────────────
 
 OPENAPI_TAGS = [
