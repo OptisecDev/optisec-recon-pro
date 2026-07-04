@@ -563,6 +563,51 @@ NULL؟" في 2026-07-04 أعلاه) — الخلاصة النهائية الثا
 
 ---
 
+## المنجز (جلسة 2026-07-04، تكملة) — إكمال المرحلة 1 من IOC Detection
+
+**المشكلة:** commit سابق (`c8036a0`، "feat: add idempotent migration script
+for iocs table") دفع فقط ثلاثة ملفات (`web/migrate_add_ioc_table.py`،
+`migrations/README_ioc_migration.md`، `tests/test_migrate_add_ioc_table.py`)
+بينما بقيت `web/models.py` (تحتوي `class Ioc` نفسه)، `modules/ioc/`
+(`IOCEngine`)، و`tests/test_ioc_engine.py` غير ملتزمة محلياً — أي أن السكربت
+المدفوع على `master` كان يستورد `from web.models import Ioc` وهي غير موجودة
+أصلاً على ذلك الفرع.
+
+**التحقق قبل الـcommit:**
+- تأكدت أن `web/models.py` يحتوي `class Ioc` (جدول `iocs`) مطابقاً لِما يتوقعه
+  `migrate_add_ioc_table.py` — السكربت يبني `CREATE TABLE` مباشرة من
+  `Ioc.__table__` (لا أسماء أعمدة مكتوبة يدوياً في السكربت)، فالتطابق مضمون
+  هيكلياً بمجرد وجود الكلاس، وكذلك اختبارات `test_migrate_add_ioc_table.py`
+  تشتق توقعاتها ديناميكياً من نفس `Ioc.__table__`.
+- شُغّل test suite الكامل: **763/763 اختبار ناجح** (بينها 73 اختبار متعلق
+  بـIOC تحديداً: `test_ioc_engine.py` + `test_migrate_add_ioc_table.py`) — لا
+  فشل، لا regressions.
+- لم يُشغَّل `migrate_add_ioc_table.py` ولم يُتصل بأي `DATABASE_URL` إنتاجي —
+  هذه المهمة كانت فقط استكمال الكود المفقود محلياً.
+
+**الملفات المُلتزَمة (commit `f621167`، بعده push إلى `origin/master`):**
+- `web/models.py` — إضافة `class Ioc` (جدول `iocs`: `ioc_type`/`ioc_value`
+  بقيد `UniqueConstraint`، `source`، `confidence_score`، `first_seen`/
+  `last_seen`، `related_finding_id` (FK اختياري لـ`Finding`)، `tags` JSON،
+  `is_active`) — تصميم *مخزن IOC محلي* منفصل تماماً عن
+  `modules/ioc_correlation.py` الموجود أصلاً خلف صفحة `/correlations`
+  (ذاك يُرابط IOCs من feeds عامة (OTX + عيّنة ثابتة) مع بعضها، ولا يلمس هذا
+  الجدول أو بيانات فحوصات هذا المشروع إطلاقاً؛ التوثيق كامل في docstring
+  الكلاس).
+- `modules/ioc/ioc_engine.py` (+`modules/ioc/__init__.py`) — **جديد**:
+  `IOCEngine` بواجهة `check_ioc()`/`enrich_ioc()`/`extract_iocs_from_finding()`
+  تُغلّف عملاء threat-intel الموجودين أصلاً (`modules.threat_intel.ioc_detector`
+  لـVirusTotal/AbuseIPDB) خلف مستودع injectable (`IOCRepository` — قاموس في
+  الذاكرة حالياً، بنفس أشكال methods التي سيحتاجها مستودع مبني على جدول
+  `Ioc` لاحقاً بدون إعادة كتابة منطق المحرك). `extract_iocs_from_finding()`
+  يستخرج IOCs مرشّحة (روابط/IPs خارجية) من حقل `evidence` فقط في finding
+  dict — يتجنّب عمداً `url`/`payload` لأنهما دوماً نطاق الهدف المفحوص أو
+  payload الفحص المُحقَن، وليسا بنية هجومية مُلاحَظة فعلاً.
+- `tests/test_ioc_engine.py` — **جديد**: اختبارات `IOCRepository`/`check_ioc`/
+  `enrich_ioc`/`extract_iocs_from_finding`.
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
