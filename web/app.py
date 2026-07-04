@@ -496,12 +496,15 @@ async def session_refresh_middleware(request: Request, call_next):
 @app.on_event("startup")
 async def startup():
     # TEMPORARY diagnostic — remove once IOC_MIGRATION_TOKEN 404 is root-caused.
-    # Logs only presence/length, never the token value.
+    # Logs only presence/length, never the token value. print() (not
+    # logging.info) because uvicorn never calls logging.basicConfig on the
+    # root logger, so root's effective level stays WARNING and logging.info()
+    # is silently dropped — print() always reaches Render's log stream.
     _ioc_token = os.environ.get("IOC_MIGRATION_TOKEN")
-    logging.info(
-        "[DIAG startup] IOC_MIGRATION_TOKEN present=%s len=%s RENDER=%r",
-        _ioc_token is not None, len(_ioc_token) if _ioc_token else 0,
-        os.environ.get("RENDER"),
+    print(
+        "[DIAG startup] IOC_MIGRATION_TOKEN present=%s len=%s RENDER=%r"
+        % (_ioc_token is not None, len(_ioc_token) if _ioc_token else 0, os.environ.get("RENDER")),
+        flush=True,
     )
 
     await init_db()
@@ -2128,6 +2131,23 @@ async def get_correlation_cluster(
 # Only registered when running on Render (or GROQ_ENV=production) so it never
 # appears in local/dev. Remove this whole block + MIGRATION_SECRET_TOKEN env
 # var once the migration has been run against production.
+#
+# TEMPORARY diagnostic — remove alongside the block above. print() (not
+# logging.info) so this is guaranteed visible in Render logs at import time,
+# regardless of root logger level — see startup()/run_ioc_table_migration()
+# comments for why logging.info() is silently dropped there.
+print(
+    "[DIAG module-load] production condition check: GROQ_ENV=%r RENDER=%r -> "
+    "routes %s"
+    % (
+        os.environ.get("GROQ_ENV"),
+        os.environ.get("RENDER"),
+        "REGISTERED"
+        if (os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"))
+        else "SKIPPED",
+    ),
+    flush=True,
+)
 if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
     import secrets as _secrets_compare
 
@@ -2160,11 +2180,13 @@ if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
         provided_token = request.headers.get("X-Migration-Token")
 
         # TEMPORARY diagnostic — remove once IOC_MIGRATION_TOKEN 404 is root-caused.
-        # Logs only presence/length, never the token value.
-        logging.info(
-            "[DIAG request] IOC_MIGRATION_TOKEN present=%s len=%s RENDER=%r",
-            expected_token is not None, len(expected_token) if expected_token else 0,
-            os.environ.get("RENDER"),
+        # Logs only presence/length, never the token value. print() (not
+        # logging.info) — see startup() comment above for why logging.info()
+        # never surfaces on Render.
+        print(
+            "[DIAG request] IOC_MIGRATION_TOKEN present=%s len=%s RENDER=%r"
+            % (expected_token is not None, len(expected_token) if expected_token else 0, os.environ.get("RENDER")),
+            flush=True,
         )
 
         if not expected_token or not provided_token or not _secrets_compare.compare_digest(

@@ -608,6 +608,161 @@ for iocs table") دفع فقط ثلاثة ملفات (`web/migrate_add_ioc_table
 
 ---
 
+## تشخيص فشل endpoint IOC migration (جلسة 2026-07-04) — قراءة فقط، لم يُعدَّل أي كود
+
+**العرض:** طلب `POST /internal/run-ioc-migration` على Render يرجع **404** رغم
+أن الـtoken المُرسَل "صحيح" من وجهة نظر المستخدم، ورغم أن آخر deploy نجح
+(commit `1f76cf1` — "feat: add temporary token-gated endpoint to run IOC table
+migration on production" — مدفوع فعلاً ومتطابق تماماً مع `origin/master`،
+تحقّقت بـ`git log origin/master..HEAD` = فارغ).
+
+### 1. شرط تسجيل الـ route — `web/app.py:2122`
+
+```python
+if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
+    ...
+    @app.post("/internal/run-migration", ...)      # سطر 2125
+    ...
+    @app.post("/internal/run-ioc-migration", ...)  # سطر 2147
+```
+
+كلا الـendpoint (القديم `/internal/run-migration` والجديد `/internal/run-ioc-migration`)
+مُسجَّلان **معاً** تحت نفس الشرط الواحد. اسم المتغيّر بالضبط: `RENDER` (بدون أي
+لاحقة)، أو بديلاً `GROQ_ENV == "production"` (مطابقة نصية حصراً، حساسة لحالة
+الأحرف والقيمة الدقيقة). لا يوجد أي منطق آخر يتحكم بتسجيل هذا الـroute.
+
+`grep` عبر المشروع (`web/app.py`، `config.py`، `.env.example`، `README.md`) لا
+يُظهر أي استخدام آخر لاسم `RENDER` أو `GROQ_ENV` خارج هذا الشرط والاختبارات —
+الاسم دقيق ولا يوجد تشتت/typo بين الملفات.
+
+### 2. ما الذي يضبطه Render فعلياً — تحقّقت من توثيق Render الرسمي
+
+بحثت في `render.com/docs/environment-variables` (Default Environment
+Variables): Render يضبط تلقائياً متغيّر `RENDER=true` على **كل** خدمة، في وقت
+البناء والتشغيل معاً، بدون أي إعداد يدوي من المستخدم. أي أن شرط
+`os.environ.get("RENDER")` في `web/app.py:2122` **يجب أن يتحقق تلقائياً بمجرد
+التشغيل على Render** — هذا الجزء من الشرط ليس مصدر المشكلة على الأرجح، لأنه لا
+يحتاج أي إعداد يدوي أصلاً (بخلاف `GROQ_ENV` الذي هو فعلاً بديل يدوي احتياطي).
+
+**الخلاصة الجزئية:** لو لم يكن الـroute مُسجَّلاً إطلاقاً، لكان
+`/internal/run-migration` (الـendpoint الأقدم، المُستخدم فعلاً وناجح سابقاً حسب
+السجل) يفشل أيضاً بنفس الطريقة — لا يوجد ما يشير إلى أن هذا الشرط تحديداً هو
+السبب.
+
+### 3. السبب الجذري الأرجح — تصميم الـ404 المتعمّد يُخفي فشل مصادقة عن غياب الإعداد
+
+من `web/app.py:2147-2155`:
+
+```python
+@app.post("/internal/run-ioc-migration", include_in_schema=False)
+async def run_ioc_table_migration(request: Request):
+    expected_token = os.environ.get("IOC_MIGRATION_TOKEN")
+    provided_token = request.headers.get("X-Migration-Token")
+    if not expected_token or not provided_token or not _secrets_compare.compare_digest(
+        provided_token, expected_token
+    ):
+        raise HTTPException(404, "Not Found")
+```
+
+هذا التصميم **مقصود وموثّق صراحة في التعليق أعلى الكود** (سطر 2143-2144: "يرجع
+404 وليس 401/403 حتى لا يُكشَف عن وجود الـendpoint لأي فحص غير مصرَّح") — ومؤكَّد
+باختبار صريح `tests/test_ioc_migration_endpoint.py::test_no_secret_configured_returns_404`
+الذي يثبت أن **غياب `IOC_MIGRATION_TOKEN` من البيئة يُنتج 404 مطابقاً تماماً**
+لحالتي "token خاطئ" و"الـroute غير مسجَّل أصلاً" — الحالات الثلاث لا يمكن
+تمييزها من طرف العميل إطلاقاً.
+
+**النقطة الحاسمة:** `IOC_MIGRATION_TOKEN` هو متغيّر بيئة **جديد تماماً**، أُضيف
+في نفس commit الذي أضاف الـendpoint نفسه (`1f76cf1`)، ومنفصل كلياً عن
+`MIGRATION_SECRET_TOKEN` (المستخدم في `/internal/run-migration` الأقدم والذي
+يبدو أنه أُعِدّ ونجح سابقاً). بحثت في `README.md` و`.env.example` و
+`migrations/README_ioc_migration.md` عن أي ذكر لـ`IOC_MIGRATION_TOKEN` — **لا
+يوجد أي ذكر إطلاقاً** في أي ملف توثيقي؛ الاسم موجود فقط داخل `web/app.py`
+والاختبارات. كما أن `migrations/README_ioc_migration.md` نفسه (المكتوب *قبل*
+إضافة هذا الـendpoint في commit سابق) يصف فقط تشغيل السكربت يدوياً عبر Render
+Shell أو `DATABASE_URL` مباشرة — **لا يذكر الـendpoint أو الـtoken إطلاقاً**،
+أي أنه لا يوجد أي مصدر توثيقي كان يُذكِّر بضبط `IOC_MIGRATION_TOKEN` يدوياً في
+لوحة Render (وهي خطوة يدوية منفصلة عن `git push`/deploy — ضبط متغيّر بيئة على
+Render لا يحدث تلقائياً بمجرد نجاح الـdeploy).
+
+**السيناريو الأرجح:** الـdeploy نجح (الكود موجود، الـroute مُسجَّل لأن `RENDER`
+مضبوط تلقائياً)، لكن **لم يُضبط `IOC_MIGRATION_TOKEN` كمتغيّر بيئة فعلي في لوحة
+Render** لأنه لا يوجد أي تذكير/خطوة موثّقة تطلب ذلك (بخلاف `RENDER` الذي Render
+يضبطه بنفسه). المستخدم "توكن صحيح" من منظوره (يرسل قيمة يعتقد أنها الصحيحة في
+Header)، لكن السيرفر ليس لديه أي `expected_token` ليقارنها به (`None` → falsy)،
+فيدخل الشرط `if not expected_token or ...` ويُرجع 404 — **بصرف النظر تماماً عن
+قيمة الـtoken المُرسَل**. وبما أن هذا الـ404 مطابق حرفياً لحالة "route غير
+موجود"، فمن الخارج يبدو الأمر وكأن الـendpoint "غير موجود" فعلاً، رغم أنه
+مسجَّل ويعمل تماماً — فقط ينقصه الإعداد.
+
+### 4. Trailing slash / 307 redirect — تحقّقت، مُستبعد
+
+`grep` لم يُظهر أي route آخر مسجَّل بنفس المسار مع أو بدون trailing slash (لا
+تعارض). المسار `/internal/run-ioc-migration` وحيد وواضح، ولا يوجد أي router
+بـ`prefix="/internal"` قد يُسبّب ازدواجية تسجيل. هذا الاحتمال غير مرجّح إطلاقاً
+كسبب — يستحق التحقق فقط إذا كان طلب المستخدم الفعلي (عبر curl/أداة أخرى) يضيف
+`/` زائدة في نهاية المسار خطأً، وهو أمر لا يمكن تأكيده من الكود، بل من الطلب
+الفعلي نفسه فقط.
+
+### الخلاصة والإصلاح المقترح (لم يُنفَّذ — يحتاج تأكيداً ثم تنفيذاً صريحاً)
+
+**السبب الجذري الأرجح بفارق كبير:** `IOC_MIGRATION_TOKEN` غير مضبوط كمتغيّر
+بيئة في لوحة Render الفعلية (خطوة يدوية منسية، غير موثّقة في أي مكان)، وتصميم
+الـ404 المتعمّد (لإخفاء وجود الـendpoint عن أي فحص) يجعل هذا الغياب **يبدو
+تماماً** وكأن الـroute غير موجود من منظور طلب HTTP خارجي، رغم أن الـdeploy نجح
+والـcode موجود ويعمل.
+
+**خطوات الإصلاح المقترحة:**
+1. تأكيد أولاً (بدون تخمين): الدخول إلى لوحة Render → Environment، والتحقق
+   مباشرة هل `IOC_MIGRATION_TOKEN` موجود ضمن قائمة متغيّرات البيئة للخدمة أم لا.
+   هذا يحسم الأمر فوراً بشكل قاطع دون الحاجة لأي تخمين إضافي.
+2. لو كان غائباً: إضافته من لوحة Render بقيمة سرّية قوية (نفس القيمة التي
+   سيرسلها المستخدم لاحقاً في Header الـ`X-Migration-Token`)، ثم الانتظار
+   حتى يُعيد Render تشغيل الخدمة تلقائياً بعد حفظ متغيّر البيئة (Render يعيد
+   deploy/restart تلقائياً عند تغيير env vars — ليس مجرد حفظ صامت).
+3. بعد ذلك فقط: إعادة إرسال نفس طلب `POST /internal/run-ioc-migration` بنفس
+   الـtoken — يُفترض أن يرجع 200 مع تفاصيل الجدول المُنشأ.
+4. **ملاحظة تصميمية للمستقبل (اختيارية، ليست جزءاً من هذا الإصلاح الفوري):**
+   بما أن الـ404 الموحَّد يُصعِّب فعلياً تشخيص "الإعداد ناقص" مقابل "لا صلاحية"،
+   قد يكون من المفيد لاحقاً إضافة تسجيل (logging) من جانب السيرفر فقط (لا يظهر
+   للعميل) يُميّز صراحة بين حالة `expected_token` غائب تماماً وحالة token خاطئ
+   فعلاً — لتسريع أي تشخيص مشابه مستقبلاً دون كشف أي شيء للعميل الخارجي. هذا
+   اقتراح توثيقي فقط، لم يُنفَّذ ولا يُنصح بتنفيذه دون موافقة صريحة لأنه تعديل
+   على endpoint إنتاجي حسّاس.
+
+---
+
+## إصلاح: سطور [DIAG] لا تظهر في سجلات Render (جلسة 2026-07-04، تكملة)
+
+**المشكلة:** سطرا `[DIAG startup]` و`[DIAG request]` (أُضيفا بـcommit `a84da30`
+عبر `logging.info(...)`) لم يظهرا إطلاقاً في سجلات Render، حتى سطر الـstartup.
+
+**السبب الجذري:** لا يوجد `logging.basicConfig()` في أي مكان بالمشروع (تحقّقت
+بـ`grep -rn "logging.basicConfig"` — لا نتيجة). الموضع الوحيد الذي يضبط
+`setLevel` هو `web/auth.py::_auth_logger`، وهو logger معزول تماماً بـ
+`FileHandler` خاص به على `optisec.auth`، لا علاقة له بالـroot logger. الأمر
+الفعلي على Render (موثّق في `README.md`): `uvicorn web.app:app --workers 2`
+بدون أي `--log-level`. uvicorn يضبط فقط loggers الخاصة به
+(`uvicorn`/`uvicorn.error`/`uvicorn.access`) — **لا يلمس الـroot logger
+إطلاقاً**. فيبقى الـroot logger عند مستواه الافتراضي `WARNING`، وأي
+`logging.info(...)` يُستدعى عبره (بما فيها سطرا [DIAG]) يُستبعد صامتاً قبل أي
+handler.
+
+**الإصلاح في `web/app.py`:**
+1. سطر `[DIAG startup]` (داخل `startup()`) — `logging.info` → `print(...,
+   flush=True)`.
+2. سطر `[DIAG request]` (داخل `run_ioc_table_migration`) — نفس التحويل.
+3. سطر جديد `[DIAG module-load]` على مستوى الموديول، قبل شرط
+   `if os.environ.get("GROQ_ENV")...` مباشرة (يُنفَّذ فوراً عند استيراد
+   `app.py`، خارج أي دالة) — يطبع قيمتَي `GROQ_ENV`/`RENDER` الفعليتين وهل تم
+   تسجيل راوترَي `/internal/run-migration` و`/internal/run-ioc-migration`
+   (`REGISTERED`) أو تخطيهما (`SKIPPED`).
+4. تحقّقت يدوياً (`python -c "import web.app"` مع/بدون `RENDER=true`) أن
+   السطر الجديد يطبع القيمة الصحيحة في كلا الفرعين.
+- **769/769 اختبار ناجح** — لا regressions.
+- Commit + push إلى `origin/master` بموافقة صريحة.
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
