@@ -57,26 +57,39 @@ TABLE_NAME = Ioc.__tablename__
 
 
 async def migrate():
-    async with engine.begin() as conn:
-        existing_tables = await conn.run_sync(
-            lambda sync_conn: inspect(sync_conn).get_table_names()
-        )
-        if TABLE_NAME in existing_tables:
-            print(f"[migrate] الجدول '{TABLE_NAME}' موجود مسبقاً — لا تغيير")
-            return
-
-        await conn.run_sync(lambda sync_conn: Ioc.__table__.create(sync_conn, checkfirst=True))
-
     columns = [c.name for c in Ioc.__table__.columns]
     indexes = sorted(ix.name for ix in Ioc.__table__.indexes)
     constraints = sorted(
         c.name for c in Ioc.__table__.constraints if getattr(c, "name", None)
     )
 
+    async with engine.begin() as conn:
+        existing_tables = await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).get_table_names()
+        )
+        if TABLE_NAME in existing_tables:
+            print(f"[migrate] الجدول '{TABLE_NAME}' موجود مسبقاً — لا تغيير")
+            return {
+                "created": False,
+                "table": TABLE_NAME,
+                "columns": columns,
+                "indexes": indexes,
+                "constraints": constraints,
+            }
+
+        await conn.run_sync(lambda sync_conn: Ioc.__table__.create(sync_conn, checkfirst=True))
+
     print(f"[migrate] تم إنشاء الجدول '{TABLE_NAME}'")
     print(f"[migrate] الأعمدة ({len(columns)}): {', '.join(columns)}")
     print(f"[migrate] الفهارس (indexes) ({len(indexes)}): {', '.join(indexes) if indexes else '(لا يوجد)'}")
     print(f"[migrate] القيود (constraints) ({len(constraints)}): {', '.join(constraints) if constraints else '(لا يوجد اسم صريح)'}")
+    return {
+        "created": True,
+        "table": TABLE_NAME,
+        "columns": columns,
+        "indexes": indexes,
+        "constraints": constraints,
+    }
 
 
 if __name__ == "__main__":

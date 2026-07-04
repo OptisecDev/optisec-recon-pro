@@ -2135,3 +2135,42 @@ if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
         from web.migrate_normalize_demo_severity import migrate as _run_migration
         counts = await _run_migration()
         return JSONResponse({"normalized": counts, "total_updated": sum(counts.values())})
+
+    # ── TEMPORARY — one-off IOC table migration trigger, DELETE AFTER USE ────
+    # Same rationale as /internal/run-migration above (Render's free plan has
+    # no Shell access): token-gated way to run
+    # web.migrate_add_ioc_table.migrate() against production. Returns 404
+    # (not 401/403) on any auth failure so the endpoint's existence isn't
+    # revealed to unauthenticated probes. Remove this block +
+    # IOC_MIGRATION_TOKEN env var once the migration has been run against
+    # production.
+    @app.post("/internal/run-ioc-migration", include_in_schema=False)
+    async def run_ioc_table_migration(request: Request):
+        """TEMPORARY endpoint — see block comment above. Delete after use."""
+        expected_token = os.environ.get("IOC_MIGRATION_TOKEN")
+        provided_token = request.headers.get("X-Migration-Token")
+        if not expected_token or not provided_token or not _secrets_compare.compare_digest(
+            provided_token, expected_token
+        ):
+            raise HTTPException(404, "Not Found")
+
+        logging.info("IOC migration endpoint invoked")
+        from web.migrate_add_ioc_table import migrate as _run_ioc_migration
+        try:
+            result = await _run_ioc_migration()
+        except Exception:
+            logging.exception("IOC migration failed")
+            return JSONResponse({"success": False}, status_code=500)
+
+        logging.info(
+            "IOC migration completed: created=%s table=%s",
+            result["created"], result["table"],
+        )
+        return JSONResponse({
+            "success": True,
+            "created": result["created"],
+            "table": result["table"],
+            "columns": result["columns"],
+            "indexes": result["indexes"],
+            "constraints": result["constraints"],
+        })
