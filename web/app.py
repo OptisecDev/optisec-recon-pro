@@ -495,6 +495,15 @@ async def session_refresh_middleware(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup():
+    # TEMPORARY diagnostic — remove once IOC_MIGRATION_TOKEN 404 is root-caused.
+    # Logs only presence/length, never the token value.
+    _ioc_token = os.environ.get("IOC_MIGRATION_TOKEN")
+    logging.info(
+        "[DIAG startup] IOC_MIGRATION_TOKEN present=%s len=%s RENDER=%r",
+        _ioc_token is not None, len(_ioc_token) if _ioc_token else 0,
+        os.environ.get("RENDER"),
+    )
+
     await init_db()
     await _ensure_first_admin()
     await _ensure_demo_account()
@@ -2149,6 +2158,15 @@ if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
         """TEMPORARY endpoint — see block comment above. Delete after use."""
         expected_token = os.environ.get("IOC_MIGRATION_TOKEN")
         provided_token = request.headers.get("X-Migration-Token")
+
+        # TEMPORARY diagnostic — remove once IOC_MIGRATION_TOKEN 404 is root-caused.
+        # Logs only presence/length, never the token value.
+        logging.info(
+            "[DIAG request] IOC_MIGRATION_TOKEN present=%s len=%s RENDER=%r",
+            expected_token is not None, len(expected_token) if expected_token else 0,
+            os.environ.get("RENDER"),
+        )
+
         if not expected_token or not provided_token or not _secrets_compare.compare_digest(
             provided_token, expected_token
         ):
