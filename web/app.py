@@ -500,7 +500,7 @@ async def startup():
     await _ensure_demo_account()
 
     from modules.darkweb.scheduler import start_scheduler
-    start_scheduler()
+    start_scheduler(asyncio.get_running_loop())
 
     from modules.honeypot.manager import start_honeypots
     await start_honeypots()

@@ -12,6 +12,7 @@ web.database.SessionLocal.
 import asyncio
 import os
 import sys
+import threading
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -370,10 +371,26 @@ class TestRunScheduledScan:
 
 class TestRunScanJob:
     def test_never_raises_even_if_the_sweep_crashes(self, monkeypatch):
+        """_run_scan_job submits to sched._app_loop via run_coroutine_threadsafe
+        (see modules/darkweb/scheduler.py's module docstring for why: reusing
+        asyncio.run()'s brand-new loop per firing corrupts the shared asyncpg
+        pool). Mirror that topology here — a loop running on its own thread,
+        stands in for the app's event loop, while this test thread plays the
+        part of APScheduler's own thread firing the job."""
         async def boom():
             raise RuntimeError("db is unreachable")
         monkeypatch.setattr(sched, "run_scheduled_scan", boom)
-        sched._run_scan_job()  # must not raise
+
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=loop.run_forever, daemon=True)
+        thread.start()
+        sched._app_loop = loop
+        try:
+            sched._run_scan_job()  # must not raise
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=2)
+            loop.close()
 
 
 # ── 5. Lifecycle — start/stop/status ─────────────────────────────────────────
@@ -381,7 +398,7 @@ class TestRunScanJob:
 class TestLifecycle:
     def test_start_scheduler_runs_and_configures_interval(self, monkeypatch):
         monkeypatch.setenv("DARKWEB_SCAN_INTERVAL_HOURS", "3")
-        scheduler = sched.start_scheduler()
+        scheduler = sched.start_scheduler(asyncio.new_event_loop())
         try:
             assert scheduler.running is True
             job = scheduler.get_job(sched.JOB_ID)
@@ -392,8 +409,8 @@ class TestLifecycle:
 
     def test_start_is_idempotent(self, monkeypatch):
         monkeypatch.setenv("DARKWEB_SCAN_INTERVAL_HOURS", "24")
-        s1 = sched.start_scheduler()
-        s2 = sched.start_scheduler()
+        s1 = sched.start_scheduler(asyncio.new_event_loop())
+        s2 = sched.start_scheduler(asyncio.new_event_loop())
         assert s1 is s2
         sched.stop_scheduler()
 
@@ -404,7 +421,7 @@ class TestLifecycle:
         monkeypatch.setenv("DARKWEB_SCAN_INTERVAL_HOURS", "12")
         assert sched.get_status()["running"] is False
 
-        sched.start_scheduler()
+        sched.start_scheduler(asyncio.new_event_loop())
         status = sched.get_status()
         assert status["running"] is True
         assert status["interval_hours"] == 12.0

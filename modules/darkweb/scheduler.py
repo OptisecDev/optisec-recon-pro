@@ -8,9 +8,17 @@ manual check does (via web.routers.darkweb_monitor.run_check_and_persist).
 
 Design notes:
   - Uses APScheduler's BackgroundScheduler (its own thread, not the asyncio
-    event loop) — each firing hands off to `asyncio.run()` for the actual
-    async DB/HTTP work, since BackgroundScheduler jobs run in a plain
-    thread with no event loop of their own.
+    event loop) so scan firing time is decoupled from how busy the app's
+    event loop is. Each firing hands the coroutine off to the *app's*
+    event loop via `asyncio.run_coroutine_threadsafe()` (captured in
+    `start_scheduler()`) rather than `asyncio.run()`. `asyncio.run()` would
+    spin up a brand new loop per firing, and since the shared asyncpg
+    connection pool in web.database is a single process-wide engine, any
+    pooled connection opened on one loop (e.g. the app's main loop during
+    startup, or a previous firing's now-closed loop) would get handed to
+    the new loop and raise "Future ... attached to a different loop" the
+    moment it's awaited. Running every firing on the same app loop that
+    owns the pool avoids this entirely.
   - Render deploys this app with `--workers 2` (see README's Deploy to
     Render section), so two independent processes each start their own
     BackgroundScheduler on the same interval. To keep the sweep from
@@ -54,6 +62,7 @@ WORKER_ID = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
 _DEFAULT_LOCK_STALE_HOURS = 2.0
 
 _scheduler: BackgroundScheduler | None = None
+_app_loop: asyncio.AbstractEventLoop | None = None
 _last_run_at: datetime | None = None
 _last_run_summary: dict | None = None
 
@@ -190,21 +199,39 @@ async def run_scheduled_scan() -> dict:
 
 
 def _run_scan_job() -> None:
-    """Sync entrypoint APScheduler calls on its own thread."""
+    """Sync entrypoint APScheduler calls on its own thread.
+
+    Submits the coroutine to the app's event loop (`_app_loop`, captured by
+    `start_scheduler()`) instead of `asyncio.run()`, so every DB call in
+    `run_scheduled_scan()` runs on the same loop that owns the shared
+    asyncpg connection pool — see the module docstring for why mixing
+    loops there raises "attached to a different loop". `.result()` blocks
+    this scheduler thread only; it doesn't block the app loop, which keeps
+    serving requests concurrently while the coroutine runs on it.
+    """
     try:
-        asyncio.run(run_scheduled_scan())
+        future = asyncio.run_coroutine_threadsafe(run_scheduled_scan(), _app_loop)
+        future.result()
     except Exception:
         logger.exception("darkweb scheduler: sweep crashed")
 
 
 # ── Lifecycle ────────────────────────────────────────────────────────────
 
-def start_scheduler() -> BackgroundScheduler:
+def start_scheduler(loop: asyncio.AbstractEventLoop | None = None) -> BackgroundScheduler:
     """Start the periodic sweep. Safe to call more than once — a second
-    call is a no-op while the scheduler is already running."""
-    global _scheduler
+    call is a no-op while the scheduler is already running.
+
+    `loop` must be the event loop that owns the app's shared DB engine
+    (web.database.engine) — every firing runs on it via
+    run_coroutine_threadsafe. Defaults to the currently running loop, which
+    is correct when called from within FastAPI's `startup` event handler.
+    """
+    global _scheduler, _app_loop
     if _scheduler is not None and _scheduler.running:
         return _scheduler
+
+    _app_loop = loop if loop is not None else asyncio.get_running_loop()
 
     interval_hours = get_scan_interval_hours()
     _scheduler = BackgroundScheduler(timezone="UTC")
@@ -228,11 +255,12 @@ def start_scheduler() -> BackgroundScheduler:
 
 def stop_scheduler() -> None:
     """Stop the scheduler cleanly. Safe to call even if never started."""
-    global _scheduler
+    global _scheduler, _app_loop
     if _scheduler is not None:
         _scheduler.shutdown(wait=False)
         logger.info("darkweb scheduler stopped worker_id=%s", WORKER_ID)
     _scheduler = None
+    _app_loop = None
 
 
 def get_status() -> dict:

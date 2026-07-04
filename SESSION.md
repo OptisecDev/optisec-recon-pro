@@ -803,6 +803,89 @@ handler.
 
 ---
 
+## تشخيص RuntimeError - Dark Web Scheduler (جلسة 2026-07-04) — قراءة/تحليل فقط، لم يُعدَّل أي كود
+
+الخطأ في سجلات الإنتاج:
+```
+RuntimeError: Task <Task pending name='Task-X' coro=<run_scheduled_scan() running at
+/app/modules/darkweb/scheduler.py:140> cb=[_run_until_complete_cb() at
+.../asyncio/base_events.py:181]> got Future <Future pending cb=[BaseProtocol._on_waiter_completed()]>
+attached to a different loop
+```
+
+### 1. كيف يُجدوَل `run_scheduled_scan()`
+- `modules/darkweb/scheduler.py` يستخدم **APScheduler `BackgroundScheduler`** (سطر 210) — هذا Scheduler يعمل في **ثريد منفصل خاص به**، وليس على event loop التطبيق (uvicorn/FastAPI).
+- كل جولة، APScheduler ينادي `_run_scan_job()` (سطر 192) على ذلك الثريد، وهي دالة **sync** تستدعي:
+  ```python
+  asyncio.run(run_scheduled_scan())
+  ```
+  `asyncio.run()` تُنشئ **event loop جديد تماماً** في كل استدعاء، وتُغلقه عند الانتهاء. أي أن كل جولة فحص (كل `DARKWEB_SCAN_INTERVAL_HOURS`، وأول مرة بعد 60 ثانية من الإقلاع) تُشغَّل على loop مختلف عن سابقتها، وكلها مختلفة عن loop التطبيق الرئيسي.
+- القفل المُشار إليه سابقاً (`SchedulerLock`، تحديث شرطي ذري عبر DB) موجود ويعمل كما هو مطلوب لمنع تشغيل مزدوج بين الـ2 workers على Render — لكنه **غير متعلق** بهذا الخطأ؛ الخطأ سببه event loops متعددة ضمن نفس الـprocess، وليس تعدد الـworkers.
+- أول استدعاء async يعتمد على DB داخل `run_scheduled_scan()` هو بالضبط سطر 140:
+  ```python
+  async with _db.SessionLocal() as db:      # سطر 139
+      acquired = await _acquire_lock(db, ...)  # سطر 140 — هنا بالضبط يظهر في الـtraceback
+  ```
+
+### 2. تهيئة event loop على مستوى التطبيق
+- `web/database.py` (سطر 10-11): `engine`/`SessionLocal` **singletons على مستوى الموديول** — يُنشآن مرة واحدة عند استيراد الموديول، ويُستخدَمان من كل مكان في التطبيق (كل الـrouters + `web/app.py` + الـscheduler) دون أي تمييز لأي loop.
+- `web/app.py` (`@app.on_event("startup")`, سطر 496-503): `await init_db()` يُنفَّذ على **loop التطبيق الرئيسي** (uvicorn)، وهذا أول استخدام فعلي لـ`engine` — أي أول اتصال asyncpg حقيقي يُفتح وُيوضع في الـconnection pool يكون **مربوطاً بـloop التطبيق الرئيسي**.
+- مباشرة بعد ذلك، ضمن نفس دالة `startup()`، يُستدعى `start_scheduler()` — الذي يُشغّل `BackgroundScheduler` على ثريد منفصل كما ذُكر أعلاه.
+- **لا يوجد أكثر من event loop نشط في نفس اللحظة** بالمعنى التقليدي (uvicorn's loop نشط طوال الوقت، وكل استدعاء `asyncio.run()` من ثريد الـscheduler ينشئ loop مؤقت يُغلق بعد كل جولة) — لكن المشكلة ليست "أكثر من loop نشط بالتزامن"، بل **إعادة استخدام نفس الـconnection pool عبر loops متعاقبة/مختلفة**.
+
+### 3. السبب الجذري الدقيق
+`engine = create_async_engine(DATABASE_URL)` في `web/database.py` ينشئ **connection pool واحد على مستوى العملية (process)** (افتراضياً `AsyncAdaptedQueuePool`). اتصالات asyncpg الفعلية داخل هذا الـpool تبقى مرتبطة داخلياً (عبر Future/waiter objects) بـevent loop الذي كان نشطاً وقت إنشاء كل اتصال:
+
+1. عند startup، `init_db()` يفتح أول اتصال على **loop التطبيق الرئيسي (uvicorn)** ويُعاد للـpool (idle) بعد الانتهاء من `engine.begin()`.
+2. بعد 60 ثانية، أول جولة scheduler تستدعي `asyncio.run(run_scheduled_scan())` فتُنشئ **loop جديد (Loop B)**. عندما تطلب `_db.SessionLocal()` اتصالاً من الـpool المشترك، الـpool (الذي لا يعرف شيئاً عن event loops) قد يُعيد **نفس الاتصال الذي فُتح على loop التطبيق الرئيسي**.
+3. أول `await` فعلي على ذلك الاتصال تحت Loop B (هنا بالضبط `await _acquire_lock(...)` في سطر 140) يحاول انتظار Future/waiter داخلي تابع لـasyncpg كان قد أُنشئ أصلاً مرتبطاً بـloop التطبيق الرئيسي → أسينكيو يرفض فوراً بـ`RuntimeError: ... attached to a different loop`.
+4. نفس المشكلة تتكرر بين جولات الـscheduler نفسها: كل جولة تخلق loop جديد بواسطة `asyncio.run()`، فأي اتصال بقي idle في الـpool من جولة سابقة (Loop سابق أُغلق) سيُعاد استخدامه تحت loop الجولة الحالية → نفس الخطأ.
+
+**خلاصة السبب**: نعم، هذا بالضبط النمط الشائع لهذا الخطأ — لكن ليس "الـscheduler ينشئ اتصال على loop مختلف عن اللي ينفذ فيه الاستعلام" بالمعنى الحرفي لعملية واحدة، بل **مشاركة نفس connection pool (نفس `engine`/`SessionLocal` على مستوى الموديول) بين loop التطبيق الرئيسي وbين loops مؤقتة متعددة يخلقها `asyncio.run()` في كل جولة scheduler** — وهذا استخدام غير مدعوم أصلاً من asyncpg/SQLAlchemy async (اتصال واحد لا يجوز استخدامه إلا على نفس الـloop الذي أُنشئ عليه).
+
+### 4. هل هذا يعطّل الوظيفة فعلياً أم مجرد تحذير غير مؤثر؟
+**يعطّل الوظيفة فعلياً — ليس تحذيراً بلا أثر.** بالتفصيل:
+
+- لا يوجد أي `try/except` حول السطرين 139-140 داخل `run_scheduled_scan()` نفسها. الـ`try/finally` الوحيد يبدأ في السطر 147 — أي **بعد** نقطة فشل `_acquire_lock`. فإذا رمى asyncpg الخطأ عند السطر 140، الاستثناء يتصاعد ليخرج من `run_scheduled_scan()` بالكامل **قبل** الوصول لأي منطق فحص المراقبات (`due_ids`, حلقة `run_check_and_persist`, إلخ).
+- الاستثناء يُمسَك فقط في `_run_scan_job()` (سطر 192-197) عبر `except Exception: logger.exception(...)` — هذا يمنع تحطم ثريد الـscheduler/العملية، لكنه يعني أن **الجولة كاملة تُلغى صامتاً (بعد تسجيلها كـexception في اللوج) بدون فحص أي هدف واحد من `DarkWebMonitor`**. لا يُحدَّث `_last_run_summary`، ولا تُحفَظ أي تنبيهات جديدة، ولا يتقدّم `last_checked_at` لأي هدف.
+- نظراً لأن الفشل يحدث عند أول `await` فعلي على الاتصال (على الأرجح أثناء تنفيذ/checkout الاتصال نفسه، قبل أن يُنفَّذ أي SQL فعلياً) — فمن المرجّح أن تحديث `SchedulerLock` (الـUPDATE الذري) **لم يُنفَّذ ولم يُلتزَم (commit)** بعد، أي أن القفل على الأرجح **لا يبقى عالقاً (stuck)** بسبب هذا العطل تحديداً. لكن هذا استنتاج مبني على فهم سلوك asyncpg/SQLAlchemy المعتاد، وليس تتبعاً حياً لمكان الفشل بالضبط داخل `_acquire_lock` — يحتاج تأكيداً بإعادة إنتاج محلية لو أردنا يقيناً كاملاً.
+- الأثر العملي: **فحص Dark Web الدوري لا يكتمل أبداً تلقائياً** (أو يكتمل بشكل متقطّع فقط حين يحصل أن الـpool يُعطي اتصالاً جديداً تماماً بدل واحد قديم من loop آخر) — وهذا يفسّر تكرار نفس الخطأ في السجلات: **كل جولة تقريباً تفشل بنفس الطريقة**، لأن الـpool يستمر بإعادة تدوير اتصالات "ملوّثة" بـloops سابقة طالما لم يُعَد تشغيل العملية بالكامل.
+
+### الإصلاح المقترح (لم يُنفَّذ — اقتراح فقط)
+الخيار الموصى به: **إبقاء `BackgroundScheduler` على ثريده الخاص (كما هو مصمَّم فعلاً، لأسباب موثّقة في docstring الموديول — فصل توقيت الجدولة عن انشغال loop التطبيق)، لكن تنفيذ الكوروتين فعلياً على نفس event loop الذي يملك `engine`/`SessionLocal` المشترك، بدل `asyncio.run()` الذي يخلق loop جديد كل مرة**:
+
+1. عند `start_scheduler()` (يُستدعى من داخل `async def startup()` في `web/app.py` — أي أثناء تنفيذه، loop التطبيق الرئيسي هو الـrunning loop) التقط مرجع الـloop عبر `asyncio.get_running_loop()` واحتفظ به في متغيّر معياري (module-level) في `scheduler.py`.
+2. استبدل `asyncio.run(run_scheduled_scan())` في `_run_scan_job()` بـ:
+   ```python
+   future = asyncio.run_coroutine_threadsafe(run_scheduled_scan(), app_loop)
+   future.result()  # حظر ثريد الـscheduler الخاص فقط، لا يؤثر على loop التطبيق
+   ```
+   بهذا الشكل: APScheduler ما زال يطلق الجولة من ثريده الخاص بنفس التوقيت المُجدوَل، لكن كل عمليات الـDB الفعلية للـcoroutine تُنفَّذ **على نفس loop التطبيق** الذي يملك الـconnection pool أصلاً — فلا يحدث تصادم loops مطلقاً، وكل اتصال يُستخدم دائماً على نفس الـloop الذي فُتح عليه.
+3. بديل معماري أوسع (أكثر تغييراً): استبدال `BackgroundScheduler` بـ`AsyncIOScheduler` (من نفس مكتبة APScheduler)، الذي يُجدوِل الكوروتينات مباشرة على event loop التطبيق دون ثريد منفصل أو `asyncio.run()` إطلاقاً — يُلغي المشكلة جذرياً، لكنه يغيّر طريقة `start_scheduler()`/`stop_scheduler()` (يجب استدعاؤه من داخل loop التطبيق فقط، وهو الحال فعلاً في `startup()`/`shutdown()` الحاليين، فالتغيير سطحي نسبياً).
+4. **غير مستحسن**: إنشاء `engine` منفصل بالكامل داخل كل استدعاء `asyncio.run()` (محلي لكل جولة، يُتخلَّص منه في نهايتها) — يحل المشكلة تقنياً لكنه يُفقِد فائدة الـpooling تماماً ويُضيف overhead إنشاء/إغلاق اتصالات جديدة في كل جولة scheduler دون داعٍ حقيقي.
+
+لم يُطبَّق أي من هذه الخيارات — بانتظار موافقة صريحة قبل التنفيذ.
+
+### ✅ تم التنفيذ (جلسة 2026-07-04، تكملة) — الخيار الموصى به: `run_coroutine_threadsafe`
+- `modules/darkweb/scheduler.py`:
+  - `start_scheduler(loop=None)` — بارامتر جديد اختياري؛ يلتقط event loop التطبيق (`asyncio.get_running_loop()` افتراضياً إن لم يُمرَّر) ويخزّنه في `_app_loop` (متغيّر معياري جديد على مستوى الموديول).
+  - `_run_scan_job()` — استُبدل `asyncio.run(run_scheduled_scan())` بـ:
+    ```python
+    future = asyncio.run_coroutine_threadsafe(run_scheduled_scan(), _app_loop)
+    future.result()
+    ```
+    الآن كل جولة (رغم إطلاقها من ثريد `BackgroundScheduler` الخاص) تُنفَّذ فعلياً على نفس loop التطبيق الذي يملك الـconnection pool المشترك — لا يوجد أي loop جديد يُنشأ بعد الآن، فلا تصادم بين loops إطلاقاً.
+  - `stop_scheduler()` — يُصفّر `_app_loop = None` أيضاً عند الإيقاف (تنظيف كامل للحالة).
+  - تحديث docstring الموديول ليشرح التصميم الجديد بدل الإشارة لـ`asyncio.run()`.
+- `web/app.py` (`startup()`, سطر ~502): `start_scheduler(asyncio.get_running_loop())` — تمرير صريح للـloop بدل الاعتماد الضمني على auto-detect.
+- `tests/test_darkweb_scheduler.py` — 4 اختبارات كانت تستدعي `start_scheduler()`/`_run_scan_job()` بشكل متزامن خارج أي loop نشط، فكسرها التغيير (كانت تعتمد على `asyncio.run()` القديم ضمنياً):
+  - 3 اختبارات ضمن `TestLifecycle` (`test_start_scheduler_runs_and_configures_interval`, `test_start_is_idempotent`, `test_get_status_reflects_running_state`) — عُدِّلت لتمرير `asyncio.new_event_loop()` صراحة لـ`start_scheduler()` (لا حاجة لتشغيله فعلياً — الجولة الأولى مجدولة بعد 60 ثانية، خارج نطاق هذه الاختبارات).
+  - `TestRunScanJob.test_never_raises_even_if_the_sweep_crashes` — أُعيدت كتابته ليُحاكي طوبولوجيا الإنتاج الحقيقية: event loop يعمل على ثريد خاص به (يمثّل loop التطبيق)، بينما ثريد الاختبار الرئيسي (يمثّل ثريد APScheduler) يستدعي `_run_scan_job()` مباشرة — يتحقق أن `run_coroutine_threadsafe(...).result()` يلتقط الاستثناء عبر حدود الثريدز بشكل صحيح ولا يُسقط شيئاً.
+- **763/763 اختبار ناجح** على كامل test suite (لا regressions) — تشغيل `tests/test_darkweb_scheduler.py` وحده أيضاً: **23/23 ناجح**.
+- تحقّق حي: تشغيل `uvicorn web.app:app` فعلياً (بدء وإيقاف كاملين) لتأكيد أن `start_scheduler(asyncio.get_running_loop())` لا يرمي أي استثناء ضمن `async def startup()` الحقيقي، وأن `stop_scheduler()` يُنظّف الحالة دون أخطاء عند الإغلاق.
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
