@@ -17,6 +17,29 @@ SECRET_KEY = os.environ.get("JWT_SECRET", "optisec-enterprise-key-change-in-prod
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "30"))
 
+# ─── Trusted proxy IP resolution ───────────────────────────────────────────────
+# Set TRUSTED_PROXY_IPS (comma-separated) when deploying behind a reverse
+# proxy such as Nginx, so X-Forwarded-For / X-Real-IP are only honored when
+# they come from that proxy. Left empty, no client-supplied IP header is
+# ever trusted, preventing IP spoofing for rate limiting / auth logging.
+_TRUSTED_PROXY_IPS = {
+    ip.strip() for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",") if ip.strip()
+}
+
+
+def get_client_ip(request: Request) -> str:
+    """Return the real client IP, honoring X-Forwarded-For/X-Real-IP only
+    when the immediate connecting peer is a trusted reverse proxy."""
+    direct_ip = request.client.host if request.client else "unknown"
+    if direct_ip in _TRUSTED_PROXY_IPS:
+        forwarded_for = request.headers.get("X-Forwarded-For")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+    return direct_ip
+
 # ─── Auth event logger ─────────────────────────────────────────────────────────
 _log_dir = Path(__file__).parent.parent / "logs"
 _log_dir.mkdir(exist_ok=True)

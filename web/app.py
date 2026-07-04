@@ -36,7 +36,7 @@ from web.auth import (
     generate_api_key, get_current_user,
     require_admin, require_analyst_or_admin,
     check_rate_limit, record_failed_attempt, clear_attempts,
-    log_auth_event, validate_password_strength,
+    log_auth_event, validate_password_strength, get_client_ip,
     SECRET_KEY, ALGORITHM,
 )
 from web.websocket_manager import ws_manager
@@ -739,7 +739,7 @@ async def login_submit(
     next: str = Form("/"),
     db: AsyncSession = Depends(get_db),
 ):
-    ip = request.client.host if request.client else "unknown"
+    ip = get_client_ip(request)
 
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
@@ -794,7 +794,7 @@ async def register_submit(
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    ip = request.client.host if request.client else "unknown"
+    ip = get_client_ip(request)
 
     pw_errors = validate_password_strength(password)
     if pw_errors:
@@ -832,7 +832,7 @@ async def register_submit(
 
 @app.get("/logout")
 async def logout(request: Request):
-    ip = request.client.host if request.client else "unknown"
+    ip = get_client_ip(request)
     token = request.cookies.get("access_token")
     username = "unknown"
     if token:
@@ -867,7 +867,7 @@ async def logout(request: Request):
 )
 async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     data = await request.json()
-    ip = request.client.host if request.client else "unknown"
+    ip = get_client_ip(request)
     username_input = data.get("username", "")
 
     allowed, remaining = check_rate_limit(ip)
@@ -915,7 +915,7 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     username = data.get("username", "")
     email = data.get("email", "")
     password = data.get("password", "")
-    ip = request.client.host if request.client else "unknown"
+    ip = get_client_ip(request)
 
     pw_errors = validate_password_strength(password)
     if pw_errors:

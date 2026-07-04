@@ -1,5 +1,7 @@
 """Federated Scanning router."""
 
+import secrets
+
 from fastapi import APIRouter, Request, Depends, Header
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -123,7 +125,7 @@ async def get_results(task_id: str, user: User = Depends(_user)):
 async def federation_ping(x_federation_key: Optional[str] = Header(None)):
     from modules.federation.federated_scan import get_this_node, _node_key
     node_key = _node_key()
-    if x_federation_key != node_key:
+    if not x_federation_key or not secrets.compare_digest(x_federation_key, node_key):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     node = get_this_node()
     return {"status": "online", "node": node.get("name") if node else "unknown",
@@ -133,7 +135,8 @@ async def federation_ping(x_federation_key: Optional[str] = Header(None)):
 @router.post("/api/federation/execute")
 async def federation_execute(request: Request, x_federation_key: Optional[str] = Header(None)):
     from modules.federation.federated_scan import _node_key
-    if x_federation_key != _node_key():
+    node_key = _node_key()
+    if not x_federation_key or not secrets.compare_digest(x_federation_key, node_key):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     data = await request.json()
     return {
