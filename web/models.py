@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index, Float
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index, Float, UniqueConstraint
 from sqlalchemy.orm import relationship
 from web.database import Base
 
@@ -100,6 +100,52 @@ class Finding(Base):
 
     scan = relationship("Scan", back_populates="findings")
     target = relationship("Target", back_populates="findings")
+
+
+class Ioc(Base):
+    """Indicators of Compromise detected/verified by modules/ioc/ioc_engine.py.
+
+    This is a *local* IOC store: one row per unique (ioc_type, ioc_value),
+    upserted as new evidence arrives (confidence_score/last_seen refreshed,
+    first_seen kept). It is a different concern from modules/ioc_correlation.py
+    behind the existing /correlations page, which correlates *global
+    threat-feed* IOCs (OTX pulses + a hardcoded sample feed) against each
+    other and never touches this table or this project's own scan data. A
+    future phase may feed confirmed rows from here into that correlation
+    engine, but that is out of scope for this table's design.
+
+    NEW TABLE — no ALTER TABLE migration is needed for this model itself;
+    Base.metadata.create_all() (called from web/database.py:init_db() at
+    startup) creates it automatically the first time this code runs against
+    a given database. See migrations/README_ioc_migration.md for the manual
+    steps to apply this on Render and for the raw-SQL equivalent.
+    """
+    __tablename__ = "iocs"
+    __table_args__ = (
+        UniqueConstraint("ioc_type", "ioc_value", name="uq_iocs_type_value"),
+        Index("ix_iocs_type_active", "ioc_type", "is_active"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    # hash_md5 | hash_sha256 | ip | domain | url | email
+    ioc_type = Column(String(20), nullable=False)
+    ioc_value = Column(String(500), nullable=False, index=True)
+    # virustotal | abuseipdb | otx | intelligencex | leakcheck | manual | scan_finding
+    source = Column(String(30), nullable=False)
+    confidence_score = Column(Float, nullable=False, default=0.0)
+    first_seen = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_seen = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    # Optional link back to the scan Finding this IOC was mined from
+    # (modules/ioc/ioc_engine.py::extract_iocs_from_finding). Null for IOCs
+    # that came from manual entry or a feed lookup with no local finding.
+    related_finding_id = Column(Integer, ForeignKey("findings.id", ondelete="SET NULL"), nullable=True)
+    tags = Column(JSON, default=list)  # e.g. ["malware_family:emotet", "campaign:x"]
+    # False once an IOC is considered stale/expired (e.g. superseded feed
+    # data, manually retracted) — filter reads on is_active instead of
+    # deleting rows, same convention as Finding.include_in_report.
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    related_finding = relationship("Finding")
 
 
 class Report(Base):
