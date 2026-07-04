@@ -13,6 +13,8 @@ from fastapi import (
     FastAPI, Request, Form, HTTPException, BackgroundTasks,
     Depends, WebSocket, WebSocketDisconnect,
 )
+from starlette.exceptions import WebSocketException
+from starlette import status as ws_status
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
@@ -33,7 +35,7 @@ from web.schemas import (
 )
 from web.auth import (
     verify_password, hash_password, create_access_token,
-    generate_api_key, get_current_user,
+    generate_api_key, get_current_user, get_ws_user,
     require_admin, require_analyst_or_admin,
     check_rate_limit, record_failed_attempt, clear_attempts,
     log_auth_event, validate_password_strength, get_client_ip,
@@ -1619,14 +1621,26 @@ async def _run_scan_task(
 
 @app.websocket("/ws/scan/{scan_id}")
 async def ws_scan(websocket: WebSocket, scan_id: str, db: AsyncSession = Depends(get_db)):
-    await ws_manager.connect(scan_id, websocket)
+    # Authenticate before accept() — an unauthenticated peer must never
+    # complete the WS handshake, let alone see scan data (IDOR fix).
     try:
-        scan = await db.get(Scan, scan_id)
-        if scan:
-            await websocket.send_json({
-                "type": "state", "status": scan.status,
-                "progress": scan.progress, "results": scan.results or {},
-            })
+        user = await get_ws_user(websocket, db)
+    except HTTPException:
+        raise WebSocketException(code=ws_status.WS_1008_POLICY_VIOLATION)
+
+    scan = await db.get(Scan, scan_id)
+    if not scan or (scan.user_id != user.id and user.role != "admin"):
+        raise WebSocketException(code=ws_status.WS_1008_POLICY_VIOLATION)
+
+    if not ws_manager.has_capacity(user.id):
+        raise WebSocketException(code=ws_status.WS_1008_POLICY_VIOLATION)
+
+    await ws_manager.connect(scan_id, user.id, websocket)
+    try:
+        await websocket.send_json({
+            "type": "state", "status": scan.status,
+            "progress": scan.progress, "results": scan.results or {},
+        })
 
         while True:
             try:
@@ -1640,7 +1654,7 @@ async def ws_scan(websocket: WebSocket, scan_id: str, db: AsyncSession = Depends
     except Exception:
         pass
     finally:
-        ws_manager.disconnect(scan_id, websocket)
+        ws_manager.disconnect(scan_id, user.id, websocket)
 
 
 # ─── Scanner Upgrade APIs ─────────────────────────────────────────────────────

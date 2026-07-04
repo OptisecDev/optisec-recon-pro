@@ -9,7 +9,7 @@ from pathlib import Path
 
 import bcrypt
 from jose import JWTError, jwt
-from fastapi import HTTPException, Request
+from fastapi import HTTPException, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -155,6 +155,39 @@ async def get_current_user(request: Request, db: AsyncSession):
 
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+    except (JWTError, KeyError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.is_active == True)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+async def get_ws_user(websocket: WebSocket, db: AsyncSession):
+    """Authenticate a WebSocket handshake.
+
+    Browsers cannot attach custom headers to a WebSocket handshake, so a
+    `?token=` query param is accepted in addition to the same
+    Authorization/cookie sources `get_current_user` reads (WebSocket and
+    Request both expose `.headers`/`.cookies`, so same-origin page loads
+    that already carry the `access_token` cookie work with no frontend
+    changes). Raises HTTPException(401) on any failure — callers must
+    catch this and close the socket themselves, since a WebSocket has not
+    been accepted yet and cannot be answered like a normal HTTP request.
+    """
+    from web.models import User
+
+    token = websocket.query_params.get("token")
+    if not token:
+        return await get_current_user(websocket, db)
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
