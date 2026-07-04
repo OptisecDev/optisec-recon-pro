@@ -415,13 +415,15 @@ migration ولا تعديل على أي قاعدة بيانات.**
 
 ### 3. ربط بالـ16 صف NULL — الاستنتاج الأهم أولاً
 
-**فحصت `modules/vuln/waf_aware_classifier.py` مباشرة (السطور 145-193, 203-):**
+**فحصت `modules/vuln/waf_aware_classifier.py` مباشرة (دالة `classify()` أسطر
+172-222، و`classify_response()` بعدها مباشرة — أرقام الأسطر الدقيقة تحرّكت
+بعد commit `d6712a2` التوثيقي، فالإشارة هنا لاسم الدالة لا لرقم سطر ثابت):**
 `waf_detected` هو ببساطة نتيجة `detect_waf(headers, body)` — نص باسم WAF إن طابقت
 استجابة HTTP توقيعاً معروفاً (Cloudflare/Akamai/Sucuri/...)، أو **`None` إن لم
 يُطابق أي توقيع**. هذا يعني NULL هو **قيمة متوقعة ومصمَّمة عمداً**، وليست مؤشر
 عطل:
-- `verdict = CONFIRMED` → `waf_detected` يُجبر إلى `None` دائماً (سطر 172) — الثغرة مؤكدة تعني بالتعريف عدم وجود WAF يحجبها.
-- `verdict = WAF_BLOCKED` → **يستحيل** أن يكون `waf_detected` فارغاً (الشرط نفسه `status_code in BLOCKING_STATUS_CODES and waf_vendor` يتطلب `waf_vendor` truthy لدخول هذا الفرع أصلاً، سطر 157-164).
+- `verdict = CONFIRMED` → `waf_detected` يُجبر إلى `None` دائماً (داخل `classify()`) — الثغرة مؤكدة تعني بالتعريف عدم وجود WAF يحجبها.
+- `verdict = WAF_BLOCKED` → **يستحيل** أن يكون `waf_detected` فارغاً (الشرط نفسه `status_code in BLOCKING_STATUS_CODES and waf_vendor` يتطلب `waf_vendor` truthy لدخول هذا الفرع أصلاً).
 - `verdict ∈ {ENDPOINT_INVALID, ENCODED_SAFE, INCONCLUSIVE}` → `waf_detected = waf_vendor`، أي NULL كلما لم يُطابق `detect_waf()` أي توقيع معروف (شائع جداً لأي هدف بلا WAF مُتعرَّف عليه من القائمة).
 
 فإذا كانت الـ16 صف NULL موزّعة على `verdict IN ('CONFIRMED', 'ENDPOINT_INVALID', 'ENCODED_SAFE', 'INCONCLUSIVE')` — وهذا شبه مؤكد رياضياً بما أن `WAF_BLOCKED` مستحيل مع NULL — فهذا **سلوك طبيعي 100%، وليس bug**.
