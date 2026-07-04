@@ -395,6 +395,169 @@ classification" أعلاه في هذا الملف) *قبل* أن تصل أصلا
      في الملف الجديد أيضاً.
 - لم يُدفع (push) — بانتظار مراجعة المستخدم.
 
+## تشخيص (جلسة 2026-07-04) — هل هناك SQLite fallback يسبب waf_detected = NULL؟
+
+**سؤال الفحص:** 16 من أصل 64 صف في `findings` عمودها `waf_detected = NULL`. هل هذا
+ناتج عن "رجوع صامت لـSQLite" في الإنتاج؟ **تحليل قراءة فقط — لم يُنفَّذ أي أمر
+migration ولا تعديل على أي قاعدة بيانات.**
+
+### 1. كيف تُقرأ DATABASE_URL — لا يوجد fallback حقيقي في زمن التشغيل
+
+- `web/database.py:5-10`: `DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./data/optisec.db")` ثم `engine = create_async_engine(DATABASE_URL, ...)` مباشرة — **لا يوجد أي `try/except`** حول إنشاء الـengine أو حول أي استعلام يمسك فشل الاتصال بـPostgres ثم يُعيد التوجيه لـSQLite. الفشل لو حصل سيكون استثناء صريح (connection refused/timeout)، وليس تبديلاً صامتاً.
+- `config.py:31-35` يكرر **نفس المنطق بشكل منفصل**: `DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite+aiosqlite:///{DATA_DIR}/optisec.db")`. هذا تعريف ثانٍ مستقل (مسار مطلق عبر `DATA_DIR` هنا مقابل مسار نسبي `./data/optisec.db` في `web/database.py`) — لا يبدو أن `config.DATABASE_URL` يُستخدم فعلياً لإنشاء أي engine (الـengine الوحيد يُبنى في `web/database.py`)، لكنه مصدر ازدواجية/تشتت يستحق التوحيد لاحقاً.
+- **الخلاصة:** "SQLite fallback" بمعنى "الكود يحاول Postgres، يفشل، يرجع تلقائياً لـSQLite" **غير موجود في الكود إطلاقاً**. ما هو موجود فعلاً هو **قيمة افتراضية صامتة**: إذا لم يُضبط `DATABASE_URL` في البيئة (متغيّر مفقود)، يعمل التطبيق فوراً على SQLite محلي دون أي خطأ أو تحذير — وهذا خطر كامن (latent risk) وليس السبب المؤكد للـ16 صف الحاليين (انظر القسم 4).
+
+### 2. إعداد الإنشاء (Render) — لا يوجد render.yaml في المستودع
+
+- لا يوجد ملف `render.yaml` في المشروع؛ الإعداد يتم يدوياً عبر لوحة Render (موثّق في `README.md` قسم "Deploy to Render": `DATABASE_URL` مطلوب ✅ ويجب ضبطه يدوياً إلى Postgres URL الخاص بـRender).
+- لا يوجد Persistent Disk مُعرّف في أي مكان بالمستودع (`docker-compose.yml`/`Dockerfile`/`railway.json` — لا شيء منها يُعرّف Render disk). دليل إضافي في `web/app.py:2117`: تعليق صريح "Render's free plan has no Shell access" يؤكد بيئة Render فعلية بخطة بدون قرص دائم مضمون.
+- ملف SQLite المحتمل: `./data/optisec.db` (نسبي حسب `web/database.py`) أو `{DATA_DIR}/optisec.db` (مطلق حسب `config.py`، لكنه غير مُستخدم لبناء الـengine). **هذا الملف مُدرج في `.gitignore`** (`data/optisec.db`) — أي أنه لا يُشحن أبداً مع الكود المنشور على Render؛ لو استُخدم هناك (بسبب غياب `DATABASE_URL`) فسيُنشأ من الصفر على فيلسستم إنتاج Render، ويُمحى بالكامل عند أي redeploy (لا قرص دائم = لا استمرارية).
+
+### 3. ربط بالـ16 صف NULL — الاستنتاج الأهم أولاً
+
+**فحصت `modules/vuln/waf_aware_classifier.py` مباشرة (السطور 145-193, 203-):**
+`waf_detected` هو ببساطة نتيجة `detect_waf(headers, body)` — نص باسم WAF إن طابقت
+استجابة HTTP توقيعاً معروفاً (Cloudflare/Akamai/Sucuri/...)، أو **`None` إن لم
+يُطابق أي توقيع**. هذا يعني NULL هو **قيمة متوقعة ومصمَّمة عمداً**، وليست مؤشر
+عطل:
+- `verdict = CONFIRMED` → `waf_detected` يُجبر إلى `None` دائماً (سطر 172) — الثغرة مؤكدة تعني بالتعريف عدم وجود WAF يحجبها.
+- `verdict = WAF_BLOCKED` → **يستحيل** أن يكون `waf_detected` فارغاً (الشرط نفسه `status_code in BLOCKING_STATUS_CODES and waf_vendor` يتطلب `waf_vendor` truthy لدخول هذا الفرع أصلاً، سطر 157-164).
+- `verdict ∈ {ENDPOINT_INVALID, ENCODED_SAFE, INCONCLUSIVE}` → `waf_detected = waf_vendor`، أي NULL كلما لم يُطابق `detect_waf()` أي توقيع معروف (شائع جداً لأي هدف بلا WAF مُتعرَّف عليه من القائمة).
+
+فإذا كانت الـ16 صف NULL موزّعة على `verdict IN ('CONFIRMED', 'ENDPOINT_INVALID', 'ENCODED_SAFE', 'INCONCLUSIVE')` — وهذا شبه مؤكد رياضياً بما أن `WAF_BLOCKED` مستحيل مع NULL — فهذا **سلوك طبيعي 100%، وليس bug**.
+
+**الاحتمال الثاني (أقل ترجيحاً لكن يستحق التحقق):** صفوف قديمة سابقة على إضافة
+العمودين (مهمة #10، 2026-07-02) أو سابقة على تطبيق migration الأعمدة. علامتها
+المميزة: `waf_detected IS NULL **و** verdict IS NULL معاً` (وليس NULL في عمود
+واحد فقط) — لأن أي صف مرّ فعلاً عبر `waf_aware_classifier` سيُعبّئ `verdict`
+دائماً حتى لو ترك `waf_detected` فارغاً. صف بـ`verdict IS NULL` يعني أنه أُنشئ
+قبل دمج الـclassifier أصلاً (قديم)، وهذا غير متعلق بـSQLite fallback إطلاقاً
+بل بترتيب النشر الزمني.
+
+**نقطة تستحق تنويهاً صريحاً:** بحسب ملاحظات هذا الملف (قسم "قرار: أعمدة WAF
+Classifier" وقسم مهمة 2026-07-03)، سكريبتا الـmigration
+(`web/migrate_add_finding_waf_columns.py` و
+`web/migrate_add_finding_include_in_report_column.py`) كلاهما "طُبّقا فعلياً
+على `data/optisec.db`" — أي **قاعدة SQLite المحلية**، عبر
+`web.database.engine` الذي يعتمد بدوره على `DATABASE_URL` **في بيئة التشغيل
+وقت استدعاء السكريبت**. لا يوجد أي دليل في هذا الملف أو في الكود (تحقّقت من
+endpoint الـmigration المؤقت في `web/app.py:2117` — يستدعي حصراً
+`migrate_normalize_demo_severity.migrate()`، وليس سكريبتَي WAF/include_in_report)
+على أن هاتين الـmigration طُبّقتا فعلياً على Postgres الخاص بـRender. هذا يعني
+أحد احتمالين:
+  1. **الأرجح**: الـ64 صف التي تُفحص الآن هي فعلياً من قاعدة SQLite المحلية
+     للتطوير (`data/optisec.db`)، وليست بيانات إنتاج Render إطلاقاً — أي أن
+     "مشكلة SQLite" هنا ليست fallback خفياً، بل ببساطة أن الفحص يتم على قاعدة
+     SQLite المحلية المقصودة أصلاً للتطوير (وهي مُستبعدة من `.gitignore`، لا
+     تُشحن للإنتاج).
+  2. لو كانت هذه فعلاً بيانات Postgres على Render: فإما أن أحداً طبّق
+     الـmigration يدوياً هناك بطريقة غير موثّقة في هذا الملف (عبر `psql`
+     مباشرة مثلاً)، أو أن جدول `findings` على Render لا يملك هذين العمودين
+     أصلاً بعد — وفي هذه الحالة **كل** عملية حفظ Finding بعد نشر الكود الحالي
+     (commit `a11cb90`، موجود فعلاً على `origin/master` والفرع الحالي متزامن
+     معه تماماً) كانت ستفشل بخطأ Postgres صريح (`column "waf_detected" of
+     relation "findings" does not exist`) وليس NULL صامت — وهذا سيناريو أخطر
+     بكثير (توقف كامل لحفظ النتائج) كان سيظهر كخطأ 500 فوري في السجلات، وليس
+     كصف NULL هادئ.
+
+### استعلام SQL مقترح لحسم الأمر (لم يُنفَّذ — للتوثيق فقط)
+
+```sql
+-- توزيع NULL/غير-NULL حسب verdict — يحسم فوراً هل NULL متوقع تصميمياً
+SELECT
+    verdict,
+    COUNT(*) AS total,
+    COUNT(waf_detected) AS non_null_waf,
+    COUNT(*) - COUNT(waf_detected) AS null_waf
+FROM findings
+GROUP BY verdict
+ORDER BY verdict;
+
+-- توزيع NULL حسب فترة زمنية (قبل/بعد نشر مهمة #10 بتاريخ 2026-07-02)
+SELECT
+    CASE WHEN created_at < '2026-07-02' THEN 'قبل الكلاسيفاير' ELSE 'بعد الكلاسيفاير' END AS period,
+    COUNT(*) AS total,
+    SUM(CASE WHEN waf_detected IS NULL THEN 1 ELSE 0 END) AS waf_null,
+    SUM(CASE WHEN verdict IS NULL THEN 1 ELSE 0 END) AS verdict_null  -- verdict_null > 0 هنا = دليل على صفوف قديمة قبل الـmigration/الكلاسيفاير
+FROM findings
+GROUP BY period;
+```
+
+### الخلاصة والسبب الجذري الأرجح
+
+1. **لا يوجد SQLite fallback في زمن التشغيل** (لا try/except، لا منطق يعيد
+   التوجيه بعد فشل Postgres) — هذا مؤكد من قراءة الكود مباشرة.
+2. **الأرجح بفارق كبير**: الـNULL في `waf_detected` سلوك مصمَّم عمداً — يعني
+   ببساطة "لم يُكتشف WAF معروف في هذه الاستجابة تحديداً"، وهذا متوقع لغالبية
+   النتائج `CONFIRMED` (يستحيل تصميمياً أن يكون لها WAF) وجزء كبير من باقي
+   الحالات. **شغّل استعلام GROUP BY verdict أعلاه أولاً** — إن كانت كل صفوف
+   NULL بها `verdict` غير فارغ (CONFIRMED أو غيره)، فلا يوجد bug هنا إطلاقاً.
+3. **احتمال ثانوي يستحق التحقق**: إن وُجدت صفوف بـ`verdict IS NULL` أيضاً، فتلك
+   صفوف قديمة سابقة على دمج الـclassifier (مهمة #10) أو سابقة على تطبيق
+   الـmigration محلياً — مسألة **ترتيب زمني للنشر**، وليست SQLite fallback.
+4. **الخطر الحقيقي الوحيد المكتشف** (كامن، غير مؤكد أنه السبب الحالي): إن لم
+   يُضبط `DATABASE_URL` في بيئة Render فعلياً، سيعمل التطبيق صامتاً على SQLite
+   محلي على فيلسستم مؤقت (لا قرص دائم مُعرَّف) — فقدان بيانات كامل عند أي
+   redeploy، بدون أي خطأ ظاهر. يُنصح بالتحقق من قيمة `DATABASE_URL` الفعلية في
+   لوحة Render مباشرة كخطوة أولى قبل أي استنتاج آخر.
+5. لم يُوثَّق في أي مكان أن `migrate_add_finding_waf_columns.py`/
+   `migrate_add_finding_include_in_report_column.py` طُبّقا فعلياً ضد Postgres
+   الخاص بـRender — فقط ضد `data/optisec.db` المحلي. يجب التحقق من هذا قبل أي
+   شيء آخر لأنه يحدد ما إذا كانت الـ64 صف قيد الفحص هي بيانات Render فعلاً أم
+   بيانات التطوير المحلي.
+
+### خطوات الإصلاح المقترحة (لم تُنفَّذ — تحتاج موافقة صريحة)
+
+1. **أولاً وقبل أي شيء**: تأكيد من أين أتت الـ64 صف — استعلام مباشر عبر لوحة
+   Render (أو `psql` بمفتاح اتصال Render الفعلي) للتحقق: هل `findings` على
+   Postgres الإنتاج أصلاً تحتوي عمودي `waf_detected`/`verdict`؟ (`\d findings`
+   في `psql`). إن كانت غائبة تماماً، فالـ64 صف قيد الفحص هي حتماً من SQLite
+   المحلي وليست إنتاجاً.
+2. تشغيل استعلامي الـSQL أعلاه (GROUP BY verdict، وحسب الفترة الزمنية) على أياً
+   كانت القاعدة الفعلية قيد الفحص، لتأكيد أن NULL متوقع تصميمياً.
+3. لو تبيّن أن Postgres الإنتاج فعلاً ناقص العمودين: تشغيل
+   `python -m web.migrate_add_finding_waf_columns` و
+   `python -m web.migrate_add_finding_include_in_report_column` **مع تصدير
+   `DATABASE_URL` الصريح لقاعدة Render Postgres يدوياً في نفس الجلسة** (وليس
+   الاعتماد على أي ملف `.env` محلي) — عبر الطريقة المتاحة فعلياً (endpoint مؤقت
+   شبيه بـ`/internal/run-migration` الموجود لِـ`migrate_normalize_demo_severity`،
+   أو أي وصول مباشر آخر لقاعدة Render).
+4. تقوية الكود لمنع تكرار هذا اللبس مستقبلاً: عند `GROQ_ENV=production` أو
+   `RENDER` مضبوطين، رفض الإقلاع صراحة (`raise RuntimeError`) إن كان
+   `DATABASE_URL` غير مضبوط أو يبدأ بـ`sqlite`، بدل الرجوع الصامت الحالي —
+   يحوّل أي خطأ ضبط مستقبلي من "صمت + احتمال فقدان بيانات" إلى فشل فوري وواضح
+   في السجلات.
+5. توحيد تعريف `DATABASE_URL` المكرر بين `config.py` و`web/database.py` في
+   مكان واحد لتفادي أي تشتت مستقبلي.
+
+---
+
+## ملاحظة تصميمية (Design Note) — waf_detected/verdict، 2026-07-04
+
+**لتفادي إعادة نفس التشخيص في جلسات قادمة** (فُحص هذا الموضوع بالتفصيل مرتين:
+قسم "قرار: أعمدة WAF Classifier" في 2026-07-02، وقسم "تشخيص... waf_detected =
+NULL؟" في 2026-07-04 أعلاه) — الخلاصة النهائية الثابتة:
+
+- `Finding.waf_detected` كونه **NULL سلوك تصميمي متعمّد، وليس bug ولا مؤشر
+  فقدان بيانات**.
+- `verdict = CONFIRMED` → `waf_detected` **يُجبر دائماً إلى None** (الثغرة
+  مؤكدة بالتعريف يعني عدم وجود WAF حجبها — لا علاقة للفحص التقني بـWAF هنا).
+- `verdict = WAF_BLOCKED` → `waf_detected` **يستحيل أن يكون None** (الشرط
+  الذي يدخل هذا الفرع يتطلب اسم WAF مكتشف أصلاً).
+- `verdict ∈ {ENDPOINT_INVALID, ENCODED_SAFE, INCONCLUSIVE}` → `waf_detected`
+  هو ببساطة نتيجة `detect_waf()` لتلك الاستجابة: اسم WAF إن طابقت توقيعاً
+  معروفاً، أو None إن لم تطابق (شائع لأي هدف بلا WAF معروف من `WAF_SIGNATURES`).
+- تم توثيق هذا الآن مباشرة في الكود (تعليقات فقط، لا تغيير منطقي):
+  - `modules/vuln/waf_aware_classifier.py` — docstring كامل على
+    `ClassificationResult` يشرح الحالات الخمس لـ`verdict` وقيمة `waf_detected`
+    المتوقعة لكل واحدة، + تعليق مختصر عند كل نقطة تُجبر `waf_detected=None`.
+  - `web/models.py` — تعليق مباشر فوق تعريف عمود `waf_detected`.
+- **لا داعٍ لإعادة فتح هذا التحقيق مستقبلاً** إلا إذا ظهر دليل فعلي على صف
+  بـ`verdict IS NULL` (يعني صفاً قديماً سابقاً على دمج الـclassifier — مسألة
+  ترتيب نشر زمني، وليست هذا السلوك التصميمي).
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker

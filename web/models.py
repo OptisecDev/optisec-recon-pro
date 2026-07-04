@@ -77,6 +77,12 @@ class Finding(Base):
     # (XSS/SQLi/LFI/SSRF/Open Redirect). verdict is CONFIRMED/WAF_BLOCKED/
     # ENDPOINT_INVALID plus either ENCODED_SAFE (XSS only) or INCONCLUSIVE
     # (signature/blind-based scans) — see that module for details.
+    # waf_detected NULL is an EXPECTED value, not a data/ingestion error:
+    # it's always NULL when verdict=CONFIRMED (by definition no WAF blocked
+    # a confirmed vuln), and NULL for any other verdict simply means no known
+    # WAF/CDN signature matched that response. Only WAF_BLOCKED guarantees a
+    # non-NULL vendor name. See ClassificationResult docstring in
+    # waf_aware_classifier.py and SESSION.md "Design Note — waf_detected/verdict".
     waf_detected = Column(String(50), nullable=True)
     verdict = Column(String(30), nullable=True)
     # True only when verdict == "CONFIRMED". Every classifier verdict is now

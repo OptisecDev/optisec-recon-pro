@@ -86,6 +86,33 @@ WAF_SIGNATURES = {
 
 @dataclass
 class ClassificationResult:
+    """`waf_detected` is NOT a boolean flag and NULL/None is an expected,
+    intentional value for most verdicts — it is NOT a bug or missing data.
+    Semantics per verdict (confirmed against the code below on 2026-07-04,
+    see SESSION.md "Design Note — waf_detected/verdict" for the full
+    investigation that established this):
+
+      CONFIRMED
+        waf_detected is ALWAYS forced to None, unconditionally. A CONFIRMED
+        verdict means the technical signal itself (raw XSS reflection, DB
+        error string, blind boolean/timing differential, off-site redirect
+        Location) proved the vulnerability directly — it has nothing to do
+        with WAF detection, so there is nothing WAF-related to record here.
+
+      WAF_BLOCKED
+        waf_detected is ALWAYS a vendor name, NEVER None — reaching this
+        verdict requires detect_waf() to have already matched a vendor
+        (see the `waf_vendor` truthiness check gating this branch).
+
+      ENDPOINT_INVALID / ENCODED_SAFE / INCONCLUSIVE
+        waf_detected is whatever detect_waf() returned for that response:
+        a vendor name if a known WAF/CDN signature happened to be present,
+        or None if it simply didn't match any signature in WAF_SIGNATURES
+        (the common case for targets with no recognized WAF). None here
+        means "no WAF signature matched", not "detection failed".
+
+    Only CONFIRMED sets should_report=True.
+    """
     verdict: str
     severity: Optional[str]
     should_report: bool
@@ -169,6 +196,9 @@ def classify(status_code: int, headers: dict, body: str, payload: str) -> Classi
             verdict="CONFIRMED",
             severity="High",
             should_report=True,
+            # Intentionally None, not a bug: CONFIRMED already means "no WAF
+            # was in the way" (see `not waf_vendor` above) — see
+            # ClassificationResult docstring for the full verdict/None table.
             waf_detected=None,
             reason="Raw payload reflected unencoded, HTTP 200, no WAF detected",
         )
@@ -240,6 +270,7 @@ def classify_signature_match(
             verdict="CONFIRMED",
             severity=severity,
             should_report=True,
+            # Intentionally None, not a bug — see ClassificationResult docstring.
             waf_detected=None,
             reason=f"{signal_label} detected: '{matched_signal}'",
         )
@@ -303,6 +334,7 @@ def classify_blind_signal(
             verdict="CONFIRMED",
             severity="Critical",
             should_report=True,
+            # Intentionally None, not a bug — see ClassificationResult docstring.
             waf_detected=None,
             reason=f"{technique} confirmed",
         )
