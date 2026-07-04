@@ -2188,3 +2188,38 @@ if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
         from web.migrate_normalize_demo_severity import migrate as _run_migration
         counts = await _run_migration()
         return JSONResponse({"normalized": counts, "total_updated": sum(counts.values())})
+
+    # TEMPORARY EMERGENCY ENDPOINT - REMOVE AFTER USE
+    # Resets the 'admin' user's password on production when Render Free tier
+    # gives no Shell access and the current admin credentials are unknown.
+    # Gated by the same MIGRATION_SECRET_TOKEN mechanism as /internal/run-migration
+    # above. Delete this whole block once the password has been reset.
+    @app.post("/internal/reset-admin-password", include_in_schema=False)
+    async def reset_admin_password(request: Request):
+        """TEMPORARY EMERGENCY ENDPOINT - REMOVE AFTER USE."""
+        expected_token = os.environ.get("MIGRATION_SECRET_TOKEN")
+        provided_token = request.headers.get("X-Migration-Token")
+        if not expected_token or not provided_token or not _secrets_compare.compare_digest(
+            provided_token, expected_token
+        ):
+            raise HTTPException(403, "Forbidden")
+
+        body = await request.json()
+        new_password = body.get("new_password")
+        if not new_password or not isinstance(new_password, str):
+            raise HTTPException(400, "Missing 'new_password'")
+
+        weaknesses = validate_password_strength(new_password)
+        if weaknesses:
+            raise HTTPException(400, "Password does not meet strength requirements")
+
+        async with SessionLocal() as db:
+            result = await db.execute(select(User).where(User.username == "admin"))
+            admin_user = result.scalar_one_or_none()
+            if not admin_user:
+                raise HTTPException(404, "admin user not found")
+
+            admin_user.password_hash = hash_password(new_password)
+            await db.commit()
+
+        return JSONResponse({"status": "ok", "message": "admin password reset"})
