@@ -886,6 +886,82 @@ attached to a different loop
 
 ---
 
+## المنجز (جلسة 2026-07-04، تكملة) — المرحلة 2 من IOC Detection: ربط IOCEngine بقاعدة بيانات حقيقية ومسارات الفحص الحية
+
+**الهدف:** استبدال `IOCRepository` الوهمي (in-memory dict، المرحلة 1) بتطبيق حقيقي فوق جدول `iocs`
+(`web.models.Ioc`)، وربط الاستخراج التلقائي بمسار حفظ الـFindings، وإضافة endpoint قراءة. لم يُتصل
+بأي قاعدة بيانات إنتاجية ولا Render في هذه المهمة — SQLite في الذاكرة فقط للاختبارات.
+
+**قرار معماري جوهري:** طبقة الـDB في المشروع بالكامل async-only (`web/database.py`'s
+`SessionLocal` هو `async_sessionmaker`، لا يوجد أي مسار sync للوصول لقاعدة البيانات في أي مكان آخر
+بالكودبيس). لذا `IOCRepository` الجديد يأخذ `AsyncSession` مُمرَّرة من المتصل (نفس اتفاقية كل
+راوتر آخر: `web/routers/honeypot.py`، `darkweb_monitor.py` — المستودع فقط يعمل `add()`/`flush()`،
+والمتصل يملك الـcommit). هذا يعني `IOCEngine.enrich_ioc()` (الدالة الوحيدة التي تكتب للمستودع)
+أصبحت `async def` بعد أن كانت `def` — التغيير الوحيد في التوقيعات، وضروري وليس اختيارياً. أما
+`check_ioc()` و`extract_iocs_from_finding()` فبقيتا sync تماماً كما كانتا (لا تلمسان الـDB إطلاقاً).
+
+**1. `modules/ioc/ioc_engine.py`:**
+- `IOCRepository` أُعيدت كتابته بالكامل: `get_by_value`/`create`/`update_last_seen`/`list_active`
+  (CRUD المطلوب حرفياً) + `upsert()` (تُبقيها كما هي — get_by_value ثم create أو update_last_seen —
+  حتى لا يتغيّر استدعاء `enrich_ioc()` الوحيد لها). كلها `async` وتستعلم/تكتب فعلياً على
+  `web.models.Ioc` عبر `sqlalchemy.select`.
+- `IOCEngine.__init__`: `repository` افتراضيًا `None` الآن (لم يعد هناك مستودع افتراضي في الذاكرة) —
+  `check_ioc`/`extract_iocs_from_finding` لا يحتاجان مستودعاً أصلاً، و`enrich_ioc` يتجاوز الحفظ
+  بأمان إن كان `repository=None`.
+- استيراد `web.models.Ioc` يتم داخل كل دالة (lazy import)، بنفس اتفاقية
+  `modules/honeypot/manager.py`/`modules/darkweb/scheduler.py` — وليس على مستوى الموديول.
+
+**2. الدمج التلقائي مع مسار الفحص (`web/app.py`):**
+- نقطة حفظ الـFinding الوحيدة في المشروع (`_run_scan_task`, حوالي السطر 1522 — تُغذّى من
+  الماسحات الخمسة XSS/SQLi/SSRF/LFI/Open Redirect معاً، لا يوجد أكثر من موضع واحد لحفظ Finding)
+  عُدّلت: تحتفظ الآن بمرجع كل `Finding` بعد `db.add()`، ثم `await db.flush()` (لتعبئة `row.id` قبل
+  أي استخدام)، ثم تستدعي دالة جديدة `_extract_and_store_iocs(db, finding_rows)`.
+- `_extract_and_store_iocs()` (دالة جديدة top-level): لكل Finding محفوظ، تبني `IOCEngine()` بدون
+  مستودع (فقط لاستدعاء `extract_iocs_from_finding()` — لا شبكة، لا VirusTotal/AbuseIPDB)، ثم تحفظ
+  كل مرشّح عبر `IOCRepository(db).upsert(...)` مباشرة — **بدون** المرور عبر `enrich_ioc()`/
+  `check_ioc()`، تفادياً لاستدعاء threat-intel APIs حقيقية تلقائياً على كل finding (قرار متعمّد: لم
+  يُطلب إثراء تلقائي، فقط استخراج وتخزين محلي).
+- **غير معطِّل تماماً**: `try/except Exception` حول معالجة كل finding على حدة (وليس حول الحلقة
+  كاملة) — فشل استخراج/حفظ IOC واحد لا يمنع بقية الـFindings من أن تُعالَج، ولا يمنع `db.commit()`
+  النهائي لكل Findings الفحص من النجاح. نفس اتفاقية `modules/honeypot/manager.py::record_event`
+  (`except Exception: logger.exception(...)`).
+
+**3. Endpoint جديد — `web/routers/ioc.py` (`GET /api/iocs`):**
+- `prefix="/api/iocs"`, tag جديد `"ioc"` (أُضيف لقائمة `openapi_tags` في `web/app.py`)، مسجَّل عبر
+  `app.include_router(ioc_router.router)`.
+- فلترة اختيارية `ioc_type` (يرفض بـ400 أي قيمة خارج `IOC_TYPES` الست) و`is_active`
+  (`None` افتراضياً = لا فلترة، يعرض النشط وغير النشط معاً)، pagination عبر `limit`/`offset`
+  (نفس حدود `web/routers/honeypot.py`: `max(1, min(limit, 200))`).
+- يتطلب مستخدماً مسجَّل دخوله (`get_current_user`)، بنفس نمط `_user()` المُستخدَم في كل راوتر آخر.
+
+**4. الاختبارات:**
+- `tests/test_ioc_engine.py` أُعيدت كتابته بالكامل: `TestIOCRepository` تستخدم الآن SQLite حقيقية
+  في الذاكرة (fixture `db_factory`، نفس نمط `tests/test_honeypot.py`) بدل قاموس وهمي؛
+  `TestEnrichIoc` أصبحت async (`_run(engine.enrich_ioc(...))`)، تختبر كلا الحالتين
+  (`repository=None` بدون حفظ، ومستودع حقيقي بحفظ فعلي). `TestCheckIoc`/`TestExtractIocsFromFinding`
+  بقيتا بلا تغيير (sync، لا DB). أُضيف `TestExtractThenPersistIntegration` (استخراج من finding حقيقي
+  ثم حفظ عبر `IOCRepository` فعلياً، مع التحقق من `related_finding_id`).
+- `tests/test_ioc_router.py` **جديد**: يستدعي `list_iocs()` مباشرة (نفس اتفاقية استدعاء دوال
+  الراوتر مباشرة بدل TestClient المستخدمة في بقية ملفات اختبار الراوترات) — فلترة
+  ioc_type/is_active، pagination، رفض ioc_type غير مدعوم (400)، و`_ioc_to_dict()`.
+- `tests/test_ioc_scan_integration.py` **جديد**: يختبر `web.app._extract_and_store_iocs()` مباشرة
+  ضد SQLite حقيقية — استخراج وحفظ IOC مرتبط بـ`related_finding_id`، عدم إنشاء صفوف عند عدم وجود
+  مرشّحين، وأهم شيء: أن فشل الاستخراج (عبر `monkeypatch` على
+  `IOCEngine.extract_iocs_from_finding` ليرمي استثناءً) **لا يمنع** حفظ الـFinding ولا يوقف معالجة
+  بقية الـFindings في نفس الدفعة.
+- **779/779 اختبار ناجح** على كامل test suite (763 سابقاً + 16 صافي) — لا فشل، لا regressions.
+
+**تحقّق حي (محلي فقط، ليس إنتاجاً):** شُغّل `uvicorn web.app:app` محلياً، تسجيل دخول عبر `/demo`،
+`GET /api/iocs` أرجع `{"iocs": [], "count": 0, "limit": 50, "offset": 0}` (200)، و
+`GET /api/iocs?ioc_type=bogus` أرجع 400 مع رسالة الخطأ الصحيحة. تأكدت أيضاً (عبر `app.openapi()`،
+وليس `app.routes` مباشرة — هذا الإصدار من FastAPI (0.138.1) يستخدم `_IncludedRouter` كغلاف كسول لا
+يظهر كـ`Route` عادي في `app.routes`، وهذا موجود مسبقاً على `master` أيضاً وليس ناتجاً عن هذه
+المهمة) أن `/api/iocs` مسجَّل بشكل صحيح في مخطط OpenAPI.
+
+**لم يُنفَّذ:** لا اتصال بـRender/قاعدة بيانات إنتاجية، لا commit/push — بانتظار مراجعة المستخدم.
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker

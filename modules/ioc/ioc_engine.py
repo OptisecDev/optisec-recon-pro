@@ -1,4 +1,4 @@
-"""IOC Detection Engine — Phase 1 architecture (design + interface only).
+"""IOC Detection Engine — Phase 2: real database-backed repository.
 
 Wraps the existing threat-intel clients (modules.threat_intel.ioc_detector,
 modules.threat_intel.otx_feed) behind one check/enrich/extract API. This is
@@ -7,12 +7,14 @@ a *different* concern from modules/ioc_correlation.py behind the existing
 each other, while this engine checks/stores IOCs tied to this installation
 (manual lookups + IOCs mined from its own scan findings).
 
-IOCEngine does not talk to a real database yet. It works against an
-injectable repository (default: IOCRepository, an in-memory dict) so it can
-be re-pointed at web.models.Ioc (see web/models.py) once that table exists
-in production — see migrations/README_ioc_migration.md for how that table
-gets created. Swapping in a DB-backed repository later should not require
-changing IOCEngine's public methods, only the repository implementation.
+IOCRepository is now backed by web.models.Ioc via an injected AsyncSession
+(same session/transaction ownership convention as every other router in
+this codebase, e.g. web/routers/honeypot.py, web/routers/darkweb_monitor.py
+— the repository adds/flushes, the caller commits). The whole app's DB
+layer is async-only (web/database.py's SessionLocal is an
+async_sessionmaker), so enrich_ioc() — the only method that persists — is
+async too; check_ioc() and extract_iocs_from_finding() touch no DB and stay
+synchronous, unchanged from Phase 1.
 
 External API calls (VirusTotal, AbuseIPDB, OTX) are also injectable via
 `source_clients`, defaulting to thin wrappers around the real clients in
@@ -30,8 +32,15 @@ import ipaddress
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TYPE_CHECKING
 from urllib.parse import urlparse
+
+from sqlalchemy import select
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from web.models import Ioc
 
 IOC_TYPES = frozenset({"hash_md5", "hash_sha256", "ip", "domain", "url", "email"})
 
@@ -67,49 +76,78 @@ class IOCCheckResult:
 
 
 class IOCRepository:
-    """In-memory stand-in for the future repository over web.models.Ioc.
+    """Repository over web.models.Ioc, backed by an injected AsyncSession.
 
-    Same method shapes (get/upsert/list_active) the real DB-backed
-    implementation will need, so swapping this out once the `iocs` table
-    exists (see migrations/README_ioc_migration.md) is a constructor-arg
-    change to IOCEngine, not a rewrite of its logic.
+    One row per unique (ioc_type, ioc_value) — see the UniqueConstraint on
+    web.models.Ioc. Like every other router's DB access in this codebase
+    (web/routers/honeypot.py::query_events, darkweb_monitor.py, etc.), this
+    repository only db.add()/flush()es; committing the transaction is the
+    caller's responsibility so multiple upserts (e.g. one scan's worth of
+    mined IOCs) can share a single commit.
     """
 
-    def __init__(self) -> None:
-        self._store: dict[tuple[str, str], dict] = {}
+    def __init__(self, db: "AsyncSession") -> None:
+        self.db = db
 
-    def get(self, ioc_type: str, ioc_value: str) -> Optional[dict]:
-        return self._store.get((ioc_type, ioc_value))
+    async def get_by_value(self, ioc_type: str, ioc_value: str) -> Optional["Ioc"]:
+        from web.models import Ioc
 
-    def upsert(self, ioc_type: str, ioc_value: str, **fields: Any) -> dict:
-        key = (ioc_type, ioc_value)
+        stmt = select(Ioc).where(Ioc.ioc_type == ioc_type, Ioc.ioc_value == ioc_value)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def create(self, ioc_type: str, ioc_value: str, **fields: Any) -> "Ioc":
+        from web.models import Ioc
+
         now = datetime.utcnow()
-        existing = self._store.get(key)
+        row = Ioc(
+            ioc_type=ioc_type,
+            ioc_value=ioc_value,
+            source=fields.get("source", "manual"),
+            confidence_score=fields.get("confidence_score", 0.0),
+            first_seen=now,
+            last_seen=now,
+            related_finding_id=fields.get("related_finding_id"),
+            tags=fields.get("tags") or [],
+            is_active=fields.get("is_active", True),
+        )
+        self.db.add(row)
+        await self.db.flush()
+        return row
+
+    async def update_last_seen(self, row: "Ioc", **fields: Any) -> "Ioc":
+        for key, value in fields.items():
+            if key in ("ioc_type", "ioc_value", "id", "first_seen"):
+                continue  # identity/immutable columns — never overwritten by an upsert
+            if hasattr(row, key):
+                setattr(row, key, value)
+        row.last_seen = datetime.utcnow()
+        await self.db.flush()
+        return row
+
+    async def list_active(
+        self,
+        ioc_type: Optional[str] = None,
+        is_active: Optional[bool] = True,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list["Ioc"]:
+        from web.models import Ioc
+
+        stmt = select(Ioc)
+        if ioc_type is not None:
+            stmt = stmt.where(Ioc.ioc_type == ioc_type)
+        if is_active is not None:
+            stmt = stmt.where(Ioc.is_active == is_active)
+        stmt = stmt.order_by(Ioc.last_seen.desc()).limit(max(1, min(limit, 200))).offset(max(0, offset))
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def upsert(self, ioc_type: str, ioc_value: str, **fields: Any) -> "Ioc":
+        existing = await self.get_by_value(ioc_type, ioc_value)
         if existing is not None:
-            existing.update(fields)
-            existing["last_seen"] = now
-            return existing
-
-        record = {
-            "ioc_type": ioc_type,
-            "ioc_value": ioc_value,
-            "source": fields.get("source", "manual"),
-            "confidence_score": 0.0,
-            "first_seen": now,
-            "last_seen": now,
-            "related_finding_id": None,
-            "tags": [],
-            "is_active": True,
-        }
-        record.update(fields)
-        self._store[key] = record
-        return record
-
-    def list_active(self, ioc_type: Optional[str] = None) -> list[dict]:
-        return [
-            r for r in self._store.values()
-            if r["is_active"] and (ioc_type is None or r["ioc_type"] == ioc_type)
-        ]
+            return await self.update_last_seen(existing, **fields)
+        return await self.create(ioc_type, ioc_value, **fields)
 
 
 def _default_source_clients() -> dict[str, Callable]:
@@ -128,7 +166,11 @@ class IOCEngine:
         repository: Optional[IOCRepository] = None,
         source_clients: Optional[dict[str, Callable]] = None,
     ) -> None:
-        self.repository = repository or IOCRepository()
+        # No default in-memory repository anymore (Phase 1) — a real
+        # repository needs a live AsyncSession, which only the caller has.
+        # None is valid: check_ioc()/extract_iocs_from_finding() need no DB
+        # at all, and enrich_ioc() simply skips persistence when unset.
+        self.repository = repository
         self.source_clients = {**_default_source_clients(), **(source_clients or {})}
 
     def _safe_call(self, client_name: str, value: str) -> dict:
@@ -179,7 +221,7 @@ class IOCEngine:
             raw=raw,
         )
 
-    def enrich_ioc(
+    async def enrich_ioc(
         self,
         value: str,
         ioc_type: str,
@@ -197,6 +239,11 @@ class IOCEngine:
         (see otx_feed._CACHE) — this engine stays synchronous, so callers
         fetch once and pass the relevant matched result in here rather than
         this method awaiting them itself.
+
+        This method is async (unlike check_ioc/extract_iocs_from_finding)
+        purely because persisting into self.repository now means a real
+        AsyncSession query/flush — the scoring/blending logic above stays
+        plain sync code.
         """
         primary = self.check_ioc(value, ioc_type)
         weighted = [(primary.score, _SOURCE_WEIGHT.get(primary.source, 0.5))]
@@ -230,12 +277,13 @@ class IOCEngine:
             "verdict": primary.verdict,
             "raw": raw_by_source,
         }
-        self.repository.upsert(
-            ioc_type, value,
-            source=primary.source,
-            confidence_score=confidence_score,
-            tags=tags,
-        )
+        if self.repository is not None:
+            await self.repository.upsert(
+                ioc_type, value,
+                source=primary.source,
+                confidence_score=confidence_score,
+                tags=tags,
+            )
         return record
 
     def extract_iocs_from_finding(self, finding: dict) -> list[dict]:

@@ -65,6 +65,7 @@ from web.routers import darkweb_monitor
 from web.routers import honeypot as honeypot_router
 from web.routers import threat_sharing as threat_sharing_router
 from web.routers import cve_submission as cve_router
+from web.routers import ioc as ioc_router
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -218,6 +219,14 @@ OPENAPI_TAGS = [
             "Export locally-discovered technical IOCs (honeypot attacker IPs, dark web paste/leak "
             "URLs, CISA KEV CVEs) as STIX/CSV/JSON, and optionally share a single IOC with the "
             "AlienVault OTX community. Opt-in and disabled by default — see ENABLE_THREAT_SHARING."
+        ),
+    },
+    {
+        "name": "ioc",
+        "description": (
+            "Local Indicators of Compromise store (modules/ioc/ioc_engine.py, web.models.Ioc) — "
+            "IPs/domains/URLs mined automatically from scan Finding evidence after every "
+            "XSS/SQLi/SSRF/LFI/Open Redirect scan, plus manual check_ioc()/enrich_ioc() lookups."
         ),
     },
 ]
@@ -469,6 +478,7 @@ app.include_router(honeypot_router.router)
 app.include_router(honeypot_router.page_router)
 app.include_router(threat_sharing_router.router)
 app.include_router(cve_router.router)
+app.include_router(ioc_router.router)
 
 
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────
@@ -1379,6 +1389,42 @@ def _finding_kwargs_from_vuln(v: dict, scan_id: str, target_id: Optional[int], t
     )
 
 
+async def _extract_and_store_iocs(db: AsyncSession, finding_rows: list) -> None:
+    """Best-effort IOC mining (modules/ioc/ioc_engine.py) over every Finding
+    row just added to `db` for this scan.
+
+    Deliberately non-blocking: any failure here (malformed evidence text, a
+    DB hiccup on a single row) is logged and swallowed per-finding so it can
+    never prevent the scan's own Finding rows from being saved/committed —
+    IOC extraction is a bonus signal on top of the scan, not a requirement
+    for the scan to succeed. Only local extraction/storage happens here, no
+    VirusTotal/AbuseIPDB/OTX network calls (that's check_ioc/enrich_ioc,
+    reserved for explicit lookups via GET /api/iocs's future manual-check
+    counterpart, not triggered automatically per finding).
+    """
+    from modules.ioc.ioc_engine import IOCEngine, IOCRepository
+
+    engine = IOCEngine()
+    repo = IOCRepository(db)
+    for row, v in finding_rows:
+        try:
+            finding_dict = {
+                "id": row.id,
+                "vuln_type": v.get("type"),
+                "url": v.get("url", ""),
+                "evidence": v.get("evidence", ""),
+            }
+            for candidate in engine.extract_iocs_from_finding(finding_dict):
+                await repo.upsert(
+                    candidate["ioc_type"], candidate["ioc_value"],
+                    source=candidate["source"],
+                    related_finding_id=candidate["related_finding_id"],
+                    tags=candidate["tags"],
+                )
+        except Exception:
+            logger.exception("IOC extraction failed for finding_id=%s", row.id)
+
+
 async def _run_scan_task(
     scan_id: str, target: str, scan_types: list,
     user_id: int, target_id: Optional[int],
@@ -1520,8 +1566,15 @@ async def _run_scan_task(
         triage_by_id = {id(v): t for v, t in zip(confirmed_vulns, triage_results)}
 
         async with SessionLocal() as db:
+            finding_rows: list[tuple[Finding, dict]] = []
             for v in all_vulns:
-                db.add(Finding(**_finding_kwargs_from_vuln(v, scan_id, target_id, triage_by_id.get(id(v)))))
+                row = Finding(**_finding_kwargs_from_vuln(v, scan_id, target_id, triage_by_id.get(id(v))))
+                db.add(row)
+                finding_rows.append((row, v))
+            await db.flush()  # populate row.id before IOC extraction links related_finding_id
+
+            await _extract_and_store_iocs(db, finding_rows)
+
             scan = await db.get(Scan, scan_id)
             if scan:
                 scan.status = "done"

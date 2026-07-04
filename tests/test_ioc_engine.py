@@ -1,12 +1,24 @@
 """Tests for modules.ioc.ioc_engine — IOCEngine (check_ioc/enrich_ioc/
-extract_iocs_from_finding) and IOCRepository. Phase 1 architecture: no real
-database, no real network. Every external source client is injected as a
-fake callable / pre-fetched dict — nothing here reaches VirusTotal,
-AbuseIPDB, OTX, IntelligenceX, or LeakCheck.
+extract_iocs_from_finding) and IOCRepository. Phase 2: IOCRepository is now
+backed by a real database (in-memory SQLite via an async engine, same
+fixture convention as tests/test_honeypot.py / tests/test_darkweb_scheduler.py
+— no mocking of the DB layer itself), while every external threat-intel
+source client (VirusTotal/AbuseIPDB/OTX) stays an injected fake callable /
+pre-fetched dict — nothing here reaches a real network.
 """
 
-import pytest
+import asyncio
+import os
+import sys
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pytest
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from web.database import Base
+from web.models import Ioc  # noqa: F401 — import registers all models on Base.metadata
 from modules.ioc.ioc_engine import (
     IOC_TYPES,
     IOCEngine,
@@ -15,52 +27,163 @@ from modules.ioc.ioc_engine import (
 )
 
 
+def _run(coro):
+    return asyncio.run(coro)
+
+
+# ── Isolated in-memory DB fixture (same pattern as tests/test_honeypot.py) ──
+
+@pytest.fixture
+def db_factory():
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _setup():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    _run(_setup())
+    yield session_factory
+    _run(engine.dispose())
+
+
 # ---------------------------------------------------------------------------
-# IOCRepository (in-memory stub)
+# IOCRepository (real DB, in-memory SQLite)
 # ---------------------------------------------------------------------------
 
 class TestIOCRepository:
-    def test_get_missing_returns_none(self):
-        repo = IOCRepository()
-        assert repo.get("ip", "1.2.3.4") is None
+    def test_get_by_value_missing_returns_none(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                return await repo.get_by_value("ip", "1.2.3.4")
+        assert _run(go()) is None
 
-    def test_upsert_creates_new_record_with_defaults(self):
-        repo = IOCRepository()
-        record = repo.upsert("ip", "1.2.3.4", source="manual", confidence_score=42.0)
-        assert record["ioc_type"] == "ip"
-        assert record["ioc_value"] == "1.2.3.4"
-        assert record["source"] == "manual"
-        assert record["confidence_score"] == 42.0
-        assert record["is_active"] is True
-        assert record["tags"] == []
-        assert record["related_finding_id"] is None
-        assert record["first_seen"] == record["last_seen"]
+    def test_create_persists_new_record_with_defaults(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                row = await repo.create("ip", "1.2.3.4", source="manual", confidence_score=42.0)
+                await db.commit()
+                return row.id
+        row_id = _run(go())
 
-    def test_upsert_existing_updates_last_seen_but_keeps_first_seen(self):
-        repo = IOCRepository()
-        first = repo.upsert("domain", "evil.com", source="manual", confidence_score=10.0)
-        first_seen = first["first_seen"]
-        second = repo.upsert("domain", "evil.com", confidence_score=90.0)
-        assert second is first  # same record object, mutated in place
-        assert second["confidence_score"] == 90.0
-        assert second["first_seen"] == first_seen
-        assert second["last_seen"] >= first_seen
+        async def fetch():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                return await repo.get_by_value("ip", "1.2.3.4")
+        record = _run(fetch())
 
-    def test_list_active_filters_inactive_and_by_type(self):
-        repo = IOCRepository()
-        repo.upsert("ip", "1.1.1.1", source="manual")
-        repo.upsert("domain", "evil.com", source="manual")
-        repo.upsert("ip", "2.2.2.2", source="manual", is_active=False)
+        assert record is not None
+        assert record.id == row_id
+        assert record.ioc_type == "ip"
+        assert record.ioc_value == "1.2.3.4"
+        assert record.source == "manual"
+        assert record.confidence_score == 42.0
+        assert record.is_active is True
+        assert record.tags == []
+        assert record.related_finding_id is None
+        assert record.first_seen == record.last_seen
 
-        all_active = repo.list_active()
-        assert {r["ioc_value"] for r in all_active} == {"1.1.1.1", "evil.com"}
+    def test_upsert_creates_new_when_missing(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                row = await repo.upsert("domain", "evil.com", source="manual", confidence_score=10.0)
+                await db.commit()
+                return row.confidence_score
+        assert _run(go()) == 10.0
 
-        ip_only = repo.list_active(ioc_type="ip")
-        assert {r["ioc_value"] for r in ip_only} == {"1.1.1.1"}
+    def test_upsert_existing_updates_last_seen_but_keeps_first_seen_and_row_identity(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                first = await repo.upsert("domain", "evil.com", source="manual", confidence_score=10.0)
+                await db.commit()
+                first_id, first_seen = first.id, first.first_seen
+
+                second = await repo.upsert("domain", "evil.com", confidence_score=90.0)
+                await db.commit()
+                return first_id, first_seen, second
+        first_id, first_seen, second = _run(go())
+
+        assert second.id == first_id  # same row, updated in place — not a duplicate
+        assert second.confidence_score == 90.0
+        assert second.first_seen == first_seen
+        assert second.last_seen >= first_seen
+
+    def test_upsert_does_not_create_duplicate_rows(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.upsert("ip", "1.2.3.4", source="manual")
+                await repo.upsert("ip", "1.2.3.4", confidence_score=55.0)
+                await db.commit()
+                return await repo.list_active(ioc_type="ip")
+        rows = _run(go())
+        assert len(rows) == 1
+        assert rows[0].confidence_score == 55.0
+
+    def test_list_active_filters_inactive_and_by_type(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("ip", "1.1.1.1", source="manual")
+                await repo.create("domain", "evil.com", source="manual")
+                await repo.create("ip", "2.2.2.2", source="manual", is_active=False)
+                await db.commit()
+
+                all_active = await repo.list_active()
+                ip_only = await repo.list_active(ioc_type="ip")
+                return all_active, ip_only
+        all_active, ip_only = _run(go())
+
+        assert {r.ioc_value for r in all_active} == {"1.1.1.1", "evil.com"}
+        assert {r.ioc_value for r in ip_only} == {"1.1.1.1"}
+
+    def test_list_active_is_active_none_returns_all_regardless_of_status(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("ip", "1.1.1.1", source="manual", is_active=True)
+                await repo.create("ip", "2.2.2.2", source="manual", is_active=False)
+                await db.commit()
+                return await repo.list_active(is_active=None)
+        rows = _run(go())
+        assert {r.ioc_value for r in rows} == {"1.1.1.1", "2.2.2.2"}
+
+    def test_list_active_respects_limit_and_offset(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                for i in range(5):
+                    await repo.create("ip", f"1.1.1.{i}", source="manual")
+                await db.commit()
+                return await repo.list_active(limit=2, offset=1)
+        rows = _run(go())
+        assert len(rows) == 2
+
+    def test_create_persists_related_finding_id_and_tags(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                row = await repo.create(
+                    "domain", "evil-phish.com", source="scan_finding",
+                    related_finding_id=42, tags=["vuln_type:Open Redirect"],
+                )
+                await db.commit()
+                return row
+        row = _run(go())
+        assert row.related_finding_id == 42
+        assert row.tags == ["vuln_type:Open Redirect"]
 
 
 # ---------------------------------------------------------------------------
-# IOCEngine.check_ioc
+# IOCEngine.check_ioc — pure, no DB, unchanged from Phase 1
 # ---------------------------------------------------------------------------
 
 class TestCheckIoc:
@@ -165,15 +288,17 @@ class TestCheckIoc:
 
 
 # ---------------------------------------------------------------------------
-# IOCEngine.enrich_ioc
+# IOCEngine.enrich_ioc — now async (persists via a real DB-backed repository)
 # ---------------------------------------------------------------------------
 
 class TestEnrichIoc:
-    def test_single_source_confidence_equals_that_source_score(self):
+    def test_single_source_confidence_equals_that_source_score_without_repository(self):
+        # No repository injected -> enrich_ioc must still work (no DB touch),
+        # it just skips persistence.
         engine = IOCEngine(source_clients={
             "abuseipdb_ip": lambda ip: {"verdict": "MALICIOUS", "score": 80},
         })
-        record = engine.enrich_ioc("1.2.3.4", "ip")
+        record = _run(engine.enrich_ioc("1.2.3.4", "ip"))
 
         assert record["ioc_value"] == "1.2.3.4"
         assert record["source"] == "abuseipdb"
@@ -185,10 +310,10 @@ class TestEnrichIoc:
             "virustotal_domain": lambda d: {"verdict": "MALICIOUS", "score": 100},
         })
         # virustotal weight 1.0, otx weight 0.85 -> weighted avg, not plain mean
-        record = engine.enrich_ioc(
+        record = _run(engine.enrich_ioc(
             "evil.com", "domain",
             additional_sources={"otx": {"score": 50, "malware": "Emotet", "adversary": "APT28"}},
-        )
+        ))
 
         expected = round((100 * 1.0 + 50 * 0.85) / (1.0 + 0.85), 2)
         assert record["confidence_score"] == expected
@@ -200,35 +325,45 @@ class TestEnrichIoc:
         engine = IOCEngine(source_clients={
             "abuseipdb_ip": lambda ip: {"verdict": "CLEAN", "score": 5},
         })
-        record = engine.enrich_ioc("1.2.3.4", "ip", additional_sources={"otx": {}, "leakcheck": None})
+        record = _run(engine.enrich_ioc(
+            "1.2.3.4", "ip", additional_sources={"otx": {}, "leakcheck": None},
+        ))
         assert record["sources_consulted"] == ["abuseipdb"]
 
-    def test_persists_merged_record_into_repository(self):
-        repo = IOCRepository()
-        engine = IOCEngine(
-            repository=repo,
-            source_clients={"abuseipdb_ip": lambda ip: {"verdict": "MALICIOUS", "score": 90}},
-        )
-        engine.enrich_ioc("1.2.3.4", "ip")
+    def test_persists_merged_record_into_real_repository(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(
+                    repository=repo,
+                    source_clients={"abuseipdb_ip": lambda ip: {"verdict": "MALICIOUS", "score": 90}},
+                )
+                await engine.enrich_ioc("1.2.3.4", "ip")
+                await db.commit()
+                return await repo.get_by_value("ip", "1.2.3.4")
+        stored = _run(go())
 
-        stored = repo.get("ip", "1.2.3.4")
         assert stored is not None
-        assert stored["confidence_score"] == 90.0
-        assert stored["is_active"] is True
+        assert stored.confidence_score == 90.0
+        assert stored.is_active is True
 
-    def test_enrich_twice_updates_existing_repository_row_not_duplicate(self):
-        repo = IOCRepository()
-        engine = IOCEngine(repository=repo, source_clients={
-            "abuseipdb_ip": lambda ip: {"verdict": "SUSPICIOUS", "score": 30},
-        })
-        engine.enrich_ioc("1.2.3.4", "ip")
-        engine.enrich_ioc("1.2.3.4", "ip")
-
-        assert len(repo.list_active(ioc_type="ip")) == 1
+    def test_enrich_twice_updates_existing_repository_row_not_duplicate(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "abuseipdb_ip": lambda ip: {"verdict": "SUSPICIOUS", "score": 30},
+                })
+                await engine.enrich_ioc("1.2.3.4", "ip")
+                await engine.enrich_ioc("1.2.3.4", "ip")
+                await db.commit()
+                return await repo.list_active(ioc_type="ip")
+        rows = _run(go())
+        assert len(rows) == 1
 
 
 # ---------------------------------------------------------------------------
-# IOCEngine.extract_iocs_from_finding
+# IOCEngine.extract_iocs_from_finding — pure, no DB, unchanged from Phase 1
 # ---------------------------------------------------------------------------
 
 class TestExtractIocsFromFinding:
@@ -305,6 +440,40 @@ class TestExtractIocsFromFinding:
         candidates = self._engine().extract_iocs_from_finding(finding)
         urls = [c for c in candidates if c["ioc_type"] == "url"]
         assert len(urls) == 1
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: extract_iocs_from_finding() candidates persisted via a real repo
+# ---------------------------------------------------------------------------
+
+class TestExtractThenPersistIntegration:
+    def test_candidates_from_finding_persist_with_related_finding_id(self, db_factory):
+        finding = {
+            "id": 99,
+            "vuln_type": "SSRF",
+            "url": "https://myapp.example/fetch?url=x",
+            "evidence": "Outbound connection observed to 8.8.8.8 before timeout",
+        }
+
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine()
+                for candidate in engine.extract_iocs_from_finding(finding):
+                    await repo.upsert(
+                        candidate["ioc_type"], candidate["ioc_value"],
+                        source=candidate["source"],
+                        related_finding_id=candidate["related_finding_id"],
+                        tags=candidate["tags"],
+                    )
+                await db.commit()
+                return await repo.get_by_value("ip", "8.8.8.8")
+        stored = _run(go())
+
+        assert stored is not None
+        assert stored.source == "scan_finding"
+        assert stored.related_finding_id == 99
+        assert stored.tags == ["vuln_type:SSRF"]
 
 
 def test_ioc_types_are_the_six_documented_types():
