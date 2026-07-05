@@ -88,6 +88,14 @@ if not _darkweb_logger.handlers:
     _darkweb_logger.addHandler(_darkweb_handler)
     _darkweb_logger.setLevel(logging.INFO)
 
+# Same reasoning as above, for modules/ioc/scheduler.py's "ioc.scheduler" logger.
+_ioc_logger = logging.getLogger("ioc")
+if not _ioc_logger.handlers:
+    _ioc_handler = logging.StreamHandler()
+    _ioc_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _ioc_logger.addHandler(_ioc_handler)
+    _ioc_logger.setLevel(logging.INFO)
+
 # ─── OpenAPI Tags ─────────────────────────────────────────────────────────────
 
 OPENAPI_TAGS = [
@@ -528,6 +536,9 @@ async def startup():
     from modules.darkweb.scheduler import start_scheduler
     start_scheduler(asyncio.get_running_loop())
 
+    from modules.ioc.scheduler import start_scheduler as start_ioc_scheduler
+    start_ioc_scheduler(asyncio.get_running_loop())
+
     from modules.honeypot.manager import start_honeypots
     await start_honeypots()
 
@@ -536,6 +547,9 @@ async def startup():
 async def shutdown():
     from modules.darkweb.scheduler import stop_scheduler
     stop_scheduler()
+
+    from modules.ioc.scheduler import stop_scheduler as stop_ioc_scheduler
+    stop_ioc_scheduler()
 
     from modules.honeypot.manager import stop_honeypots
     await stop_honeypots()

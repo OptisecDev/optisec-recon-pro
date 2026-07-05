@@ -28,7 +28,9 @@ via `additional_sources`.
 
 from __future__ import annotations
 
+import asyncio
 import ipaddress
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -41,6 +43,8 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from web.models import Ioc
+
+logger = logging.getLogger(__name__)
 
 IOC_TYPES = frozenset({"hash_md5", "hash_sha256", "ip", "domain", "url", "email"})
 
@@ -149,6 +153,28 @@ class IOCRepository:
             return await self.update_last_seen(existing, **fields)
         return await self.create(ioc_type, ioc_value, **fields)
 
+    async def search(
+        self,
+        query: str,
+        ioc_type: Optional[str] = None,
+        is_active: Optional[bool] = True,
+        limit: int = 50,
+    ) -> list["Ioc"]:
+        """Substring match on ioc_value (case-insensitive), unlike
+        list_active()'s exact ioc_type/is_active filtering — for looking up
+        "does anything like this domain/ip exist" rather than an exact key
+        lookup (that's get_by_value)."""
+        from web.models import Ioc
+
+        stmt = select(Ioc).where(Ioc.ioc_value.ilike(f"%{query}%"))
+        if ioc_type is not None:
+            stmt = stmt.where(Ioc.ioc_type == ioc_type)
+        if is_active is not None:
+            stmt = stmt.where(Ioc.is_active == is_active)
+        stmt = stmt.order_by(Ioc.last_seen.desc()).limit(max(1, min(limit, 200)))
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())
+
 
 def _default_source_clients() -> dict[str, Callable]:
     from modules.threat_intel import ioc_detector
@@ -157,7 +183,22 @@ def _default_source_clients() -> dict[str, Callable]:
         "virustotal_domain": ioc_detector.check_domain,
         "virustotal_hash": ioc_detector.check_hash,
         "abuseipdb_ip": ioc_detector.check_ip,
+        "otx_pulses": _default_otx_pulses_client,
     }
+
+
+def _default_otx_pulses_client(limit: int) -> list[dict]:
+    """Default `otx_pulses` source client for sync_from_otx(). Mirrors the
+    `if OTX_API_KEY: ...` gate already used by web/routers/threat_feed.py
+    and web/routers/threat_sharing.py — returns [] (not an error) when no
+    key is configured, so sync_from_otx() degrades to a no-op sweep rather
+    than failing."""
+    import config
+    from modules.threat_intel.otx_feed import fetch_otx_pulses
+
+    if not config.OTX_API_KEY:
+        return []
+    return fetch_otx_pulses(config.OTX_API_KEY, limit=limit)
 
 
 class IOCEngine:
@@ -285,6 +326,94 @@ class IOCEngine:
                 tags=tags,
             )
         return record
+
+    async def sync_from_otx(self, limit: int = 100) -> dict:
+        """Fetch the latest AlienVault OTX pulse indicators (via the
+        injectable `otx_pulses` source client, defaulting to
+        modules.threat_intel.otx_feed.fetch_otx_pulses) and upsert each into
+        self.repository as a local Ioc row (source="otx").
+
+        OTX indicator types this engine's local store doesn't model (CVE,
+        CIDR, Mutex, filepath, YARA, FileHash-SHA1/SHA512 — see
+        otx_feed._TYPE_MAP) are counted in `skipped` and dropped rather than
+        raising, since IOC_TYPES intentionally covers only the six types
+        this table/engine understands.
+
+        fetch_otx_pulses is a blocking `requests` call, so it's run via
+        asyncio.to_thread — same pattern web/routers/threat_feed.py and
+        threat_sharing.py already use to keep it off the event loop. Never
+        raises: a network failure is logged and returned as an all-zero
+        summary with an "error" key, so a bad OTX response can't take down
+        a caller (a router request or the periodic scheduler sweep).
+        """
+        client = self.source_clients.get("otx_pulses")
+        if client is None:
+            return {"fetched": 0, "stored": 0, "skipped": 0, "error": "otx_pulses client not configured"}
+
+        try:
+            pulses = await asyncio.to_thread(client, limit)
+        except Exception as exc:
+            logger.warning("OTX sync: fetch failed: %s", exc)
+            return {"fetched": 0, "stored": 0, "skipped": 0, "error": "fetch_failed"}
+
+        pulses = pulses or []
+        stored = 0
+        skipped = 0
+        for item in pulses:
+            ioc_type = item.get("type")
+            value = item.get("value")
+            if ioc_type not in IOC_TYPES or not value:
+                skipped += 1
+                continue
+
+            tags = []
+            if item.get("pulse_name"):
+                tags.append(f"pulse:{item['pulse_name']}")
+            if item.get("adversary"):
+                tags.append(f"campaign:{item['adversary']}")
+
+            if self.repository is not None:
+                await self.repository.upsert(
+                    ioc_type, value,
+                    source="otx",
+                    confidence_score=float(item.get("threat_score", 0) or 0),
+                    tags=tags,
+                )
+                stored += 1
+
+        return {"fetched": len(pulses), "stored": stored, "skipped": skipped}
+
+    async def match_scan_results(self, findings: list[dict]) -> list[dict]:
+        """Correlate a scan's findings against the local IOC store: mine
+        candidate infrastructure IOCs from each finding (same extraction as
+        extract_iocs_from_finding) and check whether any of them are
+        already known to self.repository — e.g. synced from OTX via
+        sync_from_otx(), or mined from an earlier scan's finding.
+
+        Returns one dict per (finding, matched Ioc row) pair actually found
+        in the repository. A finding whose candidates are all new/unknown
+        infrastructure simply produces no matches — that's the common case,
+        not an error. Returns [] outright if no repository is configured,
+        same convention as enrich_ioc() skipping persistence when unset.
+        """
+        if self.repository is None:
+            return []
+
+        matches: list[dict] = []
+        for finding in findings:
+            for candidate in self.extract_iocs_from_finding(finding):
+                existing = await self.repository.get_by_value(candidate["ioc_type"], candidate["ioc_value"])
+                if existing is not None and existing.is_active:
+                    matches.append({
+                        "finding_id": finding.get("id"),
+                        "vuln_type": finding.get("vuln_type"),
+                        "ioc_type": existing.ioc_type,
+                        "ioc_value": existing.ioc_value,
+                        "ioc_source": existing.source,
+                        "confidence_score": existing.confidence_score,
+                        "tags": existing.tags or [],
+                    })
+        return matches
 
     def extract_iocs_from_finding(self, finding: dict) -> list[dict]:
         """Mine a scanner finding dict (same shape as web.models.Finding /

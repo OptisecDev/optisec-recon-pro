@@ -167,6 +167,47 @@ class TestIOCRepository:
         rows = _run(go())
         assert len(rows) == 2
 
+    def test_search_matches_substring_case_insensitive(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("domain", "evil-phish.com", source="manual")
+                await repo.create("domain", "safe.com", source="manual")
+                await db.commit()
+                return await repo.search("EVIL-PHISH")
+        rows = _run(go())
+        assert {r.ioc_value for r in rows} == {"evil-phish.com"}
+
+    def test_search_filters_by_ioc_type(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("domain", "evil.com", source="manual")
+                await repo.create("url", "http://evil.com/x", source="manual")
+                await db.commit()
+                return await repo.search("evil", ioc_type="domain")
+        rows = _run(go())
+        assert len(rows) == 1
+        assert rows[0].ioc_type == "domain"
+
+    def test_search_excludes_inactive_by_default(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("ip", "1.2.3.4", source="manual", is_active=False)
+                await db.commit()
+                return await repo.search("1.2.3.4")
+        assert _run(go()) == []
+
+    def test_search_no_match_returns_empty_list(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("ip", "1.2.3.4", source="manual")
+                await db.commit()
+                return await repo.search("nope")
+        assert _run(go()) == []
+
     def test_create_persists_related_finding_id_and_tags(self, db_factory):
         async def go():
             async with db_factory() as db:
@@ -440,6 +481,214 @@ class TestExtractIocsFromFinding:
         candidates = self._engine().extract_iocs_from_finding(finding)
         urls = [c for c in candidates if c["ioc_type"] == "url"]
         assert len(urls) == 1
+
+
+# ---------------------------------------------------------------------------
+# IOCEngine.sync_from_otx — fetch is injected, upsert via a real repository
+# ---------------------------------------------------------------------------
+
+class TestSyncFromOtx:
+    def _pulse(self, ioc_type="domain", value="evil.com", **extra):
+        item = {"type": ioc_type, "value": value, "threat_score": 80}
+        item.update(extra)
+        return item
+
+    def test_no_client_configured_returns_zeroed_summary_with_error(self):
+        engine = IOCEngine(source_clients={"otx_pulses": None})
+        summary = _run(engine.sync_from_otx())
+        assert summary == {"fetched": 0, "stored": 0, "skipped": 0, "error": "otx_pulses client not configured"}
+
+    def test_fetch_failure_is_swallowed_and_reported(self):
+        def boom(limit):
+            raise RuntimeError("OTX API unreachable")
+
+        engine = IOCEngine(source_clients={"otx_pulses": boom})
+        summary = _run(engine.sync_from_otx())
+        assert summary == {"fetched": 0, "stored": 0, "skipped": 0, "error": "fetch_failed"}
+
+    def test_unsupported_indicator_types_are_skipped_not_stored(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "otx_pulses": lambda limit: [
+                        self._pulse(ioc_type="cve", value="CVE-2024-1234"),
+                        self._pulse(ioc_type="domain", value="evil.com"),
+                    ],
+                })
+                summary = await engine.sync_from_otx()
+                await db.commit()
+                return summary, await repo.list_active(ioc_type="domain")
+        summary, rows = _run(go())
+        assert summary == {"fetched": 2, "stored": 1, "skipped": 1}
+        assert {r.ioc_value for r in rows} == {"evil.com"}
+
+    def test_unsupported_indicator_types_never_reach_the_iocs_table_at_all(self, db_factory):
+        """Stronger than test_unsupported_indicator_types_are_skipped_not_stored:
+        that test only checked the ioc_type="domain" filter's result, which
+        can't catch a bug that persisted a CVE/CIDR/Mutex row under its own
+        (unsupported) ioc_type — web.models.Ioc.ioc_type has no DB-level
+        enum constraint, so nothing but this engine's own IOC_TYPES check
+        stops that. Query across every type/active-state and assert the
+        unsupported OTX indicators are absent outright, not merely
+        unreachable through one filter."""
+        unsupported = [
+            self._pulse(ioc_type="cve", value="CVE-2024-1234"),
+            self._pulse(ioc_type="cidr", value="10.0.0.0/8"),
+            self._pulse(ioc_type="mutex", value="Global\\SomeMutex"),
+            self._pulse(ioc_type="filepath", value="/tmp/evil.bin"),
+            self._pulse(ioc_type="yara", value="rule_evil_1"),
+        ]
+        supported = [self._pulse(ioc_type="domain", value="evil.com")]
+
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "otx_pulses": lambda limit: unsupported + supported,
+                })
+                summary = await engine.sync_from_otx()
+                await db.commit()
+                return summary, await repo.list_active(ioc_type=None, is_active=None)
+        summary, all_rows = _run(go())
+
+        assert summary == {"fetched": 6, "stored": 1, "skipped": 5}
+        assert len(all_rows) == 1
+        assert all_rows[0].ioc_value == "evil.com"
+        assert all_rows[0].ioc_type == "domain"
+
+        stored_values = {r.ioc_value for r in all_rows}
+        stored_types = {r.ioc_type for r in all_rows}
+        for item in unsupported:
+            assert item["value"] not in stored_values
+            assert item["type"] not in stored_types
+
+    def test_stores_indicators_with_otx_source_and_tags(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "otx_pulses": lambda limit: [
+                        self._pulse(pulse_name="Emotet Campaign", adversary="APT28"),
+                    ],
+                })
+                await engine.sync_from_otx()
+                await db.commit()
+                return await repo.get_by_value("domain", "evil.com")
+        row = _run(go())
+        assert row.source == "otx"
+        assert row.confidence_score == 80.0
+        assert "pulse:Emotet Campaign" in row.tags
+        assert "campaign:APT28" in row.tags
+
+    def test_passes_limit_through_to_the_client(self):
+        calls = []
+
+        def fake_client(limit):
+            calls.append(limit)
+            return []
+
+        engine = IOCEngine(source_clients={"otx_pulses": fake_client})
+        _run(engine.sync_from_otx(limit=25))
+        assert calls == [25]
+
+    def test_missing_value_is_skipped(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "otx_pulses": lambda limit: [self._pulse(value="")],
+                })
+                return await engine.sync_from_otx()
+        summary = _run(go())
+        assert summary == {"fetched": 1, "stored": 0, "skipped": 1}
+
+    def test_no_repository_counts_fetched_but_stores_nothing(self):
+        engine = IOCEngine(source_clients={
+            "otx_pulses": lambda limit: [self._pulse()],
+        })
+        summary = _run(engine.sync_from_otx())
+        assert summary == {"fetched": 1, "stored": 0, "skipped": 0}
+
+
+# ---------------------------------------------------------------------------
+# IOCEngine.match_scan_results — correlate findings against the local store
+# ---------------------------------------------------------------------------
+
+class TestMatchScanResults:
+    def test_no_repository_returns_empty_list(self):
+        engine = IOCEngine()
+        findings = [{"id": 1, "url": "https://myapp.example/", "evidence": "8.8.8.8"}]
+        assert _run(engine.match_scan_results(findings)) == []
+
+    def test_matches_known_ioc_from_finding_evidence(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("ip", "8.8.8.8", source="otx", confidence_score=90.0, tags=["campaign:APT28"])
+                await db.commit()
+
+                engine = IOCEngine(repository=repo)
+                findings = [{
+                    "id": 5, "vuln_type": "SSRF",
+                    "url": "https://myapp.example/fetch?url=x",
+                    "evidence": "Outbound connection observed to 8.8.8.8 before timeout",
+                }]
+                return await engine.match_scan_results(findings)
+        matches = _run(go())
+        assert len(matches) == 1
+        assert matches[0]["finding_id"] == 5
+        assert matches[0]["vuln_type"] == "SSRF"
+        assert matches[0]["ioc_value"] == "8.8.8.8"
+        assert matches[0]["ioc_source"] == "otx"
+        assert matches[0]["confidence_score"] == 90.0
+        assert matches[0]["tags"] == ["campaign:APT28"]
+
+    def test_unknown_infrastructure_produces_no_matches(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo)
+                findings = [{
+                    "id": 1, "url": "https://myapp.example/fetch?url=x",
+                    "evidence": "Outbound connection observed to 8.8.8.8 before timeout",
+                }]
+                return await engine.match_scan_results(findings)
+        assert _run(go()) == []
+
+    def test_inactive_ioc_is_not_matched(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("ip", "8.8.8.8", source="otx", is_active=False)
+                await db.commit()
+
+                engine = IOCEngine(repository=repo)
+                findings = [{
+                    "id": 1, "url": "https://myapp.example/fetch?url=x",
+                    "evidence": "Outbound connection observed to 8.8.8.8 before timeout",
+                }]
+                return await engine.match_scan_results(findings)
+        assert _run(go()) == []
+
+    def test_multiple_findings_each_matched_independently(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("ip", "8.8.8.8", source="otx")
+                await repo.create("domain", "evil-phish.com", source="otx")
+                await db.commit()
+
+                engine = IOCEngine(repository=repo)
+                findings = [
+                    {"id": 1, "vuln_type": "SSRF", "url": "https://myapp.example/a",
+                     "evidence": "hit 8.8.8.8"},
+                    {"id": 2, "vuln_type": "Open Redirect", "url": "https://myapp.example/b",
+                     "evidence": "Redirect to: https://evil-phish.com/x"},
+                ]
+                return await engine.match_scan_results(findings)
+        matches = _run(go())
+        assert {m["finding_id"] for m in matches} == {1, 2}
 
 
 # ---------------------------------------------------------------------------
