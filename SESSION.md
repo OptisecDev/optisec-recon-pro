@@ -991,6 +991,35 @@ crash-loop، لا regression. لم تُفحص سجلات Render مباشرة (ل
 
 ---
 
+## تنظيف: حذف endpoint هجرة demo-severity المتبقّي (جلسة 2026-07-05، تكملة)
+
+**الخلفية:** بعد حذف endpoint هجرة `api_key_hash`، تحقّقتُ من وجود أي endpoints هجرة مؤقّتة
+أخرى متبقّية في `web/app.py`. وُجد `POST /internal/run-migration` (لـ
+`web.migrate_normalize_demo_severity.migrate()`، محمي بـ`MIGRATION_SECRET_TOKEN`، مسجَّل فقط
+عند `GROQ_ENV=production` أو `RENDER`) — وحسب `SESSION.md` (سطر ~648) كان قد نُفِّذ بنجاح على
+الإنتاج مسبقاً، فلم تعد الحاجة له قائمة.
+
+**تنظيف ما بعد النجاح:**
+- حُذف بالكامل من `web/app.py`: كتلة `if os.environ.get("GROQ_ENV") == "production" or
+  os.environ.get("RENDER"):` كاملة — كانت مخصصة حصراً لهذا الـendpoint (`import secrets as
+  _secrets_compare` + الـroute نفسه)، فلا شيء آخر يعتمد عليها.
+- `tests/test_migration_endpoint.py` **حُذف بالكامل** (3 اختبارات) — كانت مخصصة حصراً
+  للـendpoint المحذوف.
+- `config.py` (سطر ~39-41): تعليق كان يشير إلى `/internal/run-migration` كمثال على استخدام
+  `GROQ_ENV` — أُزيلت الإشارة إلى الـroute المحذوف، مع إبقاء بقية التعليق (متغيّر `GROQ_ENV`
+  نفسه ما زال مُستخدَماً في مكان آخر، بواسطة `_resolve_jwt_secret()`).
+- **873/873 اختبار ناجح** — لا فشل، لا regressions.
+- Commit `b3a1ebc` (`chore: remove one-off demo-severity migration trigger after production
+  success`) — تم push إلى `origin/master`.
+
+**تحقّق حي على الإنتاج بعد الـpush:** نفس الفحوصات عبر `curl` — `/` (200)، `/docs` (200)،
+`/demo` (302) — هذه المرة بدون تأخر cold start (النسخة كانت لا تزال دافئة من الفحص السابق).
+
+**النتيجة:** لا توجد أي endpoints هجرة مؤقّتة متبقّية في `web/app.py` (تم التأكد بالبحث عن
+`TEMPORARY`/`/internal/run-`/`DELETE AFTER USE` عبر الملف بالكامل).
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
