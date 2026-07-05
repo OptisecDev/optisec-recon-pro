@@ -36,8 +36,7 @@ DATABASE_URL = os.environ.get(
 )
 
 # Auth
-# GROQ_ENV is this project's general app-environment flag (already used the
-# same way in web/app.py to gate the /internal/run-migration route) -- not
+# GROQ_ENV is this project's general app-environment flag -- not
 # Groq-API-specific despite the name.
 _DEV_TESTING_ENV_VALUES = {"development", "dev", "test", "testing"}
 _INSECURE_DEV_JWT_SECRET = "optisec-INSECURE-dev-default-key-do-not-use-in-production"
