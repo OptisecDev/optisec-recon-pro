@@ -44,6 +44,13 @@ def _hash_api_key(api_key: str) -> str:
 
 
 async def migrate():
+    result = {
+        "added_column": False,
+        "backfilled": 0,
+        "dropped_column": False,
+        "wiped_to_null": False,
+    }
+
     async with engine.begin() as conn:
         existing_cols = await conn.run_sync(
             lambda sync_conn: {c["name"] for c in inspect(sync_conn).get_columns("users")}
@@ -52,6 +59,7 @@ async def migrate():
         if "api_key_hash" not in existing_cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN api_key_hash VARCHAR(64)"))
             print("[migrate] added column users.api_key_hash")
+            result["added_column"] = True
         else:
             print("[migrate] column users.api_key_hash already exists — skipping add")
 
@@ -66,18 +74,23 @@ async def migrate():
                 )
             if rows:
                 print(f"[migrate] backfilled api_key_hash for {len(rows)} existing user(s)")
+            result["backfilled"] = len(rows)
 
             try:
                 await conn.execute(text("ALTER TABLE users DROP COLUMN api_key"))
                 print("[migrate] dropped plaintext column users.api_key")
+                result["dropped_column"] = True
             except Exception as exc:
                 await conn.execute(text("UPDATE users SET api_key = NULL"))
                 print(
                     "[migrate] could not DROP COLUMN users.api_key "
                     f"({exc!r}); wiped its values to NULL instead"
                 )
+                result["wiped_to_null"] = True
         else:
             print("[migrate] column users.api_key already absent — nothing to backfill/drop")
+
+    return result
 
 
 if __name__ == "__main__":

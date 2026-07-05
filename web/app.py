@@ -21,9 +21,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, inspect
 
-from web.database import get_db, init_db, SessionLocal
+from web.database import get_db, init_db, SessionLocal, engine
 from web.models import User, Target, Scan, Finding, Report
 from web.schemas import (
     LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
@@ -530,8 +530,25 @@ async def session_refresh_middleware(request: Request, call_next):
 @app.on_event("startup")
 async def startup():
     await init_db()
-    await _ensure_first_admin()
-    await _ensure_demo_account()
+
+    # init_db() only runs Base.metadata.create_all, which never adds columns
+    # to a table that already exists — so on a production DB created before
+    # users.api_key_hash existed, that column is still missing until
+    # /internal/run-api-key-migration is invoked. _ensure_first_admin and
+    # _ensure_demo_account both touch the User entity (whose mapped columns
+    # include api_key_hash), so without this guard they raise on that missing
+    # column and take the whole app down before it can serve any request —
+    # including the migration endpoint itself. Skip them gracefully until
+    # the column exists; they'll run normally on the next restart post-migration.
+    has_api_key_hash = await _users_table_has_api_key_hash()
+    if not has_api_key_hash:
+        logger.warning(
+            "[OPTISEC] users.api_key_hash column missing — skipping admin/demo "
+            "account seeding until /internal/run-api-key-migration is run"
+        )
+    else:
+        await _ensure_first_admin()
+        await _ensure_demo_account()
 
     from modules.darkweb.scheduler import start_scheduler
     start_scheduler(asyncio.get_running_loop())
@@ -572,6 +589,14 @@ def _write_initial_credentials_file(role: str, username: str, password: str) -> 
         "(chmod 600). Log in once, then delete this file manually — it must "
         "not be left on the server."
     )
+
+
+async def _users_table_has_api_key_hash() -> bool:
+    async with engine.begin() as conn:
+        cols = await conn.run_sync(
+            lambda sync_conn: {c["name"] for c in inspect(sync_conn).get_columns("users")}
+        )
+        return "api_key_hash" in cols
 
 
 async def _ensure_first_admin():
@@ -2289,3 +2314,38 @@ if os.environ.get("GROQ_ENV") == "production" or os.environ.get("RENDER"):
         from web.migrate_normalize_demo_severity import migrate as _run_migration
         counts = await _run_migration()
         return JSONResponse({"normalized": counts, "total_updated": sum(counts.values())})
+
+    # ── TEMPORARY — one-off api_key_hash migration trigger, DELETE AFTER USE ─
+    # Same rationale as /internal/run-migration above (Render's free plan has
+    # no Shell access): token-gated way to run
+    # web.migrate_add_api_key_hash.migrate() against production, adding
+    # users.api_key_hash and clearing any leftover plaintext users.api_key.
+    # Mirrors /internal/run-ioc-migration's auth pattern: returns 404 (not
+    # 401/403) on any auth failure so the endpoint's existence isn't revealed
+    # to unauthenticated probes. Remove this block + API_KEY_MIGRATION_TOKEN
+    # env var once the migration has been run against production.
+    @app.post("/internal/run-api-key-migration", include_in_schema=False)
+    async def run_api_key_hash_migration(request: Request):
+        """TEMPORARY endpoint — see block comment above. Delete after use."""
+        expected_token = os.environ.get("API_KEY_MIGRATION_TOKEN")
+        provided_token = request.headers.get("X-Migration-Token")
+        if not expected_token or not provided_token or not _secrets_compare.compare_digest(
+            provided_token, expected_token
+        ):
+            raise HTTPException(404, "Not Found")
+
+        logging.info("api_key_hash migration endpoint invoked")
+        from web.migrate_add_api_key_hash import migrate as _run_api_key_migration
+        try:
+            result = await _run_api_key_migration()
+        except Exception:
+            logging.exception("api_key_hash migration failed")
+            return JSONResponse({"success": False}, status_code=500)
+
+        logging.info(
+            "api_key_hash migration completed: added_column=%s backfilled=%s "
+            "dropped_column=%s wiped_to_null=%s",
+            result["added_column"], result["backfilled"],
+            result["dropped_column"], result["wiped_to_null"],
+        )
+        return JSONResponse({"success": True, **result})
