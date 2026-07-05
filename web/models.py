@@ -12,7 +12,10 @@ class User(Base):
     email = Column(String(100), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(20), default="viewer")  # admin | analyst | viewer
-    api_key = Column(String(64), unique=True, index=True)
+    # SHA-256 hex digest of the API key -- the plaintext key is shown to the
+    # user once at generation/regeneration time and never stored (see
+    # web/auth.py hash_api_key / generate_api_key).
+    api_key_hash = Column(String(64), unique=True, index=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)

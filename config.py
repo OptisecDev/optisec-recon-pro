@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -35,7 +36,42 @@ DATABASE_URL = os.environ.get(
 )
 
 # Auth
-JWT_SECRET = os.environ.get("JWT_SECRET", "optisec-enterprise-key-change-in-production")
+# GROQ_ENV is this project's general app-environment flag (already used the
+# same way in web/app.py to gate the /internal/run-migration route) -- not
+# Groq-API-specific despite the name.
+_DEV_TESTING_ENV_VALUES = {"development", "dev", "test", "testing"}
+_INSECURE_DEV_JWT_SECRET = "optisec-INSECURE-dev-default-key-do-not-use-in-production"
+
+
+def _resolve_jwt_secret() -> str:
+    secret = os.environ.get("JWT_SECRET")
+    if secret:
+        return secret
+
+    is_production = os.environ.get("GROQ_ENV") == "production" or bool(os.environ.get("RENDER"))
+    is_dev_or_testing = os.environ.get("GROQ_ENV") in _DEV_TESTING_ENV_VALUES
+
+    if is_dev_or_testing:
+        logging.getLogger("optisec").warning(
+            "JWT_SECRET is not set — using an INSECURE default signing key because "
+            "GROQ_ENV=%r explicitly opts into dev/testing mode. Never do this in "
+            "production.", os.environ.get("GROQ_ENV"),
+        )
+        return _INSECURE_DEV_JWT_SECRET
+
+    reason = (
+        "production mode (GROQ_ENV=production or RENDER is set)" if is_production
+        else "GROQ_ENV is not explicitly set to development/dev/test/testing"
+    )
+    raise RuntimeError(
+        f"JWT_SECRET environment variable is not set, and {reason}. Refusing to "
+        "start: set JWT_SECRET to a long random string, or set "
+        "GROQ_ENV=development (or dev/test/testing) to explicitly opt into an "
+        "insecure default for local development only."
+    )
+
+
+JWT_SECRET = _resolve_jwt_secret()
 JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
 
 # First-run admin credentials (used only when DB is empty)

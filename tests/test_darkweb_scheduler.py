@@ -72,7 +72,7 @@ def _reset_scheduler_state():
 async def _seed_user(session_factory) -> int:
     async with session_factory() as db_:
         user = User(username="u1", email="u1@example.com", password_hash="x",
-                    role="analyst", api_key="k1", is_active=True)
+                    role="analyst", api_key_hash="k1", is_active=True)
         db_.add(user)
         await db_.commit()
         await db_.refresh(user)

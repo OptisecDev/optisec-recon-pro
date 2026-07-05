@@ -35,7 +35,7 @@ from web.schemas import (
 )
 from web.auth import (
     verify_password, hash_password, create_access_token,
-    generate_api_key, get_current_user, get_ws_user,
+    generate_api_key, hash_api_key, get_current_user, get_ws_user,
     require_admin, require_analyst_or_admin,
     check_rate_limit, record_failed_attempt, clear_attempts,
     log_auth_event, validate_password_strength, get_client_ip,
@@ -590,7 +590,7 @@ async def _ensure_first_admin():
                 email=email,
                 password_hash=hash_password(password),
                 role="admin",
-                api_key=generate_api_key(),
+                api_key_hash=hash_api_key(generate_api_key()),
                 is_active=True,
             )
             db.add(admin)
@@ -639,7 +639,7 @@ async def _ensure_demo_account():
             email="demo@optisec.local",
             password_hash=hash_password(demo_password),
             role="analyst",
-            api_key=generate_api_key(),
+            api_key_hash=hash_api_key(generate_api_key()),
             is_active=True,
         )
         db.add(demo)
@@ -826,8 +826,18 @@ async def register_submit(
 ):
     ip = get_client_ip(request)
 
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        minutes = remaining // 60 + 1
+        log_auth_event("REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
+        return templates.TemplateResponse(request, "register.html", {
+            "app_name": APP_NAME,
+            "error": f"Too many attempts. Try again in {minutes} minute(s).",
+        }, status_code=429)
+
     pw_errors = validate_password_strength(password)
     if pw_errors:
+        record_failed_attempt(ip)
         return templates.TemplateResponse(request, "register.html", {
             "app_name": APP_NAME,
             "error": "Password must have: " + ", ".join(pw_errors),
@@ -837,6 +847,7 @@ async def register_submit(
         select(User).where((User.username == username) | (User.email == email))
     )).scalar_one_or_none()
     if exists:
+        record_failed_attempt(ip)
         return templates.TemplateResponse(request, "register.html", {
             "app_name": APP_NAME, "error": "Username or email already taken",
         }, status_code=400)
@@ -847,11 +858,12 @@ async def register_submit(
         email=email,
         password_hash=hash_password(password),
         role="admin" if count == 0 else "viewer",
-        api_key=generate_api_key(),
+        api_key_hash=hash_api_key(generate_api_key()),
         is_active=True,
     )
     db.add(user)
     await db.commit()
+    clear_attempts(ip)
     log_auth_event("REGISTER", username, ip, True)
 
     token = create_access_token(user.id, user.role)
@@ -938,6 +950,7 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     responses={
         200: {"description": "Account created", "model": RegisterResponse},
         400: {"description": "Validation error or duplicate user", "model": ErrorResponse},
+        429: {"description": "Rate limited — too many failed attempts", "model": ErrorResponse},
     },
 )
 async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
@@ -947,27 +960,36 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     password = data.get("password", "")
     ip = get_client_ip(request)
 
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        log_auth_event("API_REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
+        raise HTTPException(429, f"Too many attempts. Try again in {remaining} seconds.")
+
     pw_errors = validate_password_strength(password)
     if pw_errors:
+        record_failed_attempt(ip)
         raise HTTPException(400, "Password must have: " + ", ".join(pw_errors))
 
     if (await db.execute(select(User).where(
         (User.username == username) | (User.email == email)
     ))).scalar_one_or_none():
+        record_failed_attempt(ip)
         raise HTTPException(400, "Username or email already taken")
 
     count = (await db.execute(select(func.count()).select_from(User))).scalar()
+    api_key = generate_api_key()
     user = User(
         username=username, email=email,
         password_hash=hash_password(password),
         role="admin" if count == 0 else "viewer",
-        api_key=generate_api_key(),
+        api_key_hash=hash_api_key(api_key),
     )
     db.add(user)
     await db.commit()
+    clear_attempts(ip)
     log_auth_event("API_REGISTER", username, ip, True)
     return JSONResponse({"id": user.id, "username": user.username,
-                         "role": user.role, "api_key": user.api_key})
+                         "role": user.role, "api_key": api_key})
 
 
 @app.post(
@@ -987,10 +1009,10 @@ async def regenerate_api_key(
     user: User = Depends(web_user),
     db: AsyncSession = Depends(get_db),
 ):
-    user.api_key = generate_api_key()
+    api_key = generate_api_key()
+    user.api_key_hash = hash_api_key(api_key)
     await db.commit()
-    await db.refresh(user)
-    return JSONResponse({"api_key": user.api_key})
+    return JSONResponse({"api_key": api_key})
 
 
 # ─── Web Pages ────────────────────────────────────────────────────────────────
@@ -2064,7 +2086,32 @@ async def license_activate_form(
     user: User = Depends(web_user),
 ):
     require_admin(user)
+    ip = get_client_ip(request)
+
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        minutes = remaining // 60 + 1
+        log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, f"rate_limited remaining={remaining}s")
+        lic = get_license()
+        return templates.TemplateResponse(request, "license.html", {
+            "app_name": APP_NAME, "version": APP_VERSION,
+            "active": "license", "user": user,
+            "lic": lic,
+            "features": list(FEATURE_LABELS.items()),
+            "free_features": set(TIER_FEATURES["free"]),
+            "pro_features":  set(TIER_FEATURES["pro"]),
+            "flash_msg": f"Too many attempts. Try again in {minutes} minute(s).",
+            "flash_type": "error",
+            "prefill_key": key,
+        }, status_code=429)
+
     success, message, new_lic = activate_license(key.strip())
+    if success:
+        clear_attempts(ip)
+        log_auth_event("LICENSE_ACTIVATE", user.username, ip, True)
+    else:
+        record_failed_attempt(ip)
+        log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, message)
     lic = get_license()
     features_list = list(FEATURE_LABELS.items())
     return templates.TemplateResponse(request, "license.html", {
@@ -2096,13 +2143,25 @@ async def license_deactivate_form(request: Request, user: User = Depends(web_use
 )
 async def api_license_activate(request: Request, user: User = Depends(web_user)):
     require_admin(user)
+    ip = get_client_ip(request)
+
+    allowed, remaining = check_rate_limit(ip)
+    if not allowed:
+        log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, f"rate_limited remaining={remaining}s")
+        raise HTTPException(429, f"Too many attempts. Try again in {remaining} seconds.")
+
     data = await request.json()
     key = data.get("key", "").strip()
     if not key:
+        record_failed_attempt(ip)
         raise HTTPException(400, "License key is required")
     success, message, lic = activate_license(key)
     if not success:
+        record_failed_attempt(ip)
+        log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, message)
         raise HTTPException(422, message)
+    clear_attempts(ip)
+    log_auth_event("LICENSE_ACTIVATE", user.username, ip, True)
     return JSONResponse({
         "success": True,
         "message": message,

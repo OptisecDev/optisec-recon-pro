@@ -57,7 +57,7 @@ def db(monkeypatch):
 
 async def _seed_user(session_factory, **overrides) -> User:
     defaults = dict(username="u1", email="u1@example.com", password_hash="x",
-                     role="analyst", api_key="k1", is_active=True)
+                     role="analyst", api_key_hash="k1", is_active=True)
     defaults.update(overrides)
     async with session_factory() as db_:
         user = User(**defaults)
@@ -393,8 +393,8 @@ class TestGetFindingForUser:
 
     def test_returns_none_for_other_users_finding(self, db):
         async def go():
-            owner = await _seed_user(db, username="owner", email="owner@example.com", api_key="k-owner")
-            other = await _seed_user(db, username="other", email="other@example.com", api_key="k-other")
+            owner = await _seed_user(db, username="owner", email="owner@example.com", api_key_hash="k-owner")
+            other = await _seed_user(db, username="other", email="other@example.com", api_key_hash="k-other")
             finding = await _seed_finding(db, owner.id)
             async with db() as db_:
                 return await cve_router.get_finding_for_user(db_, finding.id, other.id)
@@ -472,7 +472,7 @@ class TestCreateDraft:
 
     def test_reporter_defaults_to_requesting_user(self, db):
         async def go():
-            user = await _seed_user(db, username="analyst1", email="analyst1@example.com", api_key="k2")
+            user = await _seed_user(db, username="analyst1", email="analyst1@example.com", api_key_hash="k2")
             async with db() as db_:
                 return await cve_router.create_draft(
                     db_, user=user, payload={"title": "A", "description": "d"}, finding=None,
@@ -494,8 +494,8 @@ class TestCreateDraft:
 class TestListDrafts:
     def test_lists_only_requesting_users_drafts(self, db):
         async def go():
-            owner = await _seed_user(db, username="owner", email="owner@example.com", api_key="k-owner")
-            other = await _seed_user(db, username="other", email="other@example.com", api_key="k-other")
+            owner = await _seed_user(db, username="owner", email="owner@example.com", api_key_hash="k-owner")
+            other = await _seed_user(db, username="other", email="other@example.com", api_key_hash="k-other")
             async with db() as db_:
                 await cve_router.create_draft(db_, user=owner, payload={"title": "A", "description": "d"}, finding=None)
                 await cve_router.create_draft(db_, user=other, payload={"title": "B", "description": "d"}, finding=None)
@@ -560,8 +560,8 @@ class TestGetDraft:
 
     def test_returns_none_for_other_users_draft(self, db):
         async def go():
-            owner = await _seed_user(db, username="owner", email="owner@example.com", api_key="k-owner")
-            other = await _seed_user(db, username="other", email="other@example.com", api_key="k-other")
+            owner = await _seed_user(db, username="owner", email="owner@example.com", api_key_hash="k-owner")
+            other = await _seed_user(db, username="other", email="other@example.com", api_key_hash="k-other")
             async with db() as db_:
                 created = await cve_router.create_draft(db_, user=owner, payload={"title": "A", "description": "d"}, finding=None)
             async with db() as db_:

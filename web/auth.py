@@ -2,6 +2,7 @@ import os
 import re
 import time
 import secrets
+import hashlib
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -13,7 +14,8 @@ from fastapi import HTTPException, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-SECRET_KEY = os.environ.get("JWT_SECRET", "optisec-enterprise-key-change-in-production")
+from config import JWT_SECRET as SECRET_KEY  # config resolves/validates JWT_SECRET at startup
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "30"))
 
@@ -131,6 +133,18 @@ def generate_api_key() -> str:
     return secrets.token_hex(32)
 
 
+def hash_api_key(api_key: str) -> str:
+    """SHA-256 hex digest used for API key storage/lookup.
+
+    generate_api_key() already produces 256 bits of secrets.token_hex
+    randomness, so there's no offline brute-force risk that would call for
+    a slow/salted hash (unlike passwords) -- a fast deterministic hash is
+    what lets get_current_user do an indexed equality lookup below, and
+    the plaintext key is never stored, only shown once at issue time.
+    """
+    return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
 async def get_current_user(request: Request, db: AsyncSession):
     from web.models import User
 
@@ -138,7 +152,7 @@ async def get_current_user(request: Request, db: AsyncSession):
     api_key = request.headers.get("X-API-Key")
     if api_key:
         result = await db.execute(
-            select(User).where(User.api_key == api_key, User.is_active == True)
+            select(User).where(User.api_key_hash == hash_api_key(api_key), User.is_active == True)
         )
         user = result.scalar_one_or_none()
         if not user:
