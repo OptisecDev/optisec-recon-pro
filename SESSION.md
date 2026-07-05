@@ -962,6 +962,35 @@ attached to a different loop
 
 ---
 
+## تنظيف: حذف endpoint هجرة api_key_hash بعد نجاحه على الإنتاج (جلسة 2026-07-05)
+
+**الخلفية:** endpoint المؤقّت `POST /internal/run-api-key-migration` (أُضيف في commit
+`edf7719`) كان الطريقة الوحيدة لتشغيل `web/migrate_add_api_key_hash.py` على إنتاج Render
+(لا يوجد Shell access في الخطة المجانية). الهجرة نجحت فعلياً على قاعدة بيانات الإنتاج —
+عمود `users.api_key_hash` موجود الآن، لذا لم تعد الحاجة للـendpoint قائمة.
+
+**تنظيف ما بعد النجاح:**
+- حُذف بالكامل من `web/app.py`: الـendpoint `POST /internal/run-api-key-migration` (المنطق
+  كاملاً، بما فيه الفحص عبر `API_KEY_MIGRATION_TOKEN`). الـendpoint المنفصل
+  `/internal/run-migration` (لـ`migrate_normalize_demo_severity`) **بقي بلا تغيير** — غير
+  مرتبط بهذه المهمة.
+- `tests/test_api_key_migration_endpoint.py` **حُذف بالكامل** (3 اختبارات) — كانت مخصصة
+  حصراً للـendpoint المحذوف.
+- تعليق/تحذير الـstartup guard في `web/app.py` (حول `_users_table_has_api_key_hash()`)
+  أُعيد صياغته: لم يعد يشير إلى endpoint محذوف، بل يوضّح أن الهجرة اكتملت على الإنتاج وأن
+  الـguard باقٍ فقط كإجراء احترازي لأي بيئة أخرى ما زال العمود ناقصاً فيها (مع توجيه لتشغيل
+  `web/migrate_add_api_key_hash.py` مباشرة في تلك الحالة).
+- Commit `68fcfe2` (`chore: remove one-off api_key_hash migration trigger after production
+  success`) — تم push إلى `origin/master`.
+
+**تحقّق حي على الإنتاج بعد الـpush:** `curl` مباشر على `https://optisec-recon-pro.onrender.com/`
+(200، صفحة Landing كاملة)، `/docs` (200، Swagger UI)، `/demo` (302 كما متوقَّع) — تأخر أول طلب
+~30 ثانية بسبب cold start على الخطة المجانية، وبعدها استجابة أقل من ثانية على كل الطلبات. لا
+crash-loop، لا regression. لم تُفحص سجلات Render مباشرة (لا يوجد Render CLI/API key مُعدّ في
+هذه البيئة، وتقرّر عدم إعداد واحد) — الاعتماد كان على فحوصات curl فقط لتأكيد سلامة الإنتاج.
+
+---
+
 ## المهام القادمة (جلسات مستقبلية)
 - [ ] اختبار شامل وإصلاح أي bugs
 - [ ] نشر على VPS / Docker
