@@ -142,14 +142,20 @@ def detect_waf(headers: dict, body: str) -> Optional[str]:
 
 
 def _reflected_raw(body: str, payload: str) -> bool:
+    """True only if the exact injected payload appears in the response.
+
+    Previously this also matched generic tag fragments (``<script``,
+    ``onerror=``, ``<img``, etc.) anywhere in the body if the payload
+    happened to contain them too — but those fragments routinely occur in a
+    target's own legitimate markup/CSP, unrelated to anything reflected from
+    the injected payload. That produced false CONFIRMED verdicts against
+    pages that never echoed the payload at all (see reports/bounty_scan_*
+    findings against verisign.com — every fragment-only "reflection" turned
+    out to be the site's own <script>/<img> tags, not the payload).
+    """
     body_lower = (body or "").lower()
     payload_lower = (payload or "").lower()
-    if payload_lower and payload_lower in body_lower:
-        return True
-    for frag in ("<script", "onerror=", "onload=", "<svg", "<img", "javascript:"):
-        if frag in payload_lower and frag in body_lower:
-            return True
-    return False
+    return bool(payload_lower) and payload_lower in body_lower
 
 
 def _reflected_encoded(body: str, payload: str) -> bool:
