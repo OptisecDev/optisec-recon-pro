@@ -1620,6 +1620,15 @@ async def _run_scan_task(
         results["vulnerabilities"] = confirmed_vulns
 
         try:
+            from modules.osint.mitre_mapping import finding_type_from_scan_results, generate_attack_path
+            scan_findings = finding_type_from_scan_results(results)
+            results["attack_path"] = await generate_attack_path(scan_findings)
+        except Exception as exc:
+            logger.warning("[scan %s] attack path generation failed: %s", scan_id, exc)
+            results["attack_path"] = {"total_findings_analyzed": 0, "mapped_findings": 0,
+                                       "attack_path": [], "path_length": 0}
+
+        try:
             # AI triage is a second opinion on already-CONFIRMED findings —
             # running it on WAF_BLOCKED/etc. too would burn Groq's TPD quota
             # (see SESSION.md's TPD saga) on verdicts that don't need one.
