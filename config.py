@@ -76,7 +76,6 @@ JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
 # First-run admin credentials (used only when DB is empty)
 FIRST_ADMIN_USER = os.environ.get("FIRST_ADMIN_USER", "admin")
 FIRST_ADMIN_EMAIL = os.environ.get("FIRST_ADMIN_EMAIL", "admin@optisec.local")
-FIRST_ADMIN_PASSWORD = os.environ.get("FIRST_ADMIN_PASSWORD", "admin123")
 
 # App
 APP_NAME = "OPTISEC v4.0 SINGULARITY"
