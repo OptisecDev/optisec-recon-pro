@@ -71,6 +71,10 @@ _EXPECTED_MAPPINGS = {
     "password_in_url": (["T1552"], ["TA0006"]),
     "directory_listing": (["T1083"], ["TA0007"]),
     "backup_file_exposed": (["T1083"], ["TA0007"]),
+    "xss_found": (["T1190"], ["TA0001"]),
+    "sqli_found": (["T1190"], ["TA0001"]),
+    "ssrf_found": (["T1190"], ["TA0001"]),
+    "lfi_found": (["T1190"], ["TA0001"]),
 }
 
 
@@ -88,7 +92,7 @@ class TestMapFindingToAttack:
         assert all(t["name"] for t in result["techniques"])
         assert all(t["name"] for t in result["tactics"])
 
-    def test_all_29_rules_covered_by_this_suite(self):
+    def test_all_33_rules_covered_by_this_suite(self):
         assert set(_EXPECTED_MAPPINGS) == set(mm._MAPPING_RULES)
 
     def test_unknown_finding_type_returns_not_mapped(self):
@@ -151,6 +155,132 @@ class TestFindingTypeFromEntity:
 
     def test_unrecognized_type_returns_none(self):
         assert mm.finding_type_from_entity({"type": "whois_record"}) is None
+
+
+class TestFindingTypeFromScanResults:
+    pytestmark = pytest.mark.usefixtures("_static_index")
+
+    def test_open_ports_mapped(self):
+        scan_results = {"ports": {"open_ports": [
+            {"port": 22, "service": "SSH"},
+            {"port": 443, "service": "HTTPS"},
+        ]}}
+        results = mm.finding_type_from_scan_results(scan_results)
+        assert {"finding_type": "port_22_open", "finding_value": "SSH (22)"} in results
+        assert {"finding_type": "port_443_open", "finding_value": "HTTPS (443)"} in results
+
+    def test_open_port_with_no_rule_is_skipped(self):
+        scan_results = {"ports": {"open_ports": [{"port": 9999, "service": "unknown"}]}}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_missing_headers_mapped(self):
+        scan_results = {"headers": {"missing_headers": {
+            "Strict-Transport-Security": {"status": "missing"},
+            "Content-Security-Policy": {"status": "missing"},
+            "X-Frame-Options": {"status": "missing"},
+            "X-Content-Type-Options": {"status": "missing"},
+        }}}
+        results = mm.finding_type_from_scan_results(scan_results)
+        finding_types = {r["finding_type"] for r in results}
+        assert finding_types == {"missing_hsts", "missing_csp", "missing_xframe", "missing_xcontent"}
+
+    def test_present_headers_are_not_findings(self):
+        scan_results = {"headers": {"missing_headers": {}, "present_headers": {
+            "Strict-Transport-Security": {"status": "present", "value": "max-age=31536000"},
+        }}}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_unrecognized_missing_header_is_skipped(self):
+        scan_results = {"headers": {"missing_headers": {"Referrer-Policy": {"status": "missing"}}}}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_weak_tls_10_mapped(self):
+        scan_results = {"ssl": {"tls_version": "TLSv1", "issuer_name": "DigiCert Inc"}}
+        assert mm.finding_type_from_scan_results(scan_results) == [
+            {"finding_type": "weak_tls_10", "finding_value": "TLSv1"}
+        ]
+
+    def test_weak_tls_11_mapped(self):
+        scan_results = {"ssl": {"tls_version": "TLSv1.1", "issuer_name": "DigiCert Inc"}}
+        assert mm.finding_type_from_scan_results(scan_results) == [
+            {"finding_type": "weak_tls_11", "finding_value": "TLSv1.1"}
+        ]
+
+    def test_expired_cert_mapped(self):
+        scan_results = {"ssl": {"tls_version": "TLSv1.3", "expired": True, "not_after": "2020-01-01T00:00:00+00:00",
+                                 "issuer_name": "DigiCert Inc"}}
+        results = mm.finding_type_from_scan_results(scan_results)
+        assert {"finding_type": "cert_expired", "finding_value": "2020-01-01T00:00:00+00:00"} in results
+
+    def test_self_signed_cert_mapped_when_no_issuer_name(self):
+        scan_results = {"ssl": {"tls_version": "TLSv1.3", "expired": False, "issuer_name": "", "common_name": "example.com"}}
+        assert mm.finding_type_from_scan_results(scan_results) == [
+            {"finding_type": "self_signed_cert", "finding_value": "example.com"}
+        ]
+
+    def test_healthy_ssl_produces_no_findings(self):
+        scan_results = {"ssl": {"tls_version": "TLSv1.3", "expired": False, "issuer_name": "DigiCert Inc"}}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_ssl_error_dict_produces_no_findings(self):
+        # analyze_ssl()'s network/SSL failure shape carries "valid": False
+        # but no real cert data — must not be misread as a self-signed cert.
+        scan_results = {"ssl": {"domain": "example.com", "error": "Connection refused", "valid": False}}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_weak_cipher_is_never_produced(self):
+        # ssl_analysis.py records the negotiated cipher name but never
+        # classifies it as weak/strong, so this adapter has no signal to
+        # act on and must not guess — weak_cipher is intentionally
+        # unreachable from here (still reachable via
+        # finding_type_from_entity()'s keyword-based ssl_issue matching).
+        scan_results = {"ssl": {"tls_version": "TLSv1.3", "expired": False,
+                                 "issuer_name": "DigiCert Inc", "cipher": "RC4-MD5"}}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_confirmed_vulnerabilities_mapped(self):
+        scan_results = {"vulnerabilities": [
+            {"type": "XSS", "verdict": "CONFIRMED", "url": "https://example.com/search?q=x"},
+            {"type": "SQL Injection", "verdict": "CONFIRMED", "url": "https://example.com/item?id=1"},
+            {"type": "SQL Injection (Blind)", "verdict": "CONFIRMED", "url": "https://example.com/item?id=2"},
+            {"type": "SSRF", "verdict": "CONFIRMED", "url": "https://example.com/fetch?url=x"},
+            {"type": "LFI", "verdict": "CONFIRMED", "url": "https://example.com/view?file=x"},
+            {"type": "Open Redirect", "verdict": "CONFIRMED", "url": "https://example.com/go?to=x"},
+        ]}
+        results = mm.finding_type_from_scan_results(scan_results)
+        finding_types = [r["finding_type"] for r in results]
+        assert finding_types == ["xss_found", "sqli_found", "sqli_found", "ssrf_found", "lfi_found", "open_redirect"]
+
+    def test_non_confirmed_vulnerability_is_skipped(self):
+        scan_results = {"vulnerabilities": [
+            {"type": "XSS", "verdict": "WAF_BLOCKED", "url": "https://example.com/search?q=x"},
+        ]}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_unrecognized_vuln_type_is_skipped(self):
+        scan_results = {"vulnerabilities": [{"type": "Something Else", "verdict": "CONFIRMED"}]}
+        assert mm.finding_type_from_scan_results(scan_results) == []
+
+    def test_empty_scan_results(self):
+        assert mm.finding_type_from_scan_results({}) == []
+
+    def test_combined_categories_all_flow_through(self):
+        scan_results = {
+            "ports": {"open_ports": [{"port": 3389, "service": "RDP"}]},
+            "headers": {"missing_headers": {"Content-Security-Policy": {"status": "missing"}}},
+            "ssl": {"tls_version": "TLSv1", "expired": False, "issuer_name": "Let's Encrypt"},
+            "vulnerabilities": [{"type": "SSRF", "verdict": "CONFIRMED", "url": "https://example.com/fetch"}],
+        }
+        finding_types = {r["finding_type"] for r in mm.finding_type_from_scan_results(scan_results)}
+        assert finding_types == {"port_3389_open", "missing_csp", "weak_tls_10", "ssrf_found"}
+
+    def test_results_are_mappable_end_to_end(self):
+        scan_results = {"vulnerabilities": [{"type": "XSS", "verdict": "CONFIRMED", "url": "https://example.com/x"}]}
+        findings = mm.finding_type_from_scan_results(scan_results)
+        result = _run(mm.map_finding_to_attack(findings[0]["finding_type"], findings[0]["finding_value"]))
+        assert result["mapped"] is True
+        assert [t["id"] for t in result["techniques"]] == ["T1190"]
+        assert [t["id"] for t in result["tactics"]] == ["TA0001"]
 
 
 class TestMapFindingsToAttack:

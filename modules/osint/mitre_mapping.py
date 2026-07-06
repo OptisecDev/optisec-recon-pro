@@ -134,6 +134,16 @@ _MAPPING_RULES: dict[str, dict] = {
     "password_in_url": _rule(["T1552"], ["TA0006"]),
     "directory_listing": _rule(["T1083"], ["TA0007"]),
     "backup_file_exposed": _rule(["T1083"], ["TA0007"]),
+    # modules/vuln/*.py scanner-confirmed findings (see
+    # finding_type_from_scan_results below) — mapped to T1190/TA0001 for
+    # the same reason as the port_80/443/1433/3306/27017_open rules above:
+    # a scanner-confirmed reflection/injection is exploitation of a
+    # public-facing application, not a verified end-to-end compromise, so
+    # it stays at Initial Access rather than a payload-specific technique.
+    "xss_found": _rule(["T1190"], ["TA0001"]),
+    "sqli_found": _rule(["T1190"], ["TA0001"]),
+    "ssrf_found": _rule(["T1190"], ["TA0001"]),
+    "lfi_found": _rule(["T1190"], ["TA0001"]),
 }
 
 
@@ -369,6 +379,83 @@ def finding_type_from_entity(entity: dict) -> str | None:
         return None
 
     return _ENTITY_TYPE_ALIASES.get(entity_type)
+
+
+# ── web/app.py scan.results -> finding_type normalization ──────────────────────
+
+_HEADER_TO_FINDING_TYPE: dict[str, str] = {
+    "Strict-Transport-Security": "missing_hsts",
+    "Content-Security-Policy": "missing_csp",
+    "X-Frame-Options": "missing_xframe",
+    "X-Content-Type-Options": "missing_xcontent",
+}
+
+_VULN_TYPE_TO_FINDING_TYPE: dict[str, str] = {
+    "XSS": "xss_found",
+    "SQL Injection": "sqli_found",
+    "SQL Injection (Blind)": "sqli_found",
+    "SQL Injection (Time-Based Blind)": "sqli_found",
+    "SSRF": "ssrf_found",
+    "LFI": "lfi_found",
+    "Open Redirect": "open_redirect",
+}
+
+
+def finding_type_from_scan_results(scan_results: dict) -> list[dict]:
+    """
+    Adapt a web/app.py `_run_scan_task` scan.results dict (`{"ports":
+    scan_ports() output, "headers": check_security_headers() output,
+    "ssl": analyze_ssl() output, "vulnerabilities": [CONFIRMED
+    modules/vuln/*.py findings], ...}`) into a flat list of
+    {finding_type, finding_value} pairs ready for
+    map_finding_to_attack()/generate_attack_path() — the scan.results
+    counterpart of finding_type_from_entity(), which instead adapts
+    modules/osint/unified_engine.py's `{type, value}` entities.
+
+    Only ports/headers/ssl/vulnerabilities are inspected — scan.results'
+    subdomains/dns/whois/nmap/osint keys have no deterministic ATT&CK
+    rule yet. ssl_analysis.py's `cipher` field is intentionally NOT
+    checked against weak_cipher: it records the negotiated cipher name
+    but never classifies it as weak/strong, so there is no reliable
+    signal here to map — weak_cipher stays reachable only via
+    finding_type_from_entity()'s keyword-based ssl_issue matching. Never
+    raises.
+    """
+    findings: list[dict] = []
+
+    for port in (scan_results.get("ports") or {}).get("open_ports") or []:
+        finding_type = f"port_{port.get('port')}_open"
+        if finding_type in _MAPPING_RULES:
+            findings.append({
+                "finding_type": finding_type,
+                "finding_value": f"{port.get('service')} ({port.get('port')})",
+            })
+
+    for header_name in (scan_results.get("headers") or {}).get("missing_headers") or {}:
+        finding_type = _HEADER_TO_FINDING_TYPE.get(header_name)
+        if finding_type:
+            findings.append({"finding_type": finding_type, "finding_value": header_name})
+
+    ssl_data = scan_results.get("ssl")
+    if ssl_data and not ssl_data.get("error"):
+        tls_version = ssl_data.get("tls_version")
+        if tls_version == "TLSv1":
+            findings.append({"finding_type": "weak_tls_10", "finding_value": tls_version})
+        elif tls_version == "TLSv1.1":
+            findings.append({"finding_type": "weak_tls_11", "finding_value": tls_version})
+        if ssl_data.get("expired"):
+            findings.append({"finding_type": "cert_expired", "finding_value": ssl_data.get("not_after")})
+        if not (ssl_data.get("issuer_name") or "").strip():
+            findings.append({"finding_type": "self_signed_cert", "finding_value": ssl_data.get("common_name")})
+
+    for vuln in scan_results.get("vulnerabilities") or []:
+        if vuln.get("verdict") not in (None, "CONFIRMED"):
+            continue
+        finding_type = _VULN_TYPE_TO_FINDING_TYPE.get(vuln.get("type"))
+        if finding_type:
+            findings.append({"finding_type": finding_type, "finding_value": vuln.get("url")})
+
+    return findings
 
 
 async def map_findings_to_attack(entities: list[dict]) -> list[dict]:
