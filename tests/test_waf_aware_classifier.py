@@ -10,6 +10,7 @@ httpx.MockTransport, mirroring the project's existing "never hit real APIs
 in tests" convention (see tests/test_darkweb_monitor.py).
 """
 
+import json
 import os
 import sys
 
@@ -24,6 +25,7 @@ from modules.vuln.waf_aware_classifier import (
     classify_error_signature,
     classify_blind_signal,
     classify_signature_match,
+    classify_graphql_introspection,
     detect_waf,
 )
 
@@ -458,5 +460,95 @@ def test_signature_match_redirect_not_confirmed_when_waf_present():
     )
 
     assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
+    assert result.waf_detected == "Cloudflare"
+
+
+# ── classify_graphql_introspection() — GraphQL introspection probe ──────
+
+def _schema_body(type_names=("Query",)):
+    return json.dumps({
+        "data": {
+            "__schema": {
+                "queryType": {"name": "Query"},
+                "types": [{"name": n} for n in type_names],
+            }
+        }
+    })
+
+
+def test_graphql_confirmed_when_schema_present():
+    result = classify_graphql_introspection(200, {}, _schema_body())
+
+    assert result.verdict == "CONFIRMED"
+    assert result.severity == "Medium"
+    assert result.should_report is True
+    assert result.waf_detected is None
+
+
+def test_graphql_not_confirmed_when_waf_present_even_with_schema():
+    result = classify_graphql_introspection(200, {"cf-ray": "abc-DFW"}, _schema_body())
+
+    assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
+    assert result.waf_detected == "Cloudflare"
+
+
+def test_graphql_bare_schema_key_without_types_is_not_confirmed():
+    """A non-GraphQL JSON API that happens to echo back `{"data": {"__schema":
+    null}}` (or an empty object) must not be mistaken for a live schema."""
+    body = json.dumps({"data": {"__schema": None}})
+    result = classify_graphql_introspection(200, {}, body)
+
+    assert result.verdict != "CONFIRMED"
+
+
+@pytest.mark.parametrize("message", [
+    'Cannot query field "__schema" on type Query.',
+    "GraphQL introspection is disabled",
+    "Introspection is not allowed",
+])
+def test_graphql_introspection_disabled(message):
+    body = json.dumps({"errors": [{"message": message}]})
+    result = classify_graphql_introspection(200, {}, body)
+
+    assert result.verdict == "INTROSPECTION_DISABLED"
+    assert result.should_report is False
+    assert result.severity is None
+
+
+def test_graphql_generic_error_is_inconclusive_not_disabled():
+    """An unrelated GraphQL error (bad syntax, unknown field typo, etc.) says
+    nothing about whether introspection specifically is disabled."""
+    body = json.dumps({"errors": [{"message": "Syntax Error: Unexpected Name \"foo\""}]})
+    result = classify_graphql_introspection(200, {}, body)
+
+    assert result.verdict == "INCONCLUSIVE"
+    assert result.should_report is False
+
+
+def test_graphql_non_json_body_is_inconclusive():
+    result = classify_graphql_introspection(200, {}, "<html>not graphql at all</html>")
+
+    assert result.verdict == "INCONCLUSIVE"
+    assert result.should_report is False
+
+
+@pytest.mark.parametrize("status_code", [404, 400])
+def test_graphql_endpoint_invalid(status_code):
+    result = classify_graphql_introspection(status_code, {}, "Not Found")
+
+    assert result.verdict == "ENDPOINT_INVALID"
+    assert result.should_report is False
+
+
+@pytest.mark.parametrize("status_code", [403, 406, 429])
+def test_graphql_waf_blocked(status_code):
+    result = classify_graphql_introspection(
+        status_code, {"cf-ray": "abc-DFW"}, "Sorry, you have been blocked",
+    )
+
+    assert result.verdict == "WAF_BLOCKED"
+    assert result.severity == "Medium"
     assert result.should_report is False
     assert result.waf_detected == "Cloudflare"

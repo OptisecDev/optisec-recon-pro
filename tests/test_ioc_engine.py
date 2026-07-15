@@ -156,6 +156,39 @@ class TestIOCRepository:
         rows = _run(go())
         assert {r.ioc_value for r in rows} == {"1.1.1.1", "2.2.2.2"}
 
+    def test_list_active_filters_by_source(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("url", "http://evil.com/a", source="urlhaus")
+                await repo.create("url", "http://evil.com/b", source="manual")
+                await db.commit()
+                return await repo.list_active(source="urlhaus")
+        rows = _run(go())
+        assert {r.ioc_value for r in rows} == {"http://evil.com/a"}
+
+    def test_list_active_combines_source_with_ioc_type(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("url", "http://evil.com/a", source="urlhaus")
+                await repo.create("ip", "8.8.8.8", source="urlhaus")
+                await db.commit()
+                return await repo.list_active(ioc_type="url", source="urlhaus")
+        rows = _run(go())
+        assert {r.ioc_value for r in rows} == {"http://evil.com/a"}
+
+    def test_list_active_source_none_does_not_filter(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                await repo.create("url", "http://evil.com/a", source="urlhaus")
+                await repo.create("url", "http://evil.com/b", source="manual")
+                await db.commit()
+                return await repo.list_active()
+        rows = _run(go())
+        assert {r.ioc_value for r in rows} == {"http://evil.com/a", "http://evil.com/b"}
+
     def test_list_active_respects_limit_and_offset(self, db_factory):
         async def go():
             async with db_factory() as db:
@@ -608,6 +641,92 @@ class TestSyncFromOtx:
             "otx_pulses": lambda limit: [self._pulse()],
         })
         summary = _run(engine.sync_from_otx())
+        assert summary == {"fetched": 1, "stored": 0, "skipped": 0}
+
+
+# ---------------------------------------------------------------------------
+# IOCEngine.sync_from_urlhaus — fetch is injected, upsert via a real repository
+# ---------------------------------------------------------------------------
+
+class TestSyncFromUrlhaus:
+    def _entry(self, ioc_type="url", value="http://evil.com/x", **extra):
+        item = {"type": ioc_type, "value": value, "threat_score": 90}
+        item.update(extra)
+        return item
+
+    def test_no_client_configured_returns_zeroed_summary_with_error(self):
+        engine = IOCEngine(source_clients={"urlhaus_recent": None})
+        summary = _run(engine.sync_from_urlhaus())
+        assert summary == {"fetched": 0, "stored": 0, "skipped": 0, "error": "urlhaus_recent client not configured"}
+
+    def test_fetch_failure_is_swallowed_and_reported(self):
+        def boom(limit):
+            raise RuntimeError("URLhaus API unreachable")
+
+        engine = IOCEngine(source_clients={"urlhaus_recent": boom})
+        summary = _run(engine.sync_from_urlhaus())
+        assert summary == {"fetched": 0, "stored": 0, "skipped": 0, "error": "fetch_failed"}
+
+    def test_unsupported_entry_types_are_skipped_not_stored(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "urlhaus_recent": lambda limit: [
+                        self._entry(ioc_type="cidr", value="10.0.0.0/8"),
+                        self._entry(ioc_type="url", value="http://evil.com/x"),
+                    ],
+                })
+                summary = await engine.sync_from_urlhaus()
+                await db.commit()
+                return summary, await repo.list_active(ioc_type="url")
+        summary, rows = _run(go())
+        assert summary == {"fetched": 2, "stored": 1, "skipped": 1}
+        assert {r.ioc_value for r in rows} == {"http://evil.com/x"}
+
+    def test_stores_indicators_with_urlhaus_source_and_tags(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "urlhaus_recent": lambda limit: [self._entry(tags=["elf", "mirai"])],
+                })
+                await engine.sync_from_urlhaus()
+                await db.commit()
+                return await repo.get_by_value("url", "http://evil.com/x")
+        row = _run(go())
+        assert row.source == "urlhaus"
+        assert row.confidence_score == 90.0
+        assert "malware_family:elf" in row.tags
+        assert "malware_family:mirai" in row.tags
+
+    def test_passes_limit_through_to_the_client(self):
+        calls = []
+
+        def fake_client(limit):
+            calls.append(limit)
+            return []
+
+        engine = IOCEngine(source_clients={"urlhaus_recent": fake_client})
+        _run(engine.sync_from_urlhaus(limit=25))
+        assert calls == [25]
+
+    def test_missing_value_is_skipped(self, db_factory):
+        async def go():
+            async with db_factory() as db:
+                repo = IOCRepository(db)
+                engine = IOCEngine(repository=repo, source_clients={
+                    "urlhaus_recent": lambda limit: [self._entry(value="")],
+                })
+                return await engine.sync_from_urlhaus()
+        summary = _run(go())
+        assert summary == {"fetched": 1, "stored": 0, "skipped": 1}
+
+    def test_no_repository_counts_fetched_but_stores_nothing(self):
+        engine = IOCEngine(source_clients={
+            "urlhaus_recent": lambda limit: [self._entry()],
+        })
+        summary = _run(engine.sync_from_urlhaus())
         assert summary == {"fetched": 1, "stored": 0, "skipped": 0}
 
 

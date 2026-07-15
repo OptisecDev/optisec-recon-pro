@@ -2,8 +2,9 @@
 IOC router — read access to the locally-mined/checked IOC store
 (web/models.py::Ioc, modules/ioc/ioc_engine.py). Rows here come from
 web/app.py::_extract_and_store_iocs (automatic mining of scan Finding
-evidence after every XSS/SQLi/SSRF/LFI/Open Redirect scan) and, in the
-future, manual check_ioc()/enrich_ioc() lookups.
+evidence after every XSS/SQLi/SSRF/LFI/Open Redirect scan), the periodic
+OTX and URLhaus feed syncs (modules/ioc/scheduler.py), and, in the future,
+manual check_ioc()/enrich_ioc() lookups.
 
 Distinct from /correlations (modules/ioc_correlation.py), which correlates
 global threat-feed IOCs against each other and never touches this table.
@@ -126,6 +127,28 @@ async def sync_iocs(
     return JSONResponse(summary)
 
 
+@router.post(
+    "/sync/urlhaus",
+    summary="Manually trigger a URLhaus recent-URLs sync",
+    description=(
+        "Fetch recently added malware-distribution URLs from abuse.ch URLhaus and "
+        "upsert them into the local IOC store (source=\"urlhaus\"). Runs the same "
+        "IOCEngine.sync_from_urlhaus() logic as the periodic background sync "
+        "(modules/ioc/scheduler.py) — use this to refresh on demand instead of "
+        "waiting for the next scheduled sweep."
+    ),
+)
+async def sync_iocs_urlhaus(
+    limit: int = 100,
+    user: User = Depends(_user),
+    db: AsyncSession = Depends(get_db),
+):
+    engine = IOCEngine(repository=IOCRepository(db))
+    summary = await engine.sync_from_urlhaus(limit=limit)
+    await db.commit()
+    return JSONResponse(summary)
+
+
 @router.get(
     "/scan/{scan_id}/matches",
     summary="Correlate a scan's findings against the local IOC store",
@@ -171,3 +194,18 @@ async def scan_ioc_matches(
 async def scheduler_status(user: User = Depends(_user)):
     from modules.ioc.scheduler import get_status
     return JSONResponse(get_status())
+
+
+@router.get(
+    "/scheduler/status/urlhaus",
+    summary="IOC URLhaus sync scheduler status",
+    description=(
+        "Whether the periodic URLhaus recent-URLs sync sweep (modules/ioc/scheduler.py) "
+        "is running in this process, its configured interval, when it last ran and what "
+        "it found, and its next scheduled run. Separate from GET /scheduler/status, which "
+        "reports the OTX job — the two feeds run as independent jobs on the same scheduler."
+    ),
+)
+async def scheduler_status_urlhaus(user: User = Depends(_user)):
+    from modules.ioc.scheduler import get_urlhaus_status
+    return JSONResponse(get_urlhaus_status())

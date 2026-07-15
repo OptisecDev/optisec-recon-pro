@@ -23,6 +23,7 @@ GROQ_TPD_LIMIT = int(os.environ.get("GROQ_TPD_LIMIT", "200000"))
 # Threat Intelligence
 OTX_API_KEY = os.environ.get("OTX_API_KEY", "")
 OTX_BASE_URL = "https://otx.alienvault.com/api/v1"
+URLHAUS_API_KEY = os.environ.get("URLHAUS_API_KEY", "")
 
 # Threat Sharing — opt-in outbound IOC sharing (modules/threat_intel/threat_sharing.py).
 # Disabled by default: no IOC ever leaves this deployment unless an operator

@@ -210,6 +210,50 @@ class TestSyncIocsEndpoint:
         assert calls == [17]
 
 
+class TestSyncIocsUrlhausEndpoint:
+    def test_no_api_key_configured_is_a_safe_no_op(self, db_factory, monkeypatch):
+        import config
+        monkeypatch.setattr(config, "URLHAUS_API_KEY", "")
+
+        async def go():
+            async with db_factory() as db:
+                return await ioc_router.sync_iocs_urlhaus(user=_fake_user(), db=db)
+        data = _body(_run(go()))
+        assert data == {"fetched": 0, "stored": 0, "skipped": 0}
+
+    def test_stores_fetched_indicators_and_commits(self, db_factory, monkeypatch):
+        def fake_client(limit):
+            return [{"type": "url", "value": "http://evil.com/x", "threat_score": 91}]
+        monkeypatch.setattr("modules.ioc.ioc_engine._default_urlhaus_recent_client", fake_client)
+
+        async def go():
+            async with db_factory() as db:
+                resp = await ioc_router.sync_iocs_urlhaus(user=_fake_user(), db=db)
+                repo = IOCRepository(db)
+                row = await repo.get_by_value("url", "http://evil.com/x")
+                return resp, row
+        resp, row = _run(go())
+        data = _body(resp)
+        assert data == {"fetched": 1, "stored": 1, "skipped": 0}
+        assert row is not None
+        assert row.source == "urlhaus"
+        assert row.confidence_score == 91.0
+
+    def test_passes_limit_query_param_through(self, db_factory, monkeypatch):
+        calls = []
+
+        def fake_client(limit):
+            calls.append(limit)
+            return []
+        monkeypatch.setattr("modules.ioc.ioc_engine._default_urlhaus_recent_client", fake_client)
+
+        async def go():
+            async with db_factory() as db:
+                return await ioc_router.sync_iocs_urlhaus(limit=17, user=_fake_user(), db=db)
+        _run(go())
+        assert calls == [17]
+
+
 class TestScanIocMatchesEndpoint:
     async def _seed_scan_with_findings(self, session_factory, owner_id: int) -> str:
         async with session_factory() as db:
@@ -298,6 +342,36 @@ class TestSchedulerStatusEndpoint:
             data = _body(_run(ioc_router.scheduler_status(user=_fake_user())))
             assert data["running"] is True
             assert data["interval_hours"] == 9.0
+            assert data["next_run_at"] is not None
+        finally:
+            ioc_sched.stop_scheduler()
+
+
+class TestSchedulerStatusUrlhausEndpoint:
+    """Mirrors TestSchedulerStatusEndpoint for the URLhaus job's status
+    endpoint — same shape, independent job/interval/run-history."""
+
+    def test_matches_get_urlhaus_status_shape_and_default_not_running(self):
+        import modules.ioc.scheduler as ioc_sched
+        ioc_sched.stop_scheduler()  # ensure a clean not-running baseline
+
+        data = _body(_run(ioc_router.scheduler_status_urlhaus(user=_fake_user())))
+
+        assert set(data.keys()) == {
+            "running", "interval_hours", "worker_id",
+            "last_run_at", "last_run_summary", "next_run_at",
+        }
+        assert data["running"] is False
+        assert data == ioc_sched.get_urlhaus_status()
+
+    def test_reflects_running_state(self, monkeypatch):
+        import modules.ioc.scheduler as ioc_sched
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", "7")
+        ioc_sched.start_scheduler(asyncio.new_event_loop())
+        try:
+            data = _body(_run(ioc_router.scheduler_status_urlhaus(user=_fake_user())))
+            assert data["running"] is True
+            assert data["interval_hours"] == 7.0
             assert data["next_run_at"] is not None
         finally:
             ioc_sched.stop_scheduler()

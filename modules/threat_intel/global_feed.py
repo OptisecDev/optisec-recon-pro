@@ -4,7 +4,10 @@ import hashlib
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 DATA_FILE = Path("data/global_threat_feed.json")
 
@@ -24,6 +27,11 @@ FEED_SOURCES = [
 ]
 
 # ── Simulated live IOC stream ─────────────────────────────────────────────────
+# NOTE: URLHAUS entries used to be hardcoded here too. They've been removed —
+# real URLhaus IOCs now come from the local Ioc table via
+# fetch_real_urlhaus_iocs() below, sourced from modules/ioc/scheduler.py's
+# periodic sync (Phase 3). Every other source in this list (ABUSE-CH,
+# CISA-KEV, FEODO-TRACKER, etc.) is still fabricated sample data — untouched.
 
 _SAMPLE_IOCS = [
     {"type": "ip",         "value": "185.234.216.45", "malware": "Cobalt Strike",    "confidence": 95, "source": "FEODO-TRACKER"},
@@ -31,7 +39,6 @@ _SAMPLE_IOCS = [
     {"type": "domain",     "value": "evil-c2-domain.ru", "malware": "Qbot",         "confidence": 88, "source": "ALIENVAULT-OTX"},
     {"type": "hash_sha256","value": "a9f2e1b3c5d7890f1a2b3c4d5e6f7890a1b2c3d4e5f67890a1b2c3d4e5f67890",
      "malware": "WannaCry",     "confidence": 99, "source": "MISP-COMMUNITY"},
-    {"type": "url",        "value": "http://45.142.212.100/meterpreter.exe", "malware": "Meterpreter", "confidence": 97, "source": "URLHAUS"},
     {"type": "ip",         "value": "5.188.206.14",   "malware": "TrickBot",         "confidence": 90, "source": "SPAMHAUS"},
     {"type": "cve",        "value": "CVE-2021-44228", "malware": "Log4Shell",        "confidence": 99, "source": "CISA-KEV"},
     {"type": "cve",        "value": "CVE-2023-44487", "malware": "HTTP/2 Rapid Reset","confidence": 98,"source": "CISA-KEV"},
@@ -42,7 +49,6 @@ _SAMPLE_IOCS = [
     {"type": "domain",     "value": "update-microsoft-security.net","malware":"Phishing","confidence": 82,"source": "OPTISEC-GLOBAL"},
     {"type": "hash_sha256","value": "3f5a2e9b0c1d4e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f",
      "malware": "Ryuk",         "confidence": 91, "source": "MISP-COMMUNITY"},
-    {"type": "url",        "value": "http://58.220.1.1/shell.php", "malware": "Webshell", "confidence": 88, "source": "URLHAUS"},
     {"type": "ip",         "value": "62.75.154.99",   "malware": "BlackMatter",      "confidence": 87, "source": "FEODO-TRACKER"},
     {"type": "cve",        "value": "CVE-2022-30190", "malware": "Follina MSDT",     "confidence": 97, "source": "CISA-KEV"},
     {"type": "cve",        "value": "CVE-2024-3400",  "malware": "PAN-OS Zero-Day",  "confidence": 99, "source": "CISA-KEV"},
@@ -153,12 +159,19 @@ def _save_data(data: dict) -> None:
     DATA_FILE.write_text(json.dumps(data, indent=2, default=str))
 
 
-def get_live_ioc_feed(limit: int = 50) -> dict:
-    """Return the current live IOC feed with aggregated threat scores."""
+def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None) -> dict:
+    """Return the current live IOC feed with aggregated threat scores.
+
+    urlhaus_iocs: real abuse.ch URLhaus indicators (see
+    fetch_real_urlhaus_iocs()), in the same raw shape as a _SAMPLE_IOCS
+    entry. Callers with a DB session (the threat-feed/threat-sharing
+    routers) fetch these themselves and pass them in — this function stays
+    DB-free so it's still callable with no arguments, same as before.
+    """
     data = _load_data()
 
-    # Merge static + stored IOCs
-    all_iocs = list(_SAMPLE_IOCS)
+    # Merge static + stored + real URLhaus IOCs
+    all_iocs = list(_SAMPLE_IOCS) + list(urlhaus_iocs or [])
     for stored in data.get("shared_iocs", [])[:20]:
         all_iocs.insert(0, stored)
 
@@ -191,6 +204,40 @@ def get_live_ioc_feed(limit: int = 50) -> dict:
             "by_source": _count_by_source(scored),
         },
     }
+
+
+async def fetch_real_urlhaus_iocs(db: "AsyncSession", limit: int = 20) -> List[dict]:
+    """Real abuse.ch URLhaus indicators from the local Ioc table (populated
+    by modules/ioc/scheduler.py's periodic sync or a manual POST
+    /api/iocs/sync/urlhaus), reshaped into the same raw dict shape a
+    _SAMPLE_IOCS entry has so get_live_ioc_feed() can score/tag them
+    identically to the fabricated rows. Returns [] if nothing has been
+    synced yet (e.g. no URLHAUS_API_KEY configured) — that's a normal,
+    expected state, not an error.
+    """
+    from modules.ioc.ioc_engine import IOCRepository
+
+    repo = IOCRepository(db)
+    rows = await repo.list_active(ioc_type="url", source="urlhaus", limit=limit)
+    return [
+        {
+            "type": "url",
+            "value": row.ioc_value,
+            "malware": _malware_from_tags(row.tags),
+            "confidence": int(row.confidence_score),
+            # Uppercase to match FEED_SOURCES' "URLHAUS" id (the Ioc table
+            # itself stores source="urlhaus", lowercase, per sync_from_urlhaus).
+            "source": "URLHAUS",
+        }
+        for row in rows
+    ]
+
+
+def _malware_from_tags(tags: Optional[List[str]]) -> str:
+    for tag in tags or []:
+        if tag.startswith("malware_family:"):
+            return tag.split(":", 1)[1]
+    return "Unknown"
 
 
 def _aggregate_threat_score(ioc: dict) -> int:

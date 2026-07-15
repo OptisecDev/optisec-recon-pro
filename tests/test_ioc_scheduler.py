@@ -62,10 +62,14 @@ def _reset_scheduler_state():
     sched.stop_scheduler()
     sched._last_run_at = None
     sched._last_run_summary = None
+    sched._last_urlhaus_run_at = None
+    sched._last_urlhaus_run_summary = None
     yield
     sched.stop_scheduler()
     sched._last_run_at = None
     sched._last_run_summary = None
+    sched._last_urlhaus_run_at = None
+    sched._last_urlhaus_run_summary = None
 
 
 def _patch_sync(monkeypatch, result: dict):
@@ -73,6 +77,13 @@ def _patch_sync(monkeypatch, result: dict):
     async def fake_sync(self, limit=100):
         return result
     monkeypatch.setattr("modules.ioc.ioc_engine.IOCEngine.sync_from_otx", fake_sync)
+
+
+def _patch_urlhaus_sync(monkeypatch, result: dict):
+    """Stub out IOCEngine.sync_from_urlhaus so no network I/O happens."""
+    async def fake_sync(self, limit=100):
+        return result
+    monkeypatch.setattr("modules.ioc.ioc_engine.IOCEngine.sync_from_urlhaus", fake_sync)
 
 
 # ── 1. Interval / limit configuration (mocked "timing") ─────────────────────
@@ -113,6 +124,44 @@ class TestSyncLimitConfig:
     def test_non_positive_value_falls_back_to_default(self, monkeypatch):
         monkeypatch.setenv("IOC_OTX_SYNC_LIMIT", "0")
         assert sched.get_sync_limit() == 100
+
+
+class TestUrlhausIntervalConfig:
+    def test_default_is_6_hours(self, monkeypatch):
+        monkeypatch.delenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", raising=False)
+        assert sched.get_urlhaus_sync_interval_hours() == 6.0
+
+    def test_reads_custom_env_value(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", "4")
+        assert sched.get_urlhaus_sync_interval_hours() == 4.0
+
+    def test_invalid_value_falls_back_to_default(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", "not-a-number")
+        assert sched.get_urlhaus_sync_interval_hours() == 6.0
+
+    def test_non_positive_value_falls_back_to_default(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", "0")
+        assert sched.get_urlhaus_sync_interval_hours() == 6.0
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", "-5")
+        assert sched.get_urlhaus_sync_interval_hours() == 6.0
+
+
+class TestUrlhausSyncLimitConfig:
+    def test_default_is_100(self, monkeypatch):
+        monkeypatch.delenv("IOC_URLHAUS_SYNC_LIMIT", raising=False)
+        assert sched.get_urlhaus_sync_limit() == 100
+
+    def test_reads_custom_env_value(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_LIMIT", "30")
+        assert sched.get_urlhaus_sync_limit() == 30
+
+    def test_invalid_value_falls_back_to_default(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_LIMIT", "not-a-number")
+        assert sched.get_urlhaus_sync_limit() == 100
+
+    def test_non_positive_value_falls_back_to_default(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_LIMIT", "0")
+        assert sched.get_urlhaus_sync_limit() == 100
 
 
 # ── 2. DB-backed lock (no duplicate runs across workers) ─────────────────────
@@ -250,6 +299,110 @@ class TestRunScheduledSync:
         assert row.source == "otx"
 
 
+# ── 3b. run_scheduled_urlhaus_sync — lock + delegation to IOCEngine.sync_from_urlhaus ─
+
+class TestRunScheduledUrlhausSync:
+    def test_runs_sync_and_stores_summary(self, db, monkeypatch):
+        _patch_urlhaus_sync(monkeypatch, {"fetched": 4, "stored": 2, "skipped": 2})
+        summary = _run(sched.run_scheduled_urlhaus_sync())
+        assert summary == {"fetched": 4, "stored": 2, "skipped": 2}
+
+    def test_lock_prevents_duplicate_sweep(self, db, monkeypatch):
+        """A second worker/instance firing the same job while the first
+        already holds the URLhaus lock must skip entirely, never calling
+        sync_from_urlhaus. Uses its own lock name (LOCK_NAME_URLHAUS),
+        independent of the OTX job's lock."""
+        called = {"flag": False}
+
+        async def fake_sync(self, limit=100):
+            called["flag"] = True
+            return {"fetched": 0, "stored": 0, "skipped": 0}
+        monkeypatch.setattr("modules.ioc.ioc_engine.IOCEngine.sync_from_urlhaus", fake_sync)
+
+        async def seed_lock():
+            async with db() as db_:
+                db_.add(SchedulerLock(job_name=sched.LOCK_NAME_URLHAUS, locked_at=datetime.utcnow(),
+                                       locked_by="other-worker-already-running"))
+                await db_.commit()
+        _run(seed_lock())
+
+        summary = _run(sched.run_scheduled_urlhaus_sync())
+        assert called["flag"] is False
+        assert summary == {"skipped": True, "reason": "lock_held"}
+
+    def test_urlhaus_lock_is_independent_of_otx_lock(self, db, monkeypatch):
+        """Holding the OTX lock must not block a concurrent URLhaus sweep —
+        they are two different job_name rows in the same lock table."""
+        _patch_sync(monkeypatch, {"fetched": 0, "stored": 0, "skipped": 0})
+        _patch_urlhaus_sync(monkeypatch, {"fetched": 3, "stored": 3, "skipped": 0})
+
+        async def seed_otx_lock():
+            async with db() as db_:
+                db_.add(SchedulerLock(job_name=sched.LOCK_NAME, locked_at=datetime.utcnow(),
+                                       locked_by="other-worker-already-running"))
+                await db_.commit()
+        _run(seed_otx_lock())
+
+        summary = _run(sched.run_scheduled_urlhaus_sync())
+        assert summary == {"fetched": 3, "stored": 3, "skipped": 0}
+
+    def test_lock_is_released_after_the_sync_so_the_next_run_can_proceed(self, db, monkeypatch):
+        _patch_urlhaus_sync(monkeypatch, {"fetched": 1, "stored": 1, "skipped": 0})
+        _run(sched.run_scheduled_urlhaus_sync())
+
+        async def lock_row():
+            async with db() as db_:
+                return (await db_.execute(
+                    select(SchedulerLock).where(SchedulerLock.job_name == sched.LOCK_NAME_URLHAUS)
+                )).scalar_one()
+        row = _run(lock_row())
+        assert row.locked_at is None
+        assert row.locked_by is None
+
+    def test_lock_is_released_even_if_sync_raises(self, db, monkeypatch):
+        async def boom(self, limit=100):
+            raise RuntimeError("URLhaus API exploded")
+        monkeypatch.setattr("modules.ioc.ioc_engine.IOCEngine.sync_from_urlhaus", boom)
+
+        summary = _run(sched.run_scheduled_urlhaus_sync())
+        assert summary["error"] == "sync_failed"
+
+        async def lock_row():
+            async with db() as db_:
+                return (await db_.execute(
+                    select(SchedulerLock).where(SchedulerLock.job_name == sched.LOCK_NAME_URLHAUS)
+                )).scalar_one()
+        row = _run(lock_row())
+        assert row.locked_at is None
+
+    def test_end_to_end_with_no_api_key_is_a_safe_no_op(self, db, monkeypatch):
+        """No stubbing of IOCEngine itself — exercises the real
+        sync_from_urlhaus() -> _default_urlhaus_recent_client() path with no
+        URLHAUS_API_KEY configured, verifying the scheduler surfaces its
+        all-zero summary rather than erroring."""
+        import config
+        monkeypatch.setattr(config, "URLHAUS_API_KEY", "")
+
+        summary = _run(sched.run_scheduled_urlhaus_sync())
+        assert summary == {"fetched": 0, "stored": 0, "skipped": 0}
+
+    def test_end_to_end_persists_real_indicators_via_real_engine(self, db, monkeypatch):
+        monkeypatch.setattr(
+            "modules.ioc.ioc_engine._default_urlhaus_recent_client",
+            lambda limit: [{"type": "url", "value": "http://evil.com/x", "threat_score": 90}],
+        )
+
+        summary = _run(sched.run_scheduled_urlhaus_sync())
+        assert summary == {"fetched": 1, "stored": 1, "skipped": 0}
+
+        async def stored():
+            async with db() as db_:
+                return (await db_.execute(select(Ioc).where(Ioc.ioc_value == "http://evil.com/x"))).scalar_one_or_none()
+        row = _run(stored())
+        assert row is not None
+        assert row.source == "urlhaus"
+
+
 # ── 4. _run_sync_job — the sync APScheduler entrypoint never raises ─────────
 
 class TestRunSyncJob:
@@ -276,6 +429,27 @@ class TestRunSyncJob:
             loop.close()
 
 
+class TestRunUrlhausSyncJob:
+    def test_never_raises_even_if_the_sync_crashes(self, monkeypatch):
+        """Mirrors TestRunSyncJob.test_never_raises_even_if_the_sync_crashes
+        for the URLhaus job entrypoint — same run_coroutine_threadsafe
+        topology, see that test's docstring for why."""
+        async def boom():
+            raise RuntimeError("db is unreachable")
+        monkeypatch.setattr(sched, "run_scheduled_urlhaus_sync", boom)
+
+        loop = asyncio.new_event_loop()
+        thread = threading.Thread(target=loop.run_forever, daemon=True)
+        thread.start()
+        sched._app_loop = loop
+        try:
+            sched._run_urlhaus_sync_job()  # must not raise
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            thread.join(timeout=2)
+            loop.close()
+
+
 # ── 5. Lifecycle — start/stop/status ─────────────────────────────────────────
 
 class TestLifecycle:
@@ -287,6 +461,17 @@ class TestLifecycle:
             job = scheduler.get_job(sched.JOB_ID)
             assert job is not None
             assert job.trigger.interval == timedelta(hours=3)
+        finally:
+            sched.stop_scheduler()
+
+    def test_start_scheduler_also_registers_urlhaus_job(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", "5")
+        scheduler = sched.start_scheduler(asyncio.new_event_loop())
+        try:
+            assert scheduler.running is True
+            job = scheduler.get_job(sched.JOB_ID_URLHAUS)
+            assert job is not None
+            assert job.trigger.interval == timedelta(hours=5)
         finally:
             sched.stop_scheduler()
 
@@ -319,3 +504,27 @@ class TestLifecycle:
         status = sched.get_status()
         assert status["last_run_at"] is not None
         assert status["last_run_summary"] == {"fetched": 2, "stored": 2, "skipped": 0}
+
+    def test_get_urlhaus_status_reflects_running_state(self, monkeypatch):
+        monkeypatch.setenv("IOC_URLHAUS_SYNC_INTERVAL_HOURS", "8")
+        assert sched.get_urlhaus_status()["running"] is False
+
+        sched.start_scheduler(asyncio.new_event_loop())
+        status = sched.get_urlhaus_status()
+        assert status["running"] is True
+        assert status["interval_hours"] == 8.0
+        assert status["next_run_at"] is not None
+
+        sched.stop_scheduler()
+        assert sched.get_urlhaus_status()["running"] is False
+
+    def test_get_urlhaus_status_reports_last_run_summary_independent_of_otx(self, db, monkeypatch):
+        _patch_sync(monkeypatch, {"fetched": 99, "stored": 99, "skipped": 0})
+        _patch_urlhaus_sync(monkeypatch, {"fetched": 3, "stored": 1, "skipped": 2})
+        _run(sched.run_scheduled_sync())
+        _run(sched.run_scheduled_urlhaus_sync())
+
+        otx_status = sched.get_status()
+        urlhaus_status = sched.get_urlhaus_status()
+        assert otx_status["last_run_summary"] == {"fetched": 99, "stored": 99, "skipped": 0}
+        assert urlhaus_status["last_run_summary"] == {"fetched": 3, "stored": 1, "skipped": 2}

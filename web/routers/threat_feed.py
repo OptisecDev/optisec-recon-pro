@@ -68,10 +68,13 @@ def _build_feed(otx_iocs: list, fallback_feed: dict) -> dict:
 
 
 @router.get("", response_class=HTMLResponse)
-async def feed_home(request: Request, user: User = Depends(_user)):
-    from modules.threat_intel.global_feed import get_live_ioc_feed, get_threat_map, get_campaigns, get_feed_stats
+async def feed_home(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    from modules.threat_intel.global_feed import (
+        get_live_ioc_feed, get_threat_map, get_campaigns, get_feed_stats, fetch_real_urlhaus_iocs,
+    )
 
-    fallback = get_live_ioc_feed(30)
+    urlhaus_iocs = await fetch_real_urlhaus_iocs(db, limit=20)
+    fallback = get_live_ioc_feed(30, urlhaus_iocs=urlhaus_iocs)
     otx_iocs: list = []
 
     if OTX_API_KEY:
@@ -96,10 +99,11 @@ async def feed_home(request: Request, user: User = Depends(_user)):
 
 
 @router.get("/api/feed")
-async def live_feed(limit: int = 50, user: User = Depends(_user)):
-    from modules.threat_intel.global_feed import get_live_ioc_feed
+async def live_feed(limit: int = 50, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    from modules.threat_intel.global_feed import get_live_ioc_feed, fetch_real_urlhaus_iocs
 
-    fallback = get_live_ioc_feed(min(limit, 100))
+    urlhaus_iocs = await fetch_real_urlhaus_iocs(db, limit=20)
+    fallback = get_live_ioc_feed(min(limit, 100), urlhaus_iocs=urlhaus_iocs)
     otx_iocs: list = []
 
     if OTX_API_KEY:

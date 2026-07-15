@@ -144,6 +144,11 @@ _MAPPING_RULES: dict[str, dict] = {
     "sqli_found": _rule(["T1190"], ["TA0001"]),
     "ssrf_found": _rule(["T1190"], ["TA0001"]),
     "lfi_found": _rule(["T1190"], ["TA0001"]),
+    # GraphQL introspection-enabled is a schema-disclosure primitive rather
+    # than direct injection/execution, but it's still exploitation of a
+    # public-facing application's exposed attack surface — kept at
+    # T1190/TA0001 alongside the other modules/vuln/*.py findings above.
+    "graphql_introspection_found": _rule(["T1190"], ["TA0001"]),
 }
 
 
@@ -398,6 +403,7 @@ _VULN_TYPE_TO_FINDING_TYPE: dict[str, str] = {
     "SSRF": "ssrf_found",
     "LFI": "lfi_found",
     "Open Redirect": "open_redirect",
+    "GraphQL Introspection": "graphql_introspection_found",
 }
 
 

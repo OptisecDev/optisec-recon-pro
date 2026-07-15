@@ -75,6 +75,7 @@ _EXPECTED_MAPPINGS = {
     "sqli_found": (["T1190"], ["TA0001"]),
     "ssrf_found": (["T1190"], ["TA0001"]),
     "lfi_found": (["T1190"], ["TA0001"]),
+    "graphql_introspection_found": (["T1190"], ["TA0001"]),
 }
 
 
@@ -92,7 +93,7 @@ class TestMapFindingToAttack:
         assert all(t["name"] for t in result["techniques"])
         assert all(t["name"] for t in result["tactics"])
 
-    def test_all_33_rules_covered_by_this_suite(self):
+    def test_all_34_rules_covered_by_this_suite(self):
         assert set(_EXPECTED_MAPPINGS) == set(mm._MAPPING_RULES)
 
     def test_unknown_finding_type_returns_not_mapped(self):

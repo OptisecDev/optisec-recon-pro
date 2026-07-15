@@ -1,11 +1,12 @@
-"""IOC Detection Engine — Phase 2: real database-backed repository.
+"""IOC Detection Engine — Phase 2/3: real database-backed repository.
 
 Wraps the existing threat-intel clients (modules.threat_intel.ioc_detector,
-modules.threat_intel.otx_feed) behind one check/enrich/extract API. This is
-a *different* concern from modules/ioc_correlation.py behind the existing
-/correlations page: that module correlates global threat-feed IOCs against
-each other, while this engine checks/stores IOCs tied to this installation
-(manual lookups + IOCs mined from its own scan findings).
+modules.threat_intel.otx_feed, modules.threat_intel.urlhaus_feed) behind one
+check/enrich/extract API. This is a *different* concern from
+modules/ioc_correlation.py behind the existing /correlations page: that
+module correlates global threat-feed IOCs against each other, while this
+engine checks/stores IOCs tied to this installation (manual lookups + IOCs
+mined from its own scan findings).
 
 IOCRepository is now backed by web.models.Ioc via an injected AsyncSession
 (same session/transaction ownership convention as every other router in
@@ -16,9 +17,10 @@ async_sessionmaker), so enrich_ioc() — the only method that persists — is
 async too; check_ioc() and extract_iocs_from_finding() touch no DB and stay
 synchronous, unchanged from Phase 1.
 
-External API calls (VirusTotal, AbuseIPDB, OTX) are also injectable via
-`source_clients`, defaulting to thin wrappers around the real clients in
-modules.threat_intel.ioc_detector / otx_feed. IntelligenceX and LeakCheck
+External API calls (VirusTotal, AbuseIPDB, OTX, URLhaus) are also injectable
+via `source_clients`, defaulting to thin wrappers around the real clients in
+modules.threat_intel.ioc_detector / otx_feed / urlhaus_feed. IntelligenceX
+and LeakCheck
 are async in this codebase (modules.osint.darkweb_intelligence,
 modules.osint.unified_engine) and are better suited to breach/leak lookups
 than IP/domain/hash reputation — rather than making this engine async too,
@@ -133,6 +135,7 @@ class IOCRepository:
         self,
         ioc_type: Optional[str] = None,
         is_active: Optional[bool] = True,
+        source: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
     ) -> list["Ioc"]:
@@ -143,6 +146,8 @@ class IOCRepository:
             stmt = stmt.where(Ioc.ioc_type == ioc_type)
         if is_active is not None:
             stmt = stmt.where(Ioc.is_active == is_active)
+        if source is not None:
+            stmt = stmt.where(Ioc.source == source)
         stmt = stmt.order_by(Ioc.last_seen.desc()).limit(max(1, min(limit, 200))).offset(max(0, offset))
         result = await self.db.execute(stmt)
         return list(result.scalars().all())
@@ -184,6 +189,7 @@ def _default_source_clients() -> dict[str, Callable]:
         "virustotal_hash": ioc_detector.check_hash,
         "abuseipdb_ip": ioc_detector.check_ip,
         "otx_pulses": _default_otx_pulses_client,
+        "urlhaus_recent": _default_urlhaus_recent_client,
     }
 
 
@@ -199,6 +205,18 @@ def _default_otx_pulses_client(limit: int) -> list[dict]:
     if not config.OTX_API_KEY:
         return []
     return fetch_otx_pulses(config.OTX_API_KEY, limit=limit)
+
+
+def _default_urlhaus_recent_client(limit: int) -> list[dict]:
+    """Default `urlhaus_recent` source client for sync_from_urlhaus(). Same
+    no-key-configured-is-a-safe-no-op gate as _default_otx_pulses_client,
+    just keyed on config.URLHAUS_API_KEY instead."""
+    import config
+    from modules.threat_intel.urlhaus_feed import fetch_urlhaus_recent
+
+    if not config.URLHAUS_API_KEY:
+        return []
+    return fetch_urlhaus_recent(config.URLHAUS_API_KEY, limit=limit)
 
 
 class IOCEngine:
@@ -382,6 +400,57 @@ class IOCEngine:
                 stored += 1
 
         return {"fetched": len(pulses), "stored": stored, "skipped": skipped}
+
+    async def sync_from_urlhaus(self, limit: int = 100) -> dict:
+        """Fetch recently added malware-distribution URLs from abuse.ch
+        URLhaus (via the injectable `urlhaus_recent` source client,
+        defaulting to modules.threat_intel.urlhaus_feed.fetch_urlhaus_recent)
+        and upsert each into self.repository as a local Ioc row
+        (source="urlhaus").
+
+        Structurally identical to sync_from_otx(): URLhaus items are
+        already typed "url" (one of IOC_TYPES) by the client, so nothing is
+        expected to land in `skipped` in practice — the check is kept
+        anyway since IOC_TYPES is the single source of truth for what this
+        table stores, not an assumption about any one feed's shape.
+
+        fetch_urlhaus_recent is a blocking `requests` call, so it's run via
+        asyncio.to_thread, same as OTX. Never raises: a network/auth
+        failure is logged and returned as an all-zero summary with an
+        "error" key.
+        """
+        client = self.source_clients.get("urlhaus_recent")
+        if client is None:
+            return {"fetched": 0, "stored": 0, "skipped": 0, "error": "urlhaus_recent client not configured"}
+
+        try:
+            entries = await asyncio.to_thread(client, limit)
+        except Exception as exc:
+            logger.warning("URLhaus sync: fetch failed: %s", exc)
+            return {"fetched": 0, "stored": 0, "skipped": 0, "error": "fetch_failed"}
+
+        entries = entries or []
+        stored = 0
+        skipped = 0
+        for item in entries:
+            ioc_type = item.get("type")
+            value = item.get("value")
+            if ioc_type not in IOC_TYPES or not value:
+                skipped += 1
+                continue
+
+            tags = [f"malware_family:{t}" for t in (item.get("tags") or [])]
+
+            if self.repository is not None:
+                await self.repository.upsert(
+                    ioc_type, value,
+                    source="urlhaus",
+                    confidence_score=float(item.get("threat_score", 0) or 0),
+                    tags=tags,
+                )
+                stored += 1
+
+        return {"fetched": len(entries), "stored": stored, "skipped": skipped}
 
     async def match_scan_results(self, findings: list[dict]) -> list[dict]:
         """Correlate a scan's findings against the local IOC store: mine

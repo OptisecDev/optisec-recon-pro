@@ -16,10 +16,18 @@ same WAF_BLOCKED/ENDPOINT_INVALID verdicts, but no ENCODED_SAFE equivalent
 (there's no "encoded" form of a DB error string or a timing delay) — an
 unconfirmed signal falls through to INCONCLUSIVE instead.
 
+GraphQL introspection — classify_graphql_introspection(), same
+WAF_BLOCKED/ENDPOINT_INVALID verdicts plus one verdict unique to this
+family: INTROSPECTION_DISABLED (endpoint confirmed to be GraphQL, but it
+rejected the introspection query — a negative-but-informative result, not
+an error). CONFIRMED here means introspection is enabled, not that a
+traditional injection payload was reflected.
+
 Only CONFIRMED sets should_report=True; scanners should persist a Finding
 only in that case.
 """
 
+import json
 from dataclasses import dataclass
 from html import escape
 from typing import Optional
@@ -351,4 +359,104 @@ def classify_blind_signal(
         should_report=False,
         waf_detected=waf_vendor,
         reason=f"No conclusive {technique} signal after WAF/validity checks",
+    )
+
+
+# GraphQL error messages that specifically mean "this is a real GraphQL
+# endpoint, and it deliberately rejected the introspection query" — as
+# opposed to a generic resolver error, which says nothing about
+# introspection either way and must fall through to INCONCLUSIVE instead.
+_INTROSPECTION_DISABLED_MARKERS = (
+    "introspection is not allowed",
+    "introspection is disabled",
+    "graphql introspection is disabled",
+    "introspection query is not allowed",
+    'cannot query field "__schema"',
+    'cannot query field "__type"',
+    "persisted queries only",
+)
+
+
+def _parse_json_object(body: str) -> Optional[dict]:
+    try:
+        parsed = json.loads(body or "")
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _introspection_schema_present(parsed: Optional[dict]) -> bool:
+    """True only if a `__schema` object with real type/query info came back
+    — not just the bare key, which a non-GraphQL JSON API could echo back
+    verbatim from a reflected request body."""
+    if not parsed:
+        return False
+    schema = (parsed.get("data") or {}).get("__schema") if isinstance(parsed.get("data"), dict) else None
+    return isinstance(schema, dict) and bool(schema.get("types") or schema.get("queryType"))
+
+
+def _introspection_explicitly_disabled(parsed: Optional[dict]) -> bool:
+    if not parsed or not isinstance(parsed.get("errors"), list):
+        return False
+    messages = " ".join(
+        str(err.get("message", "")) for err in parsed["errors"] if isinstance(err, dict)
+    ).lower()
+    return any(marker in messages for marker in _INTROSPECTION_DISABLED_MARKERS)
+
+
+def classify_graphql_introspection(status_code: int, headers: dict, body: str) -> ClassificationResult:
+    """Classify a single introspection-query response (`{"query": "{
+    __schema { ... } }"}`) into whether the target endpoint is (a) not
+    GraphQL / not reachable, (b) WAF-blocked, (c) real GraphQL with
+    introspection deliberately disabled, or (d) real GraphQL with
+    introspection enabled (should_report=True — this is the reportable
+    finding: production GraphQL endpoints should normally have
+    introspection turned off)."""
+    waf_vendor = detect_waf(headers, body)
+
+    if status_code in INVALID_STATUS_CODES:
+        return ClassificationResult(
+            verdict="ENDPOINT_INVALID",
+            severity=None,
+            should_report=False,
+            waf_detected=waf_vendor,
+            reason=f"HTTP {status_code} — no GraphQL endpoint at this path",
+        )
+
+    if status_code in BLOCKING_STATUS_CODES and waf_vendor:
+        return ClassificationResult(
+            verdict="WAF_BLOCKED",
+            severity="Medium",
+            should_report=False,
+            waf_detected=waf_vendor,
+            reason=f"Blocked by {waf_vendor} (HTTP {status_code})",
+        )
+
+    parsed = _parse_json_object(body)
+
+    if status_code == 200 and not waf_vendor and _introspection_schema_present(parsed):
+        return ClassificationResult(
+            verdict="CONFIRMED",
+            severity="Medium",
+            should_report=True,
+            # Intentionally None, not a bug — see ClassificationResult docstring.
+            waf_detected=None,
+            reason="GraphQL introspection enabled — __schema query returned live type information",
+        )
+
+    if _introspection_explicitly_disabled(parsed):
+        return ClassificationResult(
+            verdict="INTROSPECTION_DISABLED",
+            severity=None,
+            should_report=False,
+            waf_detected=waf_vendor,
+            reason="GraphQL endpoint confirmed present, but it rejected the introspection query",
+        )
+
+    return ClassificationResult(
+        verdict="INCONCLUSIVE",
+        severity=None,
+        should_report=False,
+        waf_detected=waf_vendor,
+        reason="Response does not look like a GraphQL introspection result",
     )
