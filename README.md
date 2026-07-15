@@ -83,7 +83,7 @@ Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red 
 |--------|-------------|------|
 | **AI Security Analysis** | Groq LLaMA-3.3-70B powered threat analysis, CVE mapping, attack chain reconstruction, remediation prioritization | PRO+ |
 | **Behavioral UEBA** | User and Entity Behavior Analytics, anomaly detection, insider threat profiling | PRO+ |
-| **Zero-Day Prediction** | ML-based vulnerability pattern matching, exploit probability scoring | PRO+ |
+| **Zero-Day Prediction** | Groq LLM-powered vulnerability forecasting against NVD/CISA KEV data (heuristic fallback if no API key is set), exploit probability scoring | PRO+ |
 | **Attack Pattern Engine** | Known malicious pattern library, payload classification, kill chain analysis | PRO+ |
 | **Autonomous Red Team** | AI-driven multi-phase attack simulation (SINGULARITY engine), stealth-tunable, automated reporting | ENTERPRISE |
 
@@ -100,8 +100,8 @@ Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red 
 
 | Module | Capabilities | Tier |
 |--------|-------------|------|
-| **AI Firewall (WAF)** | Rule-based + ML traffic analysis, IP whitelist/blacklist, custom rule engine | PRO+ |
-| **NGFW v2** | Next-gen firewall with ML-based Deep Packet Inspection, anomaly detection, L7 policy engine | PRO+ |
+| **AI Firewall (WAF)** | Rule-based traffic analysis (entropy & pattern scoring), IP whitelist/blacklist, custom rule engine | PRO+ |
+| **NGFW v2** | Next-gen firewall with heuristic Deep Packet Inspection (entropy/pattern-based anomaly scoring, not a trained model), L7 policy engine | PRO+ |
 | **WireGuard VPN** | Peer management, key generation + QR codes, config export | PRO+ |
 | **Quantum-Safe Crypto** | Kyber-768 post-quantum key encapsulation (simulated by default; installs a real `liboqs` backend for production PQC), hybrid AES-GCM schemes, key vault | PRO+ |
 
@@ -650,7 +650,7 @@ python main.py report example.com
 
 ## API Documentation
 
-OPTISEC exposes **163 REST + WebSocket endpoints** across 14 routers, all fully typed with Pydantic v2 schemas and documented in the live OpenAPI 3.0 spec. Interactive API documentation is available at runtime:
+OPTISEC exposes **201 REST + WebSocket endpoints** across 29 API groups, all fully typed with Pydantic v2 schemas and documented in the live OpenAPI 3.0 spec. Interactive API documentation is available at runtime:
 
 | Interface | URL | Description |
 |-----------|-----|-------------|
