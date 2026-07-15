@@ -18,7 +18,7 @@
 
 **A full-stack, AI-powered security intelligence platform built for bug bounty hunters,  
 red teamers, and enterprise SOC teams — featuring 13 integrated scanning modules,  
-Arabic/English NLP, post-quantum cryptography, and autonomous red team simulation.**
+Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red team simulation.**
 
 [Live Demo](https://optisec-recon-pro.onrender.com/demo) · [API Docs](https://optisec-recon-pro.onrender.com/docs) · [License Store](https://optisecdev.github.io/optisec-store) · [Report Bug](https://github.com/OptisecDev/optisec-recon-pro/issues) · [Request Feature](https://github.com/OptisecDev/optisec-recon-pro/issues)
 
@@ -62,7 +62,7 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
 | Manual report writing takes hours | One-click professional PDF reports |
 | No Arabic-language security tooling | Native Arabic + English NLP command interface |
 | Bug bounty context switching between H1/Bugcrowd/Intigriti | Unified bug bounty management with direct submission APIs |
-| Quantum threats to modern encryption | Built-in Kyber-768 post-quantum key encapsulation |
+| Quantum threats to modern encryption | Kyber-768 post-quantum key encapsulation module — runs in simulation mode out of the box, activates real PQC when the optional `liboqs` library is installed |
 | SOC teams need correlation across threat feeds | IOC correlation engine with AlienVault OTX integration |
 
 ---
@@ -94,7 +94,6 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
 | **Bug Bounty Platform** | HackerOne program browser + report submission, Bugcrowd program discovery + submission, Intigriti integration, CVE pipeline (NVD/MITRE) | PRO+ |
 | **Compliance Checker** | Automated audits against ISO 27001, NIST CSF, PCI-DSS, GDPR, HIPAA with gap analysis | PRO+ |
 | **Threat Intelligence** | AlienVault OTX live feed, MITRE ATT&CK Navigator, Global threat campaigns, HIBP breach detection, Honeypot detection, IOC correlation clustering | ENTERPRISE |
-| **Dark Web Intelligence** | Leaked credential monitoring, threat actor mentions, IOC extraction from dark web sources | ENTERPRISE |
 | **Federated Scanning** | Multi-node OPTISEC cluster coordination, distributed scan tasks, node health monitoring | ENTERPRISE |
 
 ### Infrastructure Security
@@ -104,7 +103,7 @@ Arabic/English NLP, post-quantum cryptography, and autonomous red team simulatio
 | **AI Firewall (WAF)** | Rule-based + ML traffic analysis, IP whitelist/blacklist, custom rule engine | PRO+ |
 | **NGFW v2** | Next-gen firewall with ML-based Deep Packet Inspection, anomaly detection, L7 policy engine | PRO+ |
 | **WireGuard VPN** | Peer management, key generation + QR codes, config export | PRO+ |
-| **Quantum-Safe Crypto** | Kyber-768 post-quantum key encapsulation, hybrid AES-GCM schemes, key vault | PRO+ |
+| **Quantum-Safe Crypto** | Kyber-768 post-quantum key encapsulation (simulated by default; installs a real `liboqs` backend for production PQC), hybrid AES-GCM schemes, key vault | PRO+ |
 
 ### Platform Features
 
@@ -437,17 +436,17 @@ graph TB
 <details>
 <summary><strong>Intelligence & OSINT</strong></summary>
 
-| OSINT Engine | Dark Web Intel |
+| OSINT Engine | IOC Correlations |
 |:---:|:---:|
-| ![OSINT](docs/screenshots/osint.png) | ![Dark Web](docs/screenshots/darkweb.png) |
+| ![OSINT](docs/screenshots/osint.png) | ![Correlations](docs/screenshots/correlations.png) |
 
-| IOC Correlations | Global Threat Feed |
+| Global Threat Feed | Attack Patterns |
 |:---:|:---:|
-| ![Correlations](docs/screenshots/correlations.png) | ![Threat Feed](docs/screenshots/threat_feed.png) |
+| ![Threat Feed](docs/screenshots/threat_feed.png) | ![Attack Patterns](docs/screenshots/attack_patterns.png) |
 
-| Attack Patterns | MITRE ATT&CK Navigator |
-|:---:|:---:|
-| ![Attack Patterns](docs/screenshots/attack_patterns.png) | ![ATT&CK](docs/screenshots/attack_navigator.png) |
+**MITRE ATT&CK Navigator**
+
+![ATT&CK](docs/screenshots/attack_navigator.png)
 
 </details>
 
@@ -515,7 +514,7 @@ graph TB
 | **Port Scanning** | Nmap (system) | 7.x |
 | **PDF Reports** | ReportLab | ≥ 4.0 |
 | **OSINT** | phonenumbers + ua-parser | — |
-| **Cryptography** | cryptography (AES-GCM) + Kyber-768 | ≥ 41.0 |
+| **Cryptography** | cryptography (AES-GCM) + Kyber-768 (simulated; real via optional `liboqs`) | ≥ 41.0 |
 | **VPN** | WireGuard Tools + qrcode | — |
 | **WebSocket** | websockets | ≥ 12.0 |
 | **CLI** | Click + Rich | — |
@@ -789,7 +788,6 @@ OPTISEC operates on a feature-gated licensing model. The license is validated lo
 | REST API Access | ❌ | ✅ | ✅ |
 | Autonomous Red Team | ❌ | ❌ | ✅ |
 | MITRE ATT&CK Navigator | ❌ | ❌ | ✅ |
-| Dark Web Intelligence | ❌ | ❌ | ✅ |
 | Global Threat Feed | ❌ | ❌ | ✅ |
 | IOC Correlations | ❌ | ❌ | ✅ |
 | Federated Scanning | ❌ | ❌ | ✅ |

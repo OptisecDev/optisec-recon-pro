@@ -405,9 +405,8 @@
       ('💬', 'أوامر عربية NLP', 'اكتب أوامرك بالعربية مثل "افحص tesla.com عن ثغرات XSS" وسيفهم النظام.', '#00ff88', 'عربي'),
       ('💰', 'Bug Bounty Platform', 'تكامل مع HackerOne وBugcrowd — تصفح البرامج وأرسل التقارير مباشرة.', '#ff8800', 'PRO'),
       ('🎯', 'ATT&CK Navigator', 'خريطة تقنيات MITRE ATT&CK كاملة مع تتبع APT وتحليل أنماط الهجوم.', '#58a6ff', 'v4.0'),
-      ('🕸️', 'Dark Web Intelligence', 'مراقبة المنتديات المظلمة والبيانات المسرّبة وذكر الهدف في شبكة Tor.', '#ff4444', 'ENTERPRISE'),
       ('🤖', 'Autonomous RedTeam', 'محرك اختبار اختراق ذاتي بالذكاء الاصطناعي — يخطط وينفذ ويولد تقارير.', '#bc8cff', 'v4.0'),
-      ('⚛️', 'Quantum Cryptography', 'تشفير ما بعد الكمّي باستخدام Kyber-768 — محصّن ضد حواسيب المستقبل.', '#58a6ff', 'ENTERPRISE'),
+      ('⚛️', 'Quantum Cryptography', 'إطار تشفير ما بعد الكمّي (Kyber-768) — يعمل بمفاتيح محاكاة افتراضياً، ويُفعَّل التشفير الحقيقي بعد تثبيت مكتبة liboqs.', '#58a6ff', 'ENTERPRISE'),
       ('✅', 'Compliance Checker', 'التحقق التلقائي من ISO 27001، NIST، PCI-DSS، GDPR، وHIPAA.', '#00ff88', 'PRO'),
       ('🔥', 'NGFW v2 ML/DPI', 'جدار حماية من الجيل التالي مع تحليل عميق للحزم وكشف الشذوذ بالـ ML.', '#ff8800', 'v4.0'),
       ('🌍', 'Global Threat Feed', 'خلاصة استخباراتية عالمية — IOCs، CVEs، وحملات الهجوم النشطة.', '#ff4444', 'v4.0'),
@@ -461,13 +460,13 @@
   <div style="text-align:center">
     <div class="section-badge">💳 الأسعار</div>
     <h2 class="section-title" style="text-align:center">اختر الخطة المناسبة</h2>
-    <p class="section-sub" style="margin:0 auto">ابدأ مجاناً — ارقِّ لاحقاً عندما تحتاج المزيد.</p>
+    <p class="section-sub" style="margin:0 auto">ابدأ مجاناً — أو ارقِّ إلى PRO بدفعة واحدة عند الحاجة.</p>
   </div>
   <div class="pricing-grid">
     <!-- FREE -->
     <div class="pricing-card">
       <div class="pricing-tier">Free</div>
-      <div class="pricing-price">$0 <span>/ شهر</span></div>
+      <div class="pricing-price">$0 <span>إلى الأبد</span></div>
       <div class="pricing-desc">مثالي للبدء وتعلم اختبار الاختراق.</div>
       <ul class="pricing-features">
         <li>فحص XSS وSQLi</li>
@@ -477,7 +476,6 @@
         <li>10 فحوصات يومياً</li>
         <li class="locked">ذكاء اصطناعي</li>
         <li class="locked">Bug Bounty</li>
-        <li class="locked">Dark Web</li>
       </ul>
       <a href="/register" class="pricing-cta pricing-cta-outline" style="display:block;text-align:center;text-decoration:none">ابدأ مجاناً</a>
     </div>
@@ -485,8 +483,8 @@
     <div class="pricing-card featured">
       <div class="pricing-featured-badge">⭐ الأكثر شعبية</div>
       <div class="pricing-tier" style="color:var(--accent)">PRO</div>
-      <div class="pricing-price" style="color:var(--accent)">$149 <span>/ شهر</span></div>
-      <div class="pricing-desc">لمحترفي الأمن وفرق Bug Bounty.</div>
+      <div class="pricing-price" style="color:var(--accent)">$399 <span>دفعة واحدة</span></div>
+      <div class="pricing-desc">لمحترفي الأمن وفرق Bug Bounty — ترخيص مدى الحياة، بدون اشتراك.</div>
       <ul class="pricing-features">
         <li>جميع وحدات الفحص الـ 13</li>
         <li>تحليل AI بـ Groq LLaMA</li>
@@ -495,9 +493,9 @@
         <li>Compliance Checker</li>
         <li>50 هدف + 500 فحص/يوم</li>
         <li>API Access كامل</li>
-        <li class="locked">Dark Web Intel</li>
+        <li>مفتاح ترخيص لمرة واحدة</li>
       </ul>
-      <a href="/register" class="pricing-cta pricing-cta-primary" style="display:block;text-align:center;text-decoration:none">ابدأ PRO</a>
+      <a href="https://optisecdev.github.io/optisec-store/#products" class="pricing-cta pricing-cta-primary" style="display:block;text-align:center;text-decoration:none">اشترِ PRO</a>
     </div>
     <!-- ENTERPRISE -->
     <div class="pricing-card">
@@ -506,7 +504,6 @@
       <div class="pricing-desc">للشركات والفرق الأمنية الكبيرة.</div>
       <ul class="pricing-features">
         <li>كل مميزات PRO</li>
-        <li>Dark Web Intelligence</li>
         <li>Autonomous RedTeam v4.0</li>
         <li>ATT&CK Navigator</li>
         <li>Quantum Cryptography</li>
