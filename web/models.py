@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index, Float, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index, Float, UniqueConstraint, func
 from sqlalchemy.orm import relationship
 from web.database import Base
 
@@ -17,6 +17,10 @@ class User(Base):
     # web/auth.py hash_api_key / generate_api_key).
     api_key_hash = Column(String(64), unique=True, index=True)
     is_active = Column(Boolean, default=True)
+    # Per-user SaaS subscription tier, set by redeeming a LicenseKey via
+    # web/routers/license_routes.py — independent of the instance-wide
+    # signed-license engine in web/license.py.
+    subscription_tier = Column(String(20), default="free")
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
 
@@ -24,6 +28,25 @@ class User(Base):
     scans = relationship("Scan", back_populates="user", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
     darkweb_monitors = relationship("DarkWebMonitor", back_populates="user", cascade="all, delete-orphan")
+
+
+class LicenseKey(Base):
+    """A single sellable license key (e.g. via SellApp's Unique Codes
+    delivery) — see generate_licenses_admin.py for issuance and
+    web/routers/license_routes.py for redemption. Only key_hash (SHA-256,
+    see license_utils.py) is ever stored; the raw key is shown once at
+    generation time and never persisted."""
+    __tablename__ = "license_keys"
+
+    id = Column(Integer, primary_key=True)
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    tier = Column(String(20), default="pro")
+    created_at = Column(DateTime, server_default=func.now())
+    redeemed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    redeemed_at = Column(DateTime, nullable=True)
+    note = Column(Text, nullable=True)
+
+    redeemer = relationship("User")
 
 
 class Target(Base):

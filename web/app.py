@@ -1,5 +1,6 @@
 import sys
 import os
+import glob
 import asyncio
 import logging
 import uuid
@@ -67,6 +68,7 @@ from web.routers import darkweb_monitor
 from web.routers import honeypot as honeypot_router
 from web.routers import threat_sharing as threat_sharing_router
 from web.routers import cve_submission as cve_router
+from web.routers import license_routes
 from web.routers import ioc as ioc_router
 from modules.ioc_correlation import run_correlation, load_cached
 
@@ -503,6 +505,7 @@ app.include_router(honeypot_router.page_router)
 app.include_router(threat_sharing_router.router)
 app.include_router(cve_router.router)
 app.include_router(ioc_router.router)
+app.include_router(license_routes.router)
 
 
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────
@@ -593,6 +596,30 @@ def _write_initial_credentials_file(role: str, username: str, password: str) -> 
     )
 
 
+def _cleanup_stale_initial_creds(role: str) -> None:
+    """Remove any leftover /tmp/optisec_initial_creds_{role}_*.txt file(s) for
+    this role. Called once a login as that role succeeds, and again at
+    startup as a defense-in-depth sweep in case no one ever logged in to
+    trigger the first path. Never raises — a missing file or a permission
+    error here must not affect the caller (auth flow or startup).
+    """
+    try:
+        matches = glob.glob(f"/tmp/optisec_initial_creds_{role}_*.txt")
+        removed = 0
+        for path in matches:
+            try:
+                os.remove(path)
+                removed += 1
+            except OSError:
+                pass
+        if removed:
+            logger.warning(
+                f"[OPTISEC] Cleaned up {removed} stale initial-credential file(s) for {role}"
+            )
+    except Exception:
+        pass
+
+
 async def _users_table_has_api_key_hash() -> bool:
     async with engine.begin() as conn:
         cols = await conn.run_sync(
@@ -626,6 +653,8 @@ async def _ensure_first_admin():
                 _write_initial_credentials_file("admin", username, password)
             logger.warning(f"[OPTISEC] Initial admin account created: username={username}")
             log_auth_event("INIT_ADMIN", username, "localhost", True, "first admin created")
+        else:
+            _cleanup_stale_initial_creds("admin")
 
 
 _DEMO_TARGETS = [
@@ -655,6 +684,7 @@ async def _ensure_demo_account():
             select(User).where(User.username == "demo")
         )).scalar_one_or_none()
         if demo:
+            _cleanup_stale_initial_creds("demo")
             return
 
         import secrets as _secrets
@@ -830,6 +860,11 @@ async def login_submit(
     await db.commit()
     log_auth_event("LOGIN", user.username, ip, True)
 
+    if user.role == "admin":
+        _cleanup_stale_initial_creds("admin")
+    elif user.username == "demo":
+        _cleanup_stale_initial_creds("demo")
+
     token = create_access_token(user.id, user.role)
     response = RedirectResponse(next or "/", status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax")
@@ -958,6 +993,12 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
 
     clear_attempts(ip)
     log_auth_event("API_LOGIN", user.username, ip, True)
+
+    if user.role == "admin":
+        _cleanup_stale_initial_creds("admin")
+    elif user.username == "demo":
+        _cleanup_stale_initial_creds("demo")
+
     token = create_access_token(user.id, user.role)
     return JSONResponse({
         "access_token": token, "token_type": "bearer",
