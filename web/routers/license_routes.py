@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,9 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User, LicenseKey
 from web.auth import get_current_user
+from web.shared_templates import templates
+from config import APP_NAME
 from license_utils import hash_license_key
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
+page_router = APIRouter(tags=["subscription"])
 
 _REDEEM_ERROR = "Invalid or already-redeemed license key"
 
@@ -70,3 +74,16 @@ async def redeem_license(
 @router.get("/status", response_model=StatusResponse)
 async def subscription_status(user: User = Depends(_user)):
     return StatusResponse(subscription_tier=user.subscription_tier)
+
+
+# ── Redeem page ─────────────────────────────────────────────────────────────
+# Separate from /license (web/app.py) on purpose: that page activates the
+# instance-wide OPS4-{TIER}-{payload}.{sig} signed engine, not a per-user
+# SellApp key. Redeeming here only ever calls POST /api/subscription/redeem
+# above, which upgrades this account's User.subscription_tier.
+
+@page_router.get("/redeem", response_class=HTMLResponse, include_in_schema=False)
+async def redeem_page(request: Request, user: User = Depends(_user)):
+    return templates.TemplateResponse(request, "redeem.html", {
+        "app_name": APP_NAME, "user": user, "active": "redeem",
+    })

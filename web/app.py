@@ -506,6 +506,7 @@ app.include_router(threat_sharing_router.router)
 app.include_router(cve_router.router)
 app.include_router(ioc_router.router)
 app.include_router(license_routes.router)
+app.include_router(license_routes.page_router)
 
 
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────

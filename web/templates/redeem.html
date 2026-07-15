@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Redeem License — {{ app_name }}{% endblock %}
+{% block page_title %}Redeem License Key{% endblock %}
+
+{% block content %}
+
+<div class="card" style="max-width:560px;margin:0 auto">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🎫 استبدال مفتاح الترخيص</div>
+      <div class="card-subtitle">Redeem your PRO license key</div>
+    </div>
+  </div>
+
+  <div class="info-row" style="margin-bottom:16px">
+    <span class="info-label">الخطة الحالية / Current plan</span>
+    <span class="lic-badge lic-badge-{{ user.subscription_tier }}">{{ user.subscription_tier|upper }}</span>
+  </div>
+
+  <div id="redeem-alert" style="display:none;margin-bottom:12px"></div>
+
+  <form id="redeem-form">
+    <div class="form-group">
+      <label>مفتاح الترخيص / License Key</label>
+      <input type="text" id="redeem-key-input"
+             placeholder="OPTISEC-RECON-XXXX-XXXX-XXXX-XXXX"
+             style="font-family:monospace;letter-spacing:0.5px;text-transform:uppercase"
+             autocomplete="off" required />
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+        Bought a key from the store? Paste it here to unlock PRO on this account.
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary" id="redeem-submit-btn" style="width:100%;justify-content:center">
+      ✓ Redeem Key
+    </button>
+  </form>
+
+  <div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--text-dim)">
+    Don't have a key yet?
+    <a href="https://optisecdev.github.io/optisec-store/#products" target="_blank" rel="noopener noreferrer">Buy PRO — $399 one-time</a>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showRedeemAlert(message, type) {
+  const el = document.getElementById('redeem-alert');
+  el.className = 'alert alert-' + type;
+  el.textContent = message;
+  el.style.display = 'block';
+}
+
+document.getElementById('redeem-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const input = document.getElementById('redeem-key-input');
+  const btn = document.getElementById('redeem-submit-btn');
+  const key = input.value.trim();
+  if (!key) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Redeeming…';
+
+  try {
+    const res = await fetch('/api/subscription/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ license_key: key }),
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      showRedeemAlert(`✓ Success — upgraded to ${data.tier.toUpperCase()}. Reloading…`, 'success');
+      setTimeout(() => window.location.reload(), 1500);
+    } else {
+      showRedeemAlert('✗ ' + (data.detail || 'Invalid or already-redeemed license key'), 'error');
+      btn.disabled = false;
+      btn.textContent = '✓ Redeem Key';
+    }
+  } catch (err) {
+    showRedeemAlert('✗ Network error — please try again', 'error');
+    btn.disabled = false;
+    btn.textContent = '✓ Redeem Key';
+  }
+});
+</script>
+{% endblock %}
