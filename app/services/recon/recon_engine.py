@@ -1,25 +1,31 @@
-"""Initial recon engine: mock breach/OSINT lookups + real EXIF extraction +
-mock attack-chain simulation. This is the seed for the future Recon engine —
-scan_email/simulate_attack_chain are deliberately mocked (no live breach APIs
-wired up yet); extract_exif is real (reads actual image metadata via Pillow).
+"""Recon engine: live HIBP breach lookups (with mock fallback) + real EXIF
+extraction + mock attack-chain simulation. scan_email calls the real
+HaveIBeenPwned API via hibp_service and only drops back to mock data if
+that call fails outright; extract_exif is real (reads actual image metadata
+via Pillow).
 """
 import io
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import BinaryIO
 
+import httpx
 from PIL import ExifTags, Image
 
 from app.db.session import EternalSessionLocal
 from app.models.eternal.simulation_step import SimulationStep
+from app.services.external.hibp_service import check_hibp
+
+logger = logging.getLogger("app.services.recon")
 
 # Rough bounding boxes are enough to flag "this coordinate looks real/inhabited"
 # rather than (0, 0) or another obviously-placeholder GPS value.
 _SENTINEL_COORDS = {(0.0, 0.0)}
 
 
-def scan_email(email: str) -> dict:
-    """Mock breach-database lookup — placeholder until a real OSINT source is wired in."""
+def _mock_breaches(email: str) -> dict:
+    """Placeholder breach data — used only when the live HIBP call fails."""
     return {
         "email": email,
         "breaches": [
@@ -35,6 +41,35 @@ def scan_email(email: str) -> dict:
             },
         ],
         "mock": True,
+        "source": "mock_fallback",
+        "scanned_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+async def scan_email(email: str) -> dict:
+    """Look up real breach data for `email` via HIBP; fall back to mock data
+    if the live API is unreachable or errors out."""
+    try:
+        hibp_result = await check_hibp(email)
+    except httpx.HTTPError:
+        logger.warning("HIBP lookup failed for %s; falling back to mock data", email)
+        return _mock_breaches(email)
+
+    breaches = [
+        {
+            "source": breach.get("Name"),
+            "year": (breach.get("BreachDate") or "")[:4] or None,
+            "description": breach.get("Description"),
+        }
+        for breach in hibp_result["breaches"]
+    ]
+
+    return {
+        "email": email,
+        "breaches": breaches,
+        "mock": False,
+        "source": "HIBP",
+        "message": hibp_result["message"],
         "scanned_at": datetime.now(timezone.utc).isoformat(),
     }
 

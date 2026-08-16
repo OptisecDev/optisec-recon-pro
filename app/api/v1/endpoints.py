@@ -18,7 +18,7 @@ from app.db.session import get_eternal_db
 from app.models.eternal.audit_log import AuditLog
 from app.models.eternal.recon_artifact import ReconArtifact
 from app.models.eternal.target import Target, TargetInputType
-from app.services.recon.mock_engine import scan_email, simulate_attack_chain
+from app.services.recon.recon_engine import scan_email, simulate_attack_chain
 from app.services.storage.hybrid_repository import query_timeline, save_active
 
 router = APIRouter()
@@ -55,20 +55,25 @@ async def run_scan(
     await db.flush()
 
     if payload.type == TargetInputType.EMAIL:
-        result = scan_email(payload.value)
+        result = await scan_email(payload.value)
+        source_type = result.get("source", "mock_fallback")
     else:
         result = {
             "note": f"Mock recon engine has no live source for type={payload.type.value} yet.",
             "type": payload.type.value,
             "value_received": True,
             "mock": True,
+            "source": "mock_fallback",
         }
+        source_type = "mock_fallback"
 
-    artifact = ReconArtifact(
-        target_id=target.id, source_type=f"mock_engine:{payload.type.value}", raw_data=result
-    )
+    artifact = ReconArtifact(target_id=target.id, source_type=source_type, raw_data=result)
     await save_active(artifact, db)
-    await _log_action(db, request, action=f"scan:{payload.type.value}")
+
+    action = f"scan:{payload.type.value}"
+    if source_type == "mock_fallback" and payload.type == TargetInputType.EMAIL:
+        action += ":hibp_fallback_warning"
+    await _log_action(db, request, action=action)
 
     return ScanResponse(target_id=target.id, session_id=session_id, result=result)
 

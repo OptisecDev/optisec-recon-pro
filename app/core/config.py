@@ -29,3 +29,6 @@ FIELD_ENCRYPTION_KEY = os.getenv("FIELD_ENCRYPTION_KEY", "")
 AUDIT_LOG_ADMIN_PASSWORD = os.getenv("AUDIT_LOG_ADMIN_PASSWORD", "")
 
 ETERNAL_ARCHIVE_AGE_MONTHS = int(os.getenv("ETERNAL_ARCHIVE_AGE_MONTHS", "6"))
+
+# HaveIBeenPwned v3 API key — see README for how to obtain one.
+HIBP_API_KEY = os.getenv("HIBP_API_KEY", "")

@@ -601,6 +601,30 @@ docker compose up -d
 | `nginx` | 80 / 443 | Reverse proxy + SSL termination |
 | `postgres` | 5432 | PostgreSQL 16 database |
 
+### Eternal Core — Recon Engine (HIBP Breach Data)
+
+The Eternal Core subsystem (`app/`, TimescaleDB + MinIO hybrid storage, its own
+`.env.eternal` file — see [Docker Compose](#docker-compose) above) resolves
+`POST /scan` email lookups against the real [HaveIBeenPwned](https://haveibeenpwned.com)
+v3 API via `app/services/external/hibp_service.py`.
+
+1. Get an API key at **https://haveibeenpwned.com/API/Key**. Note that HIBP
+   removed its free tier in 2019 — a paid subscription (billed monthly,
+   cheapest tier is a few dollars/month) is required for the
+   `breachedaccount` endpoint used here.
+2. Add it to `.env.eternal` (already git-ignored, never committed):
+   ```
+   HIBP_API_KEY=your_hibp_key_here
+   ```
+3. If the key is missing, invalid, or HIBP is unreachable, `scan_email`
+   automatically falls back to mock breach data and records a warning in
+   `audit_logs` (`action` ending in `:hibp_fallback_warning`) so the fallback
+   is visible in the audit trail. The scan response's `result.source` field
+   is always `"HIBP"` or `"mock_fallback"` so callers know which one they got.
+
+Only breach names, titles, and dates are ever persisted to `recon_artifacts`
+— no passwords, hashes, or other leaked personal data.
+
 ### Deploy to Render
 
 One-click deployment on [Render.com](https://render.com):
