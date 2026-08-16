@@ -1,0 +1,68 @@
+version: "3.9"
+
+# ============================================================
+# OPTISEC Eternal Core — Immortal Infrastructure
+# Self-owned hybrid storage: TimescaleDB (hot) + MinIO (cold archive) + Redis (cache)
+# Usage: docker-compose -f docker-compose.eternal.yml --env-file .env.eternal up -d
+# ============================================================
+
+services:
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: optisec_eternal_timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-optisec_eternal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-optisec_eternal}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./eternal_data/pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-optisec_eternal} -d ${POSTGRES_DB:-optisec_eternal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eternal
+
+  minio:
+    image: minio/minio:latest
+    container_name: optisec_eternal_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER is required}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - ./eternal_data/minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eternal
+
+  redis:
+    image: redis:alpine
+    container_name: optisec_eternal_redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eternal
+
+networks:
+  eternal:
+    name: optisec_eternal_net

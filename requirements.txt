@@ -18,6 +18,13 @@ sqlalchemy>=2.0.0
 asyncpg>=0.29.0
 aiosqlite>=0.19.0
 alembic>=1.13.0
+psycopg2-binary>=2.9.9
+
+# Eternal Core — hybrid TimescaleDB + MinIO storage
+pandas>=2.2.0
+pyarrow>=16.0.0
+minio>=7.2.0
+Pillow>=10.0.0
 
 # Auth — JWT + password hashing
 python-jose[cryptography]>=3.3.0

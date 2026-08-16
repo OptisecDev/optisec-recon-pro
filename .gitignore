@@ -27,3 +27,5 @@ nohup.out
 data/federation_node.key
 data/quantum_keys/
 data/wireguard/
+eternal_data/
+.env.eternal
