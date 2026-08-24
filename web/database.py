@@ -5,10 +5,32 @@ import socket
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
-DATABASE_URL = os.environ.get(
+def _ensure_asyncpg_driver(database_url: str) -> str:
+    """Force the ``+asyncpg`` driver on any bare postgres(ql):// URL.
+
+    Providers (Neon included) hand out plain ``postgresql://`` connection
+    strings with no driver suffix. Passed straight to
+    ``create_async_engine()``, SQLAlchemy resolves that to its default sync
+    dialect (psycopg2, present here for Alembic) and raises
+    ``InvalidRequestError: ... psycopg2 is not async`` at import time --
+    before any socket is even opened. This normalization happens purely on
+    the URL string and is independent of ``_connect_args_for``'s
+    ``async_creator_fn`` (IPv4 resolution below), which only affects the
+    already-async connection's DNS lookup.
+    """
+    if database_url.startswith("postgresql+asyncpg://") or database_url.startswith("postgres+asyncpg://"):
+        return database_url
+    if database_url.startswith("postgresql://"):
+        return "postgresql+asyncpg://" + database_url[len("postgresql://"):]
+    if database_url.startswith("postgres://"):
+        return "postgresql+asyncpg://" + database_url[len("postgres://"):]
+    return database_url
+
+
+DATABASE_URL = _ensure_asyncpg_driver(os.environ.get(
     "DATABASE_URL",
     "sqlite+aiosqlite:///./data/optisec.db"
-)
+))
 
 # Fail fast rather than hang if Render's route to Neon is broken.
 DB_CONNECT_TIMEOUT = 10

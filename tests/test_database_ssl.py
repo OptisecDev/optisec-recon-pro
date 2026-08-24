@@ -18,7 +18,36 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.database import _connect_args_for, asyncpg_connect_ipv4, ipv4_only_resolution
+from web.database import _connect_args_for, _ensure_asyncpg_driver, asyncpg_connect_ipv4, ipv4_only_resolution
+
+
+def test_bare_postgresql_url_gets_asyncpg_driver():
+    # Regression test: providers (Neon included) hand out plain
+    # "postgresql://" URLs with no driver suffix. Passed straight to
+    # create_async_engine(), SQLAlchemy resolves that to its default sync
+    # dialect (psycopg2) and raises InvalidRequestError at import time,
+    # before any connection is attempted. DATABASE_URL must always be
+    # normalized to the asyncpg driver, independent of the IPv4-forcing
+    # async_creator_fn in _connect_args_for.
+    assert _ensure_asyncpg_driver("postgresql://user:pass@host/db") == (
+        "postgresql+asyncpg://user:pass@host/db"
+    )
+
+
+def test_legacy_postgres_scheme_url_gets_asyncpg_driver():
+    assert _ensure_asyncpg_driver("postgres://user:pass@host/db") == (
+        "postgresql+asyncpg://user:pass@host/db"
+    )
+
+
+def test_url_already_using_asyncpg_driver_is_left_untouched():
+    url = "postgresql+asyncpg://user:pass@host/db"
+    assert _ensure_asyncpg_driver(url) == url
+
+
+def test_non_postgres_url_is_left_untouched():
+    url = "sqlite+aiosqlite:///./data/optisec.db"
+    assert _ensure_asyncpg_driver(url) == url
 
 
 def test_postgres_url_requires_ssl():
