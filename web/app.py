@@ -531,7 +531,7 @@ async def session_refresh_middleware(request: Request, call_next):
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
-_STARTUP_DB_RETRY_DELAYS = (1, 2)  # seconds to wait after attempt 1 and attempt 2
+_STARTUP_DB_RETRY_DELAYS = (2, 4, 8, 15, 20)  # seconds to wait after attempts 1-5
 
 
 async def _startup_db_sequence():
@@ -539,11 +539,12 @@ async def _startup_db_sequence():
 
     A Neon endpoint that's still waking from idle can drop the first
     connection attempt (e.g. ConnectionDoesNotExistError) partway through
-    this sequence; retry the whole sequence with short backoff so a cold
-    start doesn't take the app down before it can serve any request.
-    init_db(), _ensure_first_admin(), and _ensure_demo_account() are all
-    safe to re-run (create_all / existence checks), so retrying the full
-    sequence on any failure is safe.
+    this sequence; retry the whole sequence with backoff so a cold
+    start doesn't take the app down before it can serve any request. A
+    free-tier Neon wake-up can take well over a couple of seconds, so the
+    delays below span ~49s across 6 attempts. init_db(), _ensure_first_admin(),
+    and _ensure_demo_account() are all safe to re-run (create_all / existence
+    checks), so retrying the full sequence on any failure is safe.
     """
     max_attempts = len(_STARTUP_DB_RETRY_DELAYS) + 1
     for attempt in range(max_attempts):
