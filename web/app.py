@@ -790,7 +790,9 @@ async def _ensure_demo_account():
 
 # ─── TEMPORARY DEBUG ROUTE — remove in a follow-up commit ────────────────────
 # Isolates whether asyncpg's connection handshake to Neon succeeds independent
-# of SQLAlchemy/the pool/_startup_db_sequence. Fails closed (404) unless
+# of SQLAlchemy/the pool/_startup_db_sequence. Uses the same IPv4-forced
+# asyncpg.connect() path as the real engine (see web/database.py) so this
+# probe and the app's pool behave identically. Fails closed (404) unless
 # DEBUG_TEST_KEY is set, and requires it as a query param. DO NOT leave this
 # in place — revert once the Render/Neon handshake issue is diagnosed.
 
@@ -801,13 +803,17 @@ async def _debug_db_raw_test(key: str = ""):
         raise HTTPException(404)
 
     import asyncpg
+    from web.database import DB_CONNECT_TIMEOUT, ipv4_only_resolution
 
     database_url = os.environ.get("DATABASE_URL", "")
     dsn = database_url.replace("postgresql+asyncpg://", "postgresql://").replace(
         "postgres+asyncpg://", "postgresql://"
     )
     try:
-        conn = await asyncpg.connect(dsn, ssl="require", statement_cache_size=0)
+        async with ipv4_only_resolution():
+            conn = await asyncpg.connect(
+                dsn, ssl="require", statement_cache_size=0, timeout=DB_CONNECT_TIMEOUT
+            )
         try:
             result = await conn.fetchval("SELECT 1")
         finally:
