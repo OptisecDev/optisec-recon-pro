@@ -7,7 +7,25 @@ DATABASE_URL = os.environ.get(
     "sqlite+aiosqlite:///./data/optisec.db"
 )
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+
+def _connect_args_for(database_url: str) -> dict:
+    """SSL connect_args for the asyncpg driver.
+
+    SQLAlchemy's asyncpg dialect forwards a URL's query string params
+    (e.g. ``?sslmode=require``) verbatim as kwargs to asyncpg.connect(),
+    but asyncpg's connect() has no ``sslmode`` parameter (only ``ssl``) --
+    so the query string alone never enables SSL and providers like Neon,
+    which require SSL, reject the plaintext connection attempt. Request it
+    explicitly via connect_args instead.
+    """
+    if database_url.startswith("postgresql") or database_url.startswith("postgres"):
+        return {"ssl": "require"}
+    return {}
+
+
+engine = create_async_engine(
+    DATABASE_URL, echo=False, connect_args=_connect_args_for(DATABASE_URL)
+)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
