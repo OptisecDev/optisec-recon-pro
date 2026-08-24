@@ -788,45 +788,6 @@ async def _ensure_demo_account():
         logger.warning("[OPTISEC] Initial demo account created: username=demo")
 
 
-# ─── TEMPORARY DEBUG ROUTE — remove in a follow-up commit ────────────────────
-# Isolates whether asyncpg's connection handshake to Neon succeeds independent
-# of SQLAlchemy/the pool/_startup_db_sequence. Uses the same IPv4-forced
-# asyncpg.connect() path as the real engine (see web/database.py) so this
-# probe and the app's pool behave identically. Fails closed (404) unless
-# DEBUG_TEST_KEY is set, and requires it as a query param. DO NOT leave this
-# in place — revert once the Render/Neon handshake issue is diagnosed.
-
-@app.get("/debug/db-raw-test", include_in_schema=False)
-async def _debug_db_raw_test(key: str = ""):
-    debug_key = os.environ.get("DEBUG_TEST_KEY")
-    if not debug_key or key != debug_key:
-        raise HTTPException(404)
-
-    import asyncpg
-    from web.database import DB_CONNECT_TIMEOUT, ipv4_only_resolution
-
-    database_url = os.environ.get("DATABASE_URL", "")
-    dsn = database_url.replace("postgresql+asyncpg://", "postgresql://").replace(
-        "postgres+asyncpg://", "postgresql://"
-    )
-    try:
-        async with ipv4_only_resolution():
-            conn = await asyncpg.connect(
-                dsn, ssl="require", statement_cache_size=0, timeout=DB_CONNECT_TIMEOUT
-            )
-        try:
-            result = await conn.fetchval("SELECT 1")
-        finally:
-            await conn.close()
-        return JSONResponse({"status": "success", "result": result})
-    except Exception as exc:
-        return JSONResponse({
-            "status": "failed",
-            "error_type": type(exc).__name__,
-            "error_message": str(exc),
-        })
-
-
 # ─── Exception Handlers ───────────────────────────────────────────────────────
 
 @app.exception_handler(HTTPException)
