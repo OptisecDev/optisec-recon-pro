@@ -63,8 +63,11 @@ requests-cache>=1.2.0
 #   Source: https://github.com/owasp-amass/amass/releases/download/v5.1.1/amass_linux_amd64.tar.gz
 #   Ensure ~/bin is in PATH: export PATH="$HOME/bin:$PATH"
 # NOTE: theHarvester is not on PyPI (the pypi package is a stub) — install via:
-#   pip install git+https://github.com/laramies/theHarvester.git
-git+https://github.com/laramies/theHarvester.git
+#   pip install git+https://github.com/laramies/theHarvester.git@4.11.1
+# Pinned to tag 4.11.1 (requires-python >=3.12) — theHarvester's unreleased
+# dev branch bumped to requires-python >=3.14, which broke installs under
+# this project's python:3.12-slim base image when this was an unpinned ref.
+git+https://github.com/laramies/theHarvester.git@4.11.1
 maigret>=0.6.1
 holehe>=1.61
 
