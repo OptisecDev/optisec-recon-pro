@@ -531,30 +531,63 @@ async def session_refresh_middleware(request: Request, call_next):
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
 
+_STARTUP_DB_RETRY_DELAYS = (1, 2)  # seconds to wait after attempt 1 and attempt 2
+
+
+async def _startup_db_sequence():
+    """Run the startup DB sequence, retrying on a Neon cold start.
+
+    A Neon endpoint that's still waking from idle can drop the first
+    connection attempt (e.g. ConnectionDoesNotExistError) partway through
+    this sequence; retry the whole sequence with short backoff so a cold
+    start doesn't take the app down before it can serve any request.
+    init_db(), _ensure_first_admin(), and _ensure_demo_account() are all
+    safe to re-run (create_all / existence checks), so retrying the full
+    sequence on any failure is safe.
+    """
+    max_attempts = len(_STARTUP_DB_RETRY_DELAYS) + 1
+    for attempt in range(max_attempts):
+        try:
+            await init_db()
+
+            # init_db() only runs Base.metadata.create_all, which never adds
+            # columns to a table that already exists. The users.api_key_hash
+            # migration has already been run against production (via the
+            # now-removed, token-gated /internal/run-api-key-migration
+            # endpoint), so the column should always be present.
+            # _ensure_first_admin and _ensure_demo_account both touch the
+            # User entity (whose mapped columns include api_key_hash), so
+            # without this guard they'd raise on that missing column and
+            # take the whole app down before it can serve any request. Keep
+            # the guard as a defensive check for any environment where the
+            # column still hasn't been added.
+            has_api_key_hash = await _users_table_has_api_key_hash()
+            if not has_api_key_hash:
+                logger.warning(
+                    "[OPTISEC] users.api_key_hash column missing — skipping admin/demo "
+                    "account seeding. The api_key_hash migration trigger endpoint has "
+                    "been removed; run web/migrate_add_api_key_hash.py directly against "
+                    "this database to add the column."
+                )
+            else:
+                await _ensure_first_admin()
+                await _ensure_demo_account()
+            return
+        except Exception as exc:
+            if attempt < len(_STARTUP_DB_RETRY_DELAYS):
+                delay = _STARTUP_DB_RETRY_DELAYS[attempt]
+                logger.warning(
+                    "[OPTISEC] Startup DB sequence failed (attempt %d/%d): %s — retrying in %ds",
+                    attempt + 1, max_attempts, exc, delay,
+                )
+                await asyncio.sleep(delay)
+            else:
+                raise
+
+
 @app.on_event("startup")
 async def startup():
-    await init_db()
-
-    # init_db() only runs Base.metadata.create_all, which never adds columns
-    # to a table that already exists. The users.api_key_hash migration has
-    # already been run against production (via the now-removed, token-gated
-    # /internal/run-api-key-migration endpoint), so the column should always
-    # be present. _ensure_first_admin and _ensure_demo_account both touch the
-    # User entity (whose mapped columns include api_key_hash), so without this
-    # guard they'd raise on that missing column and take the whole app down
-    # before it can serve any request. Keep the guard as a defensive check for
-    # any environment where the column still hasn't been added.
-    has_api_key_hash = await _users_table_has_api_key_hash()
-    if not has_api_key_hash:
-        logger.warning(
-            "[OPTISEC] users.api_key_hash column missing — skipping admin/demo "
-            "account seeding. The api_key_hash migration trigger endpoint has "
-            "been removed; run web/migrate_add_api_key_hash.py directly against "
-            "this database to add the column."
-        )
-    else:
-        await _ensure_first_admin()
-        await _ensure_demo_account()
+    await _startup_db_sequence()
 
     from modules.darkweb.scheduler import start_scheduler
     start_scheduler(asyncio.get_running_loop())

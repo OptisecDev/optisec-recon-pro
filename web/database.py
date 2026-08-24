@@ -24,7 +24,7 @@ def _connect_args_for(database_url: str) -> dict:
 
 
 engine = create_async_engine(
-    DATABASE_URL, echo=False, connect_args=_connect_args_for(DATABASE_URL)
+    DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_connect_args_for(DATABASE_URL)
 )
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
