@@ -1,4 +1,5 @@
 import os
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 
@@ -23,10 +24,33 @@ def _ensure_asyncpg_driver(database_url: str) -> str:
     return database_url
 
 
-DATABASE_URL = _ensure_asyncpg_driver(os.environ.get(
+def _strip_sslmode_query_param(database_url: str) -> str:
+    """Drop a stale libpq-style ``?sslmode=`` query param from the URL.
+
+    SQLAlchemy forwards any URL query params it doesn't itself consume
+    straight through to the DBAPI's connect() as kwargs -- on top of
+    whatever ``connect_args`` the engine was created with. asyncpg's
+    connect() has no ``sslmode`` parameter (only ``ssl``, supplied via
+    ``_connect_args_for`` below), so a leftover ``?sslmode=require`` in
+    DATABASE_URL (the psycopg2/libpq convention some providers hand out)
+    reaches asyncpg.connect() as an unexpected kwarg and raises
+    ``TypeError: connect() got an unexpected keyword argument 'sslmode'``
+    -- even though ``_connect_args_for`` already requests SSL correctly.
+    Only postgres URLs carry a DBAPI-forwarded query string, so this is a
+    no-op for sqlite.
+    """
+    if not (database_url.startswith("postgresql") or database_url.startswith("postgres")):
+        return database_url
+    url = make_url(database_url)
+    if "sslmode" not in url.query:
+        return database_url
+    return url.difference_update_query(["sslmode"]).render_as_string(hide_password=False)
+
+
+DATABASE_URL = _strip_sslmode_query_param(_ensure_asyncpg_driver(os.environ.get(
     "DATABASE_URL",
     "sqlite+aiosqlite:///./data/optisec.db"
-))
+)))
 
 
 def _connect_args_for(database_url: str) -> dict:

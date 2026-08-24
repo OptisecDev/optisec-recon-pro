@@ -16,7 +16,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from web.database import _connect_args_for, _ensure_asyncpg_driver
+from web.database import _connect_args_for, _ensure_asyncpg_driver, _strip_sslmode_query_param
 
 
 def test_bare_postgresql_url_gets_asyncpg_driver():
@@ -62,3 +62,31 @@ def test_postgres_url_requires_ssl_even_with_sslmode_query_param():
 
 def test_sqlite_url_does_not_get_postgres_ssl_args():
     assert _connect_args_for("sqlite+aiosqlite:///./data/optisec.db") == {}
+
+
+def test_stale_sslmode_query_param_is_stripped_from_postgres_url():
+    # Regression test: TypeError: connect() got an unexpected keyword
+    # argument 'sslmode' -- SQLAlchemy forwards any URL query params it
+    # doesn't consume straight to asyncpg.connect() as kwargs, on top of
+    # connect_args. A leftover "?sslmode=require" (the psycopg2/libpq
+    # convention) must be dropped from DATABASE_URL itself, since
+    # connect_args alone can't stop SQLAlchemy from also forwarding it.
+    url = "postgresql+asyncpg://user:pass@host/db?sslmode=require"
+    assert _strip_sslmode_query_param(url) == "postgresql+asyncpg://user:pass@host/db"
+
+
+def test_sslmode_alongside_other_query_params_only_drops_sslmode():
+    url = "postgresql+asyncpg://user:pass@host/db?sslmode=require&application_name=optisec"
+    assert _strip_sslmode_query_param(url) == (
+        "postgresql+asyncpg://user:pass@host/db?application_name=optisec"
+    )
+
+
+def test_url_without_sslmode_is_left_untouched():
+    url = "postgresql+asyncpg://user:pass@host/db"
+    assert _strip_sslmode_query_param(url) == url
+
+
+def test_sqlite_url_is_left_untouched_by_sslmode_strip():
+    url = "sqlite+aiosqlite:///./data/optisec.db"
+    assert _strip_sslmode_query_param(url) == url
