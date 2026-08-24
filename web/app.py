@@ -588,7 +588,15 @@ async def _startup_db_sequence():
 
 @app.on_event("startup")
 async def startup():
-    await _startup_db_sequence()
+    try:
+        await _startup_db_sequence()
+    except Exception:
+        logger.critical(
+            "[OPTISEC] Startup DB sequence failed after all retries — app "
+            "starting anyway in degraded mode, DB-dependent routes will fail "
+            "until connectivity is restored",
+            exc_info=True,
+        )
 
     from modules.darkweb.scheduler import start_scheduler
     start_scheduler(asyncio.get_running_loop())
