@@ -42,9 +42,9 @@ def _strip_sslmode_query_param(database_url: str) -> str:
     if not (database_url.startswith("postgresql") or database_url.startswith("postgres")):
         return database_url
     url = make_url(database_url)
-    if "sslmode" not in url.query:
+    if "sslmode" not in url.query and "channel_binding" not in url.query:
         return database_url
-    return url.difference_update_query(["sslmode"]).render_as_string(hide_password=False)
+    return url.difference_update_query(["sslmode", "channel_binding"]).render_as_string(hide_password=False)
 
 
 DATABASE_URL = _strip_sslmode_query_param(_ensure_asyncpg_driver(os.environ.get(
