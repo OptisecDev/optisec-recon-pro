@@ -64,12 +64,24 @@ def _connect_args_for(database_url: str) -> dict:
     explicitly via connect_args instead.
     """
     if database_url.startswith("postgresql") or database_url.startswith("postgres"):
-        return {"ssl": "require"}
+        # Neon's pooled endpoint runs PgBouncer in transaction mode, which is
+        # incompatible with asyncpg's client-side prepared-statement cache
+        # (per Neon's docs) -- disable it here.
+        return {"ssl": "require", "statement_cache_size": 0}
     return {}
 
 
 engine = create_async_engine(
-    DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_connect_args_for(DATABASE_URL)
+    DATABASE_URL,
+    echo=False,
+    pool_pre_ping=True,
+    # Explicit, conservative pool sizing: Render runs this app as 2 Uvicorn
+    # workers (README.md), each with its own engine/pool, so the default
+    # QueuePool sizing (5 + 10 overflow = 15 per worker, 30 total) is more
+    # than Neon's pooled endpoint needs and worth capping deliberately.
+    pool_size=5,
+    max_overflow=5,
+    connect_args=_connect_args_for(DATABASE_URL),
 )
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

@@ -49,7 +49,8 @@ def test_non_postgres_url_is_left_untouched():
 
 def test_postgres_url_requires_ssl():
     assert _connect_args_for("postgresql+asyncpg://user:pass@host/db") == {
-        "ssl": "require"
+        "ssl": "require",
+        "statement_cache_size": 0,
     }
 
 
@@ -57,7 +58,7 @@ def test_postgres_url_requires_ssl_even_with_sslmode_query_param():
     # The ?sslmode=require query string does nothing for asyncpg on its own --
     # connect_args must supply "ssl" regardless of what the URL string says.
     url = "postgresql+asyncpg://user:pass@host/db?sslmode=require"
-    assert _connect_args_for(url) == {"ssl": "require"}
+    assert _connect_args_for(url) == {"ssl": "require", "statement_cache_size": 0}
 
 
 def test_sqlite_url_does_not_get_postgres_ssl_args():
