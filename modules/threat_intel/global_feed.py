@@ -56,6 +56,43 @@ _SAMPLE_IOCS = [
     {"type": "ip",         "value": "37.120.222.5",   "malware": "LockBit",          "confidence": 89, "source": "ABUSE-CH"},
 ]
 
+# ── Estimated-field disclosure notes ──────────────────────────────────────────
+# get_live_ioc_feed() enriches every real IOC (whether from _SAMPLE_IOCS, a
+# caller-supplied urlhaus_iocs list, or a previously submit_ioc()'d entry)
+# with a TLP classification (random.choice) and first_seen/last_seen dates
+# (_fake_date() with a random day offset) that are NOT part of the original
+# indicator — the source feed (e.g. OTX, URLhaus) has no such fields at this
+# point. Each scored IOC below is tagged with tlp_source/date_source +
+# bilingual note so callers/UI can tell these apart from the real fields
+# (type, value, malware, confidence, source) that pass through unmodified.
+# Note: OTX-sourced IOCs fetched directly via modules/threat_intel/otx_feed.py
+# carry *real* tlp/first_seen/last_seen from the OTX API and never flow
+# through this function, so they are never tagged.
+IOC_ESTIMATED_NOTE_EN = (
+    "TLP classification and first/last-seen dates are estimated locally "
+    "(randomly assigned/jittered) for display purposes — they are not part "
+    "of the original IOC from the source feed. Only type, value, malware, "
+    "confidence and source come from the real indicator."
+)
+IOC_ESTIMATED_NOTE_AR = (
+    "تصنيف TLP وتواريخ أول/آخر ظهور مُقدَّرة محلياً (مُعيَّنة/مُهتزة عشوائياً) لأغراض "
+    "العرض فقط، وليست جزءاً من بيانات IOC الأصلية من مصدر التغذية. الحقول الحقيقية "
+    "فقط هي: النوع والقيمة والبرمجية الخبيثة ومستوى الثقة والمصدر."
+)
+
+# get_threat_map() jitters attacks_per_hour around a static baseline and
+# fabricates active_campaigns per point on every call, purely for a "live"
+# visual effect — none of it is real-time attack telemetry.
+MAP_JITTER_NOTE_EN = (
+    "attacks_per_hour and active_campaigns for every point are randomly "
+    "jittered around a static baseline on each request — a decorative "
+    "live-feel effect, not real-time attack telemetry."
+)
+MAP_JITTER_NOTE_AR = (
+    "قيم attacks_per_hour وactive_campaigns لكل نقطة مُهتزة عشوائياً حول خط أساس "
+    "ثابت في كل طلب — تأثير تجميلي لإيهام الحيوية، وليست بيانات هجمات حية حقيقية."
+)
+
 # ── Threat Map Nodes (global attack origins/targets) ─────────────────────────
 
 THREAT_MAP_POINTS = [
@@ -186,6 +223,12 @@ def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None
             "last_seen": _fake_date(-random.randint(0, 7)),
             "tags": _generate_tags(ioc),
             "tlp": random.choice(["WHITE", "GREEN", "AMBER", "RED"]),
+            # tlp/first_seen/last_seen just above are randomly generated, not
+            # sourced from the original IOC — see IOC_ESTIMATED_NOTE_EN/AR.
+            "tlp_source": "estimated",
+            "date_source": "estimated",
+            "note": IOC_ESTIMATED_NOTE_EN,
+            "note_ar": IOC_ESTIMATED_NOTE_AR,
         })
 
     total_score = sum(i["threat_score"] for i in scored) / len(scored) if scored else 0
@@ -331,6 +374,11 @@ def get_threat_map() -> dict:
         "total_attacks_per_hour": sum(p["attacks_per_hour"] for p in points),
         "updated_at": datetime.utcnow().isoformat(),
         "top_origin": max(points, key=lambda x: x["attacks_per_hour"])["country"],
+        # attacks_per_hour/active_campaigns on every point above are jittered
+        # decoration, not live telemetry — see MAP_JITTER_NOTE_EN/AR.
+        "map_jitter": True,
+        "note": MAP_JITTER_NOTE_EN,
+        "note_ar": MAP_JITTER_NOTE_AR,
     }
 
 

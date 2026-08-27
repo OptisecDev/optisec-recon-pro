@@ -111,11 +111,14 @@
         <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:80px;text-align:center">{{ ioc.type }}</span>
         <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px" title="{{ ioc.value }}">{{ ioc.value[:60] }}{% if ioc.value|length > 60 %}…{% endif %}</code>
         <span style="color:#FFA726;font-size:10px;min-width:100px">{{ ioc.malware[:20] }}</span>
-        <span class="tlp-{{ ioc.tlp.lower() }}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700">TLP:{{ ioc.tlp }}</span>
+        <span class="tlp-{{ ioc.tlp.lower() }}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700" title="{{ ioc.note if ioc.tlp_source == 'estimated' else '' }}">TLP:{{ ioc.tlp }}{% if ioc.tlp_source == 'estimated' %}<sup style="opacity:0.7">*</sup>{% endif %}</span>
         <span style="color:var(--text-dim);font-size:9px;min-width:80px">{{ ioc.source }}</span>
-        <span style="color:var(--text-dim);font-size:9px">{{ ioc.last_seen[:10] }}</span>
+        <span style="color:var(--text-dim);font-size:9px" title="{{ ioc.note if ioc.date_source == 'estimated' else '' }}">{{ ioc.last_seen[:10] }}{% if ioc.date_source == 'estimated' %}<sup style="opacity:0.7">*</sup>{% endif %}</span>
       </div>
       {% endfor %}
+      {% if feed.iocs and feed.iocs[0].tlp_source == 'estimated' %}
+      <div style="margin-top:8px;font-size:9px;color:var(--text-dim)">* TLP and dates marked with an asterisk are estimated locally, not from the original indicator source.</div>
+      {% endif %}
     </div>
   </div>
 </div>
@@ -127,6 +130,11 @@
       <h3>Global Threat Map — Live Attack Origins</h3>
       <div style="font-size:12px;color:var(--text-dim)">Top origin: <strong style="color:#FF6B6B">{{ threat_map.top_origin }}</strong></div>
     </div>
+    {% if threat_map.map_jitter %}
+    <div style="margin-bottom:12px;padding:8px 12px;background:rgba(255,167,38,0.1);border:1px solid rgba(255,167,38,0.3);border-radius:6px;font-size:10px;color:var(--text-dim)" title="{{ threat_map.note }}">
+      <span style="color:#FFA726;font-weight:700">ESTIMATED</span> — attacks/hr and active campaigns below are jittered around a static baseline for a live-feel effect, not real-time attack telemetry.
+    </div>
+    {% endif %}
     <div class="map-container" id="threat-map">
       <!-- World map SVG approximation using dots -->
       <div style="position:absolute;inset:0;background:linear-gradient(135deg,#0d0d1a 0%,#1a1a2e 100%);
@@ -427,7 +435,7 @@ async function refreshFeed() {
       <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:80px;text-align:center">${ioc.type}</span>
       <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${ioc.value.slice(0,60)}${ioc.value.length>60?'…':''}</code>
       <span style="color:#FFA726;font-size:10px;min-width:100px">${(ioc.malware||'').slice(0,20)}</span>
-      <span class="tlp-${(ioc.tlp||'white').toLowerCase()}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700">TLP:${ioc.tlp||'WHITE'}</span>
+      <span class="tlp-${(ioc.tlp||'white').toLowerCase()}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700" title="${ioc.tlp_source==='estimated'?(ioc.note||'Estimated locally'):''}">TLP:${ioc.tlp||'WHITE'}${ioc.tlp_source==='estimated'?'<sup style="opacity:0.7">*</sup>':''}</span>
       <span style="color:var(--text-dim);font-size:9px;min-width:80px">${ioc.source||''}</span>
     </div>`).join('');
 }
