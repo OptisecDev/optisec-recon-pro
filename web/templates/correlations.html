@@ -370,9 +370,12 @@ function openDetail(clusterId) {
         <span class="type-chip ${iocTypeClass(ioc.type)}" style="flex-shrink:0">${ioc.type}</span>
         <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(ioc.value)}">${escHtml(ioc.value)}</code>
         <span style="color:var(--orange);font-size:10px;white-space:nowrap;min-width:80px">${escHtml(ioc.malware || '')}</span>
-        <span style="color:var(--text-dim);font-size:9px;white-space:nowrap">${ioc.source || ''}</span>
+        <span style="color:var(--text-dim);font-size:9px;white-space:nowrap" title="${ioc.is_sample ? escHtml(ioc.note || 'Sample IOC') : ''}">${ioc.source || ''}${ioc.is_sample ? '<sup style="opacity:0.7">*</sup>' : ''}</span>
       </div>`;
     });
+    if (cluster.iocs.some(ioc => ioc.is_sample)) {
+      html += `<div style="margin-top:8px;font-size:9px;color:var(--text-dim)">* Sources marked with an asterisk are hardcoded sample IOCs bundled for demonstration, not live OTX/URLhaus indicators.</div>`;
+    }
   } else {
     html += `<div style="color:var(--text-dim);font-size:12px;padding:8px">No IOC details available.</div>`;
   }

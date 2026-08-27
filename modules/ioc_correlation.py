@@ -50,6 +50,31 @@ _HIGH_RISK_ACTORS = {
     "fin7", "lockbit", "conti", "blackcat", "alphv",
 }
 
+# ── Sample-IOC disclosure note ────────────────────────────────────────────────
+# collect_iocs() merges modules.threat_intel.global_feed._SAMPLE_IOCS (~18
+# hardcoded/fabricated sample IOCs, not sourced from a live feed) with real
+# IOCs from AlienVault OTX (_load_otx_iocs(), only when OTX_API_KEY is set).
+# Every sample IOC is tagged is_sample=True + a bilingual note so callers/UI
+# can tell it apart from real OTX-sourced IOCs — see
+# tests/test_global_feed_estimated_tagging.py and modules/quantum/encryption.py's
+# mode="simulated" for the established convention. Real OTX IOCs are never
+# tagged. Clusters built by correlate_iocs()/_build_relationships()/
+# _detect_patterns() can mix sample + real IOCs (e.g. an adversary cluster
+# attributed via both), so the tag lives on each IOC dict, not at the cluster
+# level — the correlation math itself (weights, bonuses, relationships,
+# patterns) is untouched and operates identically on tagged and untagged IOCs.
+IOC_SAMPLE_NOTE_EN = (
+    "This is a hardcoded sample IOC bundled with the correlation engine for "
+    "demonstration purposes — it is not a live indicator pulled from "
+    "AlienVault OTX or URLhaus. Only IOCs from a live OTX pull (when "
+    "OTX_API_KEY is configured) are real threat intelligence."
+)
+IOC_SAMPLE_NOTE_AR = (
+    "هذا مؤشر اختراق (IOC) نموذجي مُدرَج بشكل ثابت مع محرك الارتباط لأغراض العرض "
+    "التوضيحي، وليس مؤشراً حياً مسحوباً من AlienVault OTX أو URLhaus. المؤشرات "
+    "الحقيقية فقط هي تلك القادمة من سحب OTX الحي (عند ضبط OTX_API_KEY)."
+)
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -109,6 +134,9 @@ def collect_iocs() -> List[dict]:
             "adversary":  raw.get("adversary", ""),
             "tags":       raw.get("tags", []),
             "threat_score": raw.get("threat_score", raw.get("confidence", 70)),
+            "is_sample":  True,
+            "note":       IOC_SAMPLE_NOTE_EN,
+            "note_ar":    IOC_SAMPLE_NOTE_AR,
         })
 
     # Live OTX feed (if API key present)
