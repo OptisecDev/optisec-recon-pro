@@ -282,7 +282,7 @@ async function refreshTraffic() {
   const log = document.getElementById('traffic-log');
   if (!data.recent_log?.length) { log.innerHTML = '<p style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">No traffic logged. Run a simulation.</p>'; return; }
   log.innerHTML = data.recent_log.map(r => `<div class="traffic-row ${r.action}">
-    <span class="action-${r.action}" style="min-width:48px">${r.action}</span>
+    <span class="action-${r.action}" style="min-width:48px" title="${r.simulated ? (r.note||'Simulated traffic') : ''}">${r.action}${r.simulated ? '<sup style="opacity:0.7">*</sup>' : ''}</span>
     <span style="min-width:60px;font-weight:700;color:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}">${r.threat_score}</span>
     <div class="threat-bar"><div class="threat-fill" style="width:${r.threat_score}%;background:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}"></div></div>
     <code style="min-width:110px;font-size:10px">${r.src_ip}</code>
@@ -290,7 +290,7 @@ async function refreshTraffic() {
     <span style="color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.path}</span>
     <span class="badge badge-${r.geo?.is_high_risk?'critical':'info'}" style="font-size:9px">${r.geo?.country_code||'??'}</span>
     <span style="color:var(--text-dim);font-size:10px;min-width:65px">${new Date(r.timestamp).toLocaleTimeString()}</span>
-  </div>`).join('');
+  </div>`).join('') + (data.recent_log.some(r => r.simulated) ? `<div style="margin-top:8px;font-size:9px;color:var(--text-dim)">* Rows marked with an asterisk are synthetic demo traffic from "Simulate Requests", not real inspected network requests.</div>` : '');
 
   // Category breakdown
   const cats = data.category_breakdown || {};

@@ -381,6 +381,32 @@ def get_traffic_stats() -> dict:
     }
 
 
+# simulate_traffic_burst() below generates synthetic demo traffic (randomly
+# sampled IPs, paths and bodies) and runs it through the REAL DPI signature
+# engine and ML entropy scorer (deep_inspect(), untouched — same 30+ regex
+# signatures and Shannon-entropy-based scoring used for genuine traffic). Only
+# the traffic being analyzed is fabricated, not the detection logic. Because
+# deep_inspect() persists every result (real or simulated) into the same
+# shared traffic_log, results produced here are tagged simulated=True + a
+# bilingual note — after the fact, not inside deep_inspect() itself, so real
+# traffic stays untagged — following the `_ar`-suffixed bilingual convention
+# used elsewhere in the project (see modules/darkweb/intelligence.py and
+# app/services/recon/recon_engine.py's SIMULATED_NOTE_EN/AR).
+SIMULATED_NOTE_EN = (
+    "Simulated data — this traffic burst is synthetic demo input (randomly "
+    "sampled source IPs, request paths and bodies), not real network traffic. "
+    "It is scored by the same real DPI signature engine and ML entropy scorer "
+    "used for live traffic (deep_inspect), but the traffic itself is "
+    "fabricated for visualization/demo purposes only."
+)
+SIMULATED_NOTE_AR = (
+    "بيانات محاكاة — دفعة الحركة هذه إدخال تجريبي اصطناعي (عناوين IP مصدر "
+    "ومسارات طلبات ونصوص عشوائية)، وليست حركة شبكة حقيقية. تُقيَّم بواسطة نفس "
+    "محرك توقيعات الفحص العميق الحقيقي ومحرك تسجيل الإنتروبيا المستخدم للحركة "
+    "الحية (deep_inspect)، لكن الحركة نفسها مُصطنعة لأغراض العرض التوضيحي فقط."
+)
+
+
 def simulate_traffic_burst(n: int = 20) -> List[dict]:
     """Generate simulated traffic for visualization/demo."""
     results = []
@@ -424,7 +450,23 @@ def simulate_traffic_burst(n: int = 20) -> List[dict]:
             src_ip=ip,
             dst_port=random.choice([80, 443, 8080, 3306, 4444]),
         )
+        result["simulated"] = True
+        result["note"] = SIMULATED_NOTE_EN
+        result["note_ar"] = SIMULATED_NOTE_AR
         results.append(result)
+
+    # deep_inspect() already persisted an untagged copy of each result into
+    # the shared traffic_log (it always inserts at index 0). Tag those
+    # persisted copies too so simulated entries stay marked wherever
+    # get_traffic_stats()/the dashboard reads them back from disk.
+    if results:
+        state = _load_state()
+        for i, r in enumerate(reversed(results)):
+            if i < len(state["traffic_log"]):
+                state["traffic_log"][i]["simulated"] = True
+                state["traffic_log"][i]["note"] = SIMULATED_NOTE_EN
+                state["traffic_log"][i]["note_ar"] = SIMULATED_NOTE_AR
+        _save_state(state)
 
     return results
 
