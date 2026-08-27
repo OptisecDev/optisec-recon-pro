@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
+from web.license import require_feature_or_402
 from web.shared_templates import templates
 from config import APP_NAME
 
@@ -20,6 +21,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def correlations_page(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("ioc_correlations")
     from modules.ioc_correlation import load_cached, run_correlation
 
     data = load_cached()

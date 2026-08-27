@@ -22,10 +22,23 @@ from web.database import Base
 from web.models import User, Ioc  # noqa: F401 — Ioc import registers the table on Base.metadata
 from modules.ioc.ioc_engine import IOCRepository
 from modules.threat_intel import global_feed
+import web.license as license_module
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _enterprise_license() -> license_module.License:
+    """An always-entitled license, for tests that exercise router handlers
+    unrelated to web/license.py's require_feature_or_402 gate but that now
+    pass through it (threat_feed.live_feed / threat_sharing.get_threat_feed)."""
+    return license_module.License(
+        tier="enterprise", issued_to="test", email="",
+        issued_at="2026-01-01T00:00:00", expires_at="2099-01-01T00:00:00", key="TEST",
+        features=license_module.TIER_FEATURES["enterprise"],
+        max_targets=-1, max_scans_day=-1, max_users=-1,
+    )
 
 
 @pytest.fixture
@@ -206,6 +219,10 @@ class TestGetLiveIocFeed:
 # ---------------------------------------------------------------------------
 
 class TestRouterMergesRealUrlhausData:
+    @pytest.fixture(autouse=True)
+    def _enterprise_tier(self, monkeypatch):
+        monkeypatch.setattr(license_module, "get_license", _enterprise_license)
+
     def test_live_feed_includes_real_urlhaus_row(self, db_factory, monkeypatch):
         import config
         import web.routers.threat_feed as threat_feed_router

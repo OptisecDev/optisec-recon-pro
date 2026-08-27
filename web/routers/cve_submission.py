@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User, Finding, Scan, CveDraft
 from web.auth import get_current_user
+from web.license import require_feature_or_402
 from modules.bug_bounty import cve_pipeline
 
 router = APIRouter(prefix="/api/cve", tags=["cve-pipeline"])
@@ -172,6 +173,7 @@ async def get_draft(db: AsyncSession, *, draft_id: int, user_id: int) -> Optiona
     description="Read-only lookup against the public NVD API — use it to check for an existing/duplicate CVE before drafting a new one. Never sends anything.",
 )
 async def cve_search(keyword: str = "", cve_id: str = "", user: User = Depends(_user)):
+    require_feature_or_402("bug_bounty")
     return await cve_pipeline.search_nvd(keyword=keyword, cve_id=cve_id)
 
 
@@ -186,6 +188,7 @@ async def cve_search(keyword: str = "", cve_id: str = "", user: User = Depends(_
     ),
 )
 async def cve_draft(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    require_feature_or_402("bug_bounty")
     data = await request.json()
     finding = None
     finding_id = data.get("finding_id")
@@ -209,6 +212,7 @@ async def cve_draft(request: Request, user: User = Depends(_user), db: AsyncSess
 )
 async def cve_drafts(status: Optional[str] = None, limit: int = 100,
                       user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    require_feature_or_402("bug_bounty")
     rows = await list_drafts(db, user_id=user.id, status=status, limit=limit)
     return JSONResponse({"drafts": [_list_item(r) for r in rows], "count": len(rows)})
 
@@ -218,6 +222,7 @@ async def cve_drafts(status: Optional[str] = None, limit: int = 100,
     summary="Get a single CVE draft",
 )
 async def cve_draft_detail(draft_id: int, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    require_feature_or_402("bug_bounty")
     row = await get_draft(db, draft_id=draft_id, user_id=user.id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
@@ -234,6 +239,7 @@ async def cve_draft_detail(draft_id: int, user: User = Depends(_user), db: Async
     ),
 )
 async def cve_draft_export(draft_id: int, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    require_feature_or_402("bug_bounty")
     row = await get_draft(db, draft_id=draft_id, user_id=user.id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")

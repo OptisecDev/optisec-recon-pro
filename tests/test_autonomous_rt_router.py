@@ -26,10 +26,27 @@ from sqlalchemy.pool import StaticPool
 from web.database import Base
 from web.models import User, Target
 import web.routers.autonomous_rt as art_router
+import web.license as license_module
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+def _enterprise_license() -> license_module.License:
+    """autonomous_redteam is enterprise-only; these tests are about target
+    ownership, not licensing, so give every test an always-entitled license."""
+    return license_module.License(
+        tier="enterprise", issued_to="test", email="",
+        issued_at="2026-01-01T00:00:00", expires_at="2099-01-01T00:00:00", key="TEST",
+        features=license_module.TIER_FEATURES["enterprise"],
+        max_targets=-1, max_scans_day=-1, max_users=-1,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _enterprise_tier(monkeypatch):
+    monkeypatch.setattr(license_module, "get_license", _enterprise_license)
 
 
 @pytest.fixture

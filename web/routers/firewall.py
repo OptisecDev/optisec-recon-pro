@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
+from web.license import require_feature_or_402
 from web.shared_templates import templates
 from config import APP_NAME
 
@@ -19,6 +20,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def firewall_home(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("firewall")
     from modules.firewall.ai_firewall import get_firewall_rules
     return templates.TemplateResponse(request, "firewall.html", {
         "app_name": APP_NAME, "user": user, "active": "firewall",
@@ -28,6 +30,7 @@ async def firewall_home(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/inspect")
 async def inspect_request_api(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("firewall")
     data = await request.json()
     from modules.firewall.ai_firewall import inspect_request
     return inspect_request(
@@ -41,6 +44,7 @@ async def inspect_request_api(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/analyze-logs")
 async def analyze_logs(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("firewall")
     data = await request.json()
     lines = data.get("logs", [])
     if isinstance(lines, str):
@@ -51,12 +55,14 @@ async def analyze_logs(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/rules")
 async def get_rules(user: User = Depends(_user)):
+    require_feature_or_402("firewall")
     from modules.firewall.ai_firewall import get_firewall_rules
     return {"rules": get_firewall_rules()}
 
 
 @router.post("/api/rate-check")
 async def rate_check(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("firewall")
     data = await request.json()
     from modules.firewall.ai_firewall import check_rate_limit
     return check_rate_limit(

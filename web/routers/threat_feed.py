@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
+from web.license import require_feature_or_402
 from web.shared_templates import templates
 from config import APP_NAME, OTX_API_KEY
 
@@ -69,6 +70,7 @@ def _build_feed(otx_iocs: list, fallback_feed: dict) -> dict:
 
 @router.get("", response_class=HTMLResponse)
 async def feed_home(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    require_feature_or_402("threat_feed")
     from modules.threat_intel.global_feed import (
         get_live_ioc_feed, get_threat_map, get_campaigns, get_feed_stats, fetch_real_urlhaus_iocs,
     )
@@ -100,6 +102,7 @@ async def feed_home(request: Request, user: User = Depends(_user), db: AsyncSess
 
 @router.get("/api/feed")
 async def live_feed(limit: int = 50, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
+    require_feature_or_402("threat_feed")
     from modules.threat_intel.global_feed import get_live_ioc_feed, fetch_real_urlhaus_iocs
 
     urlhaus_iocs = await fetch_real_urlhaus_iocs(db, limit=20)
@@ -119,6 +122,7 @@ async def live_feed(limit: int = 50, user: User = Depends(_user), db: AsyncSessi
 @router.get("/api/otx/test")
 async def otx_test(user: User = Depends(_user)):
     """Test AlienVault OTX API connectivity."""
+    require_feature_or_402("threat_feed")
     if not OTX_API_KEY:
         return JSONResponse({"connected": False, "error": "OTX_API_KEY not configured"}, status_code=400)
     from modules.threat_intel.otx_feed import test_otx_connection
@@ -128,18 +132,21 @@ async def otx_test(user: User = Depends(_user)):
 
 @router.get("/api/threat-map")
 async def threat_map(user: User = Depends(_user)):
+    require_feature_or_402("threat_feed")
     from modules.threat_intel.global_feed import get_threat_map
     return get_threat_map()
 
 
 @router.get("/api/campaigns")
 async def get_campaigns(user: User = Depends(_user)):
+    require_feature_or_402("threat_feed")
     from modules.threat_intel.global_feed import get_campaigns
     return {"campaigns": get_campaigns()}
 
 
 @router.post("/api/submit-ioc")
 async def submit_ioc(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("threat_feed")
     data = await request.json()
     from modules.threat_intel.global_feed import submit_ioc
     return submit_ioc(
@@ -153,6 +160,7 @@ async def submit_ioc(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/correlate")
 async def correlate(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("threat_feed")
     data = await request.json()
     from modules.threat_intel.global_feed import correlate_iocs
     return correlate_iocs(data.get("iocs", []))
@@ -160,6 +168,7 @@ async def correlate(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/stats")
 async def feed_stats(user: User = Depends(_user)):
+    require_feature_or_402("threat_feed")
     from modules.threat_intel.global_feed import get_feed_stats
     stats = get_feed_stats()
     stats["otx_configured"] = bool(OTX_API_KEY)

@@ -8,6 +8,7 @@ from pathlib import Path
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user, require_admin
+from web.license import require_feature_or_402
 from web.shared_templates import templates
 from config import APP_NAME
 
@@ -26,6 +27,7 @@ async def _admin(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def vpn_home(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("vpn")
     from modules.vpn.wireguard import list_peers, get_wg_status
     peers = list_peers()
     status = await get_wg_status()
@@ -37,18 +39,21 @@ async def vpn_home(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/status")
 async def vpn_status(user: User = Depends(_user)):
+    require_feature_or_402("vpn")
     from modules.vpn.wireguard import get_wg_status
     return await get_wg_status()
 
 
 @router.get("/api/peers")
 async def list_peers_api(user: User = Depends(_user)):
+    require_feature_or_402("vpn")
     from modules.vpn.wireguard import list_peers
     return {"peers": list_peers()}
 
 
 @router.post("/api/peers")
 async def add_peer_api(request: Request, user: User = Depends(_admin)):
+    require_feature_or_402("vpn")
     data = await request.json()
     from modules.vpn.wireguard import add_peer
     return add_peer(
@@ -60,12 +65,14 @@ async def add_peer_api(request: Request, user: User = Depends(_admin)):
 
 @router.delete("/api/peers/{name}")
 async def remove_peer_api(name: str, user: User = Depends(_admin)):
+    require_feature_or_402("vpn")
     from modules.vpn.wireguard import remove_peer
     return remove_peer(name)
 
 
 @router.get("/api/peers/{name}/config")
 async def peer_config(name: str, user: User = Depends(_admin)):
+    require_feature_or_402("vpn")
     from pathlib import Path
     config_path = Path(f"data/wireguard/{name}.conf")
     if not config_path.exists():
@@ -76,6 +83,7 @@ async def peer_config(name: str, user: User = Depends(_admin)):
 
 @router.get("/api/peers/{name}/qr")
 async def peer_qr(name: str, user: User = Depends(_admin)):
+    require_feature_or_402("vpn")
     from modules.vpn.wireguard import generate_qr_code
     qr = generate_qr_code(name)
     if not qr:
@@ -85,6 +93,7 @@ async def peer_qr(name: str, user: User = Depends(_admin)):
 
 @router.post("/api/server/generate")
 async def generate_server_config_api(request: Request, user: User = Depends(_admin)):
+    require_feature_or_402("vpn")
     data = await request.json()
     from modules.vpn.wireguard import generate_server_config
     result = generate_server_config(

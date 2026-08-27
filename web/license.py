@@ -334,3 +334,18 @@ def require_feature(feature: str) -> tuple[bool, str]:
     if lic.tier == "pro":
         return False, f'"{label}" requires ENTERPRISE license.'
     return False, f'"{label}" is not available in your plan.'
+
+
+def require_feature_or_402(feature: str) -> None:
+    """Route guard: raise HTTPException(402) when the active license tier
+    doesn't include `feature`. Mirrors web.auth.require_roles's inline-call
+    pattern (e.g. require_analyst_or_admin(user)) -- call this alongside,
+    not instead of, any RBAC guard the route already has. The two gates are
+    independent: RBAC checks who the user is, this checks what the
+    installation's license tier is entitled to.
+    """
+    from fastapi import HTTPException
+
+    allowed, message = require_feature(feature)
+    if not allowed:
+        raise HTTPException(status_code=402, detail=message)

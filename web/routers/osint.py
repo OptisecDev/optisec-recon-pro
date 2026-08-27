@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
+from web.license import require_feature_or_402
 from web.shared_templates import templates
 from config import APP_NAME
 
@@ -307,6 +308,7 @@ def _build_executive_summary(entities: list[dict], target: str) -> dict[str, str
     ),
 )
 async def osint_unified_search(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("osint_advanced")
     data = await request.json()
     target = data.get("target", "").strip()
     target_type = data.get("target_type", "auto").strip().lower()
@@ -377,6 +379,7 @@ async def osint_unified_search(request: Request, user: User = Depends(_user)):
     ),
 )
 async def osint_network_scan(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("osint_advanced")
     data = await request.json()
     target = data.get("target", "").strip()
     deep_scan = bool(data.get("deep_scan", False))
@@ -411,6 +414,7 @@ async def osint_network_scan(request: Request, user: User = Depends(_user)):
     ),
 )
 async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("osint_darkweb")
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
@@ -462,6 +466,7 @@ async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
     ),
 )
 async def osint_threat_analysis(request: Request, user: User = Depends(_user)):
+    require_feature_or_402("osint_advanced")
     data = await request.json()
     target = data.get("target", "").strip()
     scan_results = data.get("scan_results") or {}
