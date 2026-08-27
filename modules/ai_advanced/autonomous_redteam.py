@@ -187,6 +187,18 @@ RECON_TECHNIQUE_MAP = {
     "headers": "T1592",     # Gather Victim Host Information
 }
 
+# ── Phase 3 (Initial Access) — real-scan finding translation ──────────────────
+
+WEB_SCAN_TECHNIQUE_MAP = {
+    "XSS": "T1059.007",                          # Command and Scripting Interpreter: JavaScript
+    "SQL Injection": "T1190",                    # Exploit Public-Facing Application
+    "SQL Injection (Blind)": "T1190",            # Exploit Public-Facing Application
+    "SQL Injection (Time-Based Blind)": "T1190",  # Exploit Public-Facing Application
+    "SSRF": "T1090.002",                         # Proxy: External Proxy
+    "LFI": "T1005",                              # Data from Local System
+    "Open Redirect": "T1566.002",                # Phishing: Spearphishing Link
+}
+
 # ── Phases 2, 4, 5, 6 — no real engine backs these; every generated item is
 # tagged simulated=True + a bilingual note, following the `_ar`-suffixed
 # bilingual convention used across the project (see modules/darkweb/monitor.py,
@@ -261,6 +273,12 @@ async def start_autonomous_simulation(
     recon_data = await _run_recon_phase(domain, url)
     phase1_findings = _findings_from_recon(domain, recon_data)
 
+    web_scan_data: dict = {}
+    phase3_findings: List[dict] = []
+    if any(p["phase"] == 3 for p in selected_phases):
+        web_scan_data = await _run_web_scan_phase(url)
+        phase3_findings = _findings_from_web_scan(url, web_scan_data)
+
     simulated_findings = _simulate_phase_findings(target, attack_types, stealth_level)
     for i, f in enumerate(simulated_findings):
         f["simulated"] = True
@@ -268,11 +286,12 @@ async def start_autonomous_simulation(
         f["note_ar"] = SIMULATED_NOTE_AR
         f["phase"] = SIMULATED_PHASE_CYCLE[i % len(SIMULATED_PHASE_CYCLE)]
 
-    findings = phase1_findings + simulated_findings
+    findings = phase1_findings + phase3_findings + simulated_findings
     for i, f in enumerate(findings, start=1):
         f["id"] = f"F{i:03d}"
 
     session["recon_data"] = recon_data
+    session["web_scan_data"] = web_scan_data
     session["findings"] = findings
     session["payloads_generated"] = sum(len(PAYLOAD_TEMPLATES.get(at, {}).get("payloads", [])) for at in attack_types)
     session["current_phase"] = len(selected_phases)
@@ -410,6 +429,67 @@ def _findings_from_recon(domain: str, recon: dict) -> List[dict]:
             "; ".join(f"{p['port']}/{p['service']} {p.get('product', '')}".strip() for p in nmap_ports[:10]),
             "nmap_scanner",
         )
+
+    return findings
+
+
+async def _run_web_scan_phase(url: str) -> dict:
+    """Phase 3 (Initial Access) — real web-vuln scans against modules/vuln,
+    using the same asyncio.to_thread pattern web/app.py's scan task runner
+    uses for these same modules (see web/app.py's scan_xss/scan_sqli/
+    scan_ssrf/scan_lfi/scan_open_redirect calls, ~lines 1666-1689)."""
+    from modules.vuln.xss import scan_xss
+    from modules.vuln.sqli import scan_sqli
+    from modules.vuln.ssrf import scan_ssrf
+    from modules.vuln.lfi import scan_lfi
+    from modules.vuln.open_redirect import scan_open_redirect
+
+    scan: dict = {}
+    scan["xss"] = await asyncio.to_thread(scan_xss, url)
+    scan["sqli"] = await asyncio.to_thread(scan_sqli, url)
+    scan["ssrf"] = await asyncio.to_thread(scan_ssrf, url)
+    scan["lfi"] = await asyncio.to_thread(scan_lfi, url)
+    scan["open_redirect"] = await asyncio.to_thread(scan_open_redirect, url)
+    return scan
+
+
+def _findings_from_web_scan(url: str, scan_results: dict) -> List[dict]:
+    """Build Phase 3 findings directly from modules/vuln output — no templates.
+
+    Only verdict == "CONFIRMED" results are reportable: that's the same gate
+    waf_aware_classifier.py's ClassificationResult.should_report encodes, and
+    the same one web/app.py's scan task runner applies (its confirmed_vulns =
+    [v for v in all_vulns if v.get("verdict") == "CONFIRMED"] filter) before
+    anything reaches a client-facing report. WAF_BLOCKED/ENDPOINT_INVALID/
+    ENCODED_SAFE/INCONCLUSIVE results are real scan output too, just not
+    proof of an exploitable vulnerability, so they're discarded here.
+    """
+    findings: List[dict] = []
+
+    def add(vuln: str, severity: str, endpoint: str, technique: str, proof: str, source: str) -> None:
+        findings.append({
+            "vuln": vuln,
+            "severity": severity,
+            "endpoint": endpoint,
+            "technique": technique,
+            "cvss": SEVERITY_CVSS.get(severity, 0.0),
+            "cve": "N/A",
+            "proof": proof,
+            "phase": 3,
+            "source_module": source,
+            "discovered_at": datetime.utcnow().isoformat(),
+        })
+
+    for source, vulns in (scan_results or {}).items():
+        for v in vulns or []:
+            if v.get("verdict") != "CONFIRMED":
+                continue
+            severity = str(v.get("severity") or "MEDIUM").upper()
+            vuln_type = v.get("type", "Web Vulnerability")
+            technique = WEB_SCAN_TECHNIQUE_MAP.get(vuln_type, "T1190")
+            param = v.get("parameter")
+            vuln_name = f"{vuln_type} (parameter: {param})" if param else vuln_type
+            add(vuln_name, severity, v.get("url", url), technique, v.get("evidence", ""), source)
 
     return findings
 

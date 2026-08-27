@@ -13,7 +13,10 @@ bilingual note/note_ar, while Phase 1 findings are built directly from
 modules/recon's real scan functions (port_scanner, subdomains, ssl_analysis,
 security_headers, whois_lookup, dns_lookup, nmap_scanner).
 
-Phase 3 (Initial Access / web vuln scanning) is untouched here — separate task.
+Phase 3 (Initial Access / web vuln scanning) has its own real-scan wiring and
+its own test file (tests/test_autonomous_redteam_webscan.py) — the fixture
+below stubs modules/vuln's scanners to no-ops purely so these Phase 1 tests
+stay network-isolated and unaffected by Phase 3 running alongside it.
 """
 
 import asyncio
@@ -28,6 +31,11 @@ import modules.ai_advanced.autonomous_redteam as art
 import modules.recon.ssl_analysis as ssl_mod
 import modules.recon.security_headers as headers_mod
 import modules.recon.port_scanner as ports_mod
+import modules.vuln.xss as xss_mod
+import modules.vuln.sqli as sqli_mod
+import modules.vuln.ssrf as ssrf_mod
+import modules.vuln.lfi as lfi_mod
+import modules.vuln.open_redirect as redirect_mod
 
 
 def _run(coro):
@@ -82,6 +90,14 @@ def _patch_recon(monkeypatch):
     monkeypatch.setattr(art, "whois_lookup", lambda *a, **k: FAKE_WHOIS)
     monkeypatch.setattr(art, "dns_lookup", lambda *a, **k: FAKE_DNS)
     monkeypatch.setattr(art, "nmap_scan", lambda *a, **k: FAKE_NMAP)
+    # Phase 3 (web vuln scan) is out of scope for this file (see
+    # tests/test_autonomous_redteam_webscan.py) — stub it out to no findings
+    # so these Phase 1 tests stay network-isolated and unaffected by it.
+    monkeypatch.setattr(xss_mod, "scan_xss", lambda *a, **k: [])
+    monkeypatch.setattr(sqli_mod, "scan_sqli", lambda *a, **k: [])
+    monkeypatch.setattr(ssrf_mod, "scan_ssrf", lambda *a, **k: [])
+    monkeypatch.setattr(lfi_mod, "scan_lfi", lambda *a, **k: [])
+    monkeypatch.setattr(redirect_mod, "scan_open_redirect", lambda *a, **k: [])
 
 
 @pytest.fixture(autouse=True)
