@@ -10,6 +10,10 @@ from typing import List, Optional
 
 from config import GROQ_MODEL
 from modules.ai.groq_client_utils import call_groq_async_with_retry
+from modules.recon.subdomains import enumerate_subdomains
+from modules.recon.dns_lookup import dns_lookup
+from modules.recon.whois_lookup import whois_lookup
+from modules.recon.nmap_scanner import nmap_scan
 
 DATA_FILE = Path("data/autonomous_rt_sessions.json")
 
@@ -169,6 +173,41 @@ CVSS_BASE_SCORES = {
     "Open Redirect": {"score": 3.1, "severity": "LOW"},
 }
 
+# ── Phase 1 (Reconnaissance) — real-scan finding translation ──────────────────
+
+SEVERITY_CVSS = {"CRITICAL": 9.1, "HIGH": 7.5, "MEDIUM": 5.3, "LOW": 3.1}
+
+RECON_TECHNIQUE_MAP = {
+    "ports": "T1595",       # Active Scanning
+    "nmap": "T1595",        # Active Scanning
+    "subdomains": "T1590",  # Gather Victim Network Information
+    "dns": "T1590",         # Gather Victim Network Information
+    "whois": "T1589",       # Gather Victim Identity Information
+    "ssl": "T1592",         # Gather Victim Host Information
+    "headers": "T1592",     # Gather Victim Host Information
+}
+
+# ── Phases 2, 4, 5, 6 — no real engine backs these; every generated item is
+# tagged simulated=True + a bilingual note, following the `_ar`-suffixed
+# bilingual convention used across the project (see modules/darkweb/monitor.py,
+# modules/osint/threat_narrative.py, modules/quantum/encryption.py's
+# mode="simulated"/"note" pair). ─────────────────────────────────────────────
+
+SIMULATED_NOTE_EN = (
+    "Simulated finding — Weaponization, Post-Exploitation, Lateral Movement and "
+    "Objective Completion are not executed by a real engine. OPTISEC has no live "
+    "capability for payload weaponization, post-exploitation, lateral movement, or "
+    "data exfiltration. This content is illustrative only, not evidence of an actual "
+    "compromise."
+)
+SIMULATED_NOTE_AR = (
+    "نتيجة محاكاة — مراحل التسليح وما بعد الاستغلال والحركة الجانبية وإتمام الهدف لا "
+    "يتم تنفيذها بواسطة محرك حقيقي. لا يمتلك OPTISEC قدرة فعلية على تسليح الحمولات، أو "
+    "ما بعد الاستغلال، أو الحركة الجانبية، أو تسريب البيانات. هذا المحتوى توضيحي فقط، "
+    "وليس دليلاً على اختراق فعلي."
+)
+SIMULATED_PHASE_CYCLE = [2, 4, 5, 6]
+
 
 def _load_sessions() -> list:
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -216,7 +255,25 @@ async def start_autonomous_simulation(
     if groq_key:
         session["ai_analysis"] = await _ai_attack_analysis(target, attack_types, groq_key)
 
-    session["findings"] = _simulate_phase_findings(target, attack_types, stealth_level)
+    domain = target.replace("https://", "").replace("http://", "").split("/")[0]
+    url = target if target.startswith("http") else f"https://{target}"
+
+    recon_data = await _run_recon_phase(domain, url)
+    phase1_findings = _findings_from_recon(domain, recon_data)
+
+    simulated_findings = _simulate_phase_findings(target, attack_types, stealth_level)
+    for i, f in enumerate(simulated_findings):
+        f["simulated"] = True
+        f["note"] = SIMULATED_NOTE_EN
+        f["note_ar"] = SIMULATED_NOTE_AR
+        f["phase"] = SIMULATED_PHASE_CYCLE[i % len(SIMULATED_PHASE_CYCLE)]
+
+    findings = phase1_findings + simulated_findings
+    for i, f in enumerate(findings, start=1):
+        f["id"] = f"F{i:03d}"
+
+    session["recon_data"] = recon_data
+    session["findings"] = findings
     session["payloads_generated"] = sum(len(PAYLOAD_TEMPLATES.get(at, {}).get("payloads", [])) for at in attack_types)
     session["current_phase"] = len(selected_phases)
     session["progress_pct"] = 100
@@ -237,6 +294,124 @@ def _select_phases(attack_types: List[str]) -> List[dict]:
     if "web" not in attack_types and "sqli" not in attack_types:
         relevant_phases = [p for p in relevant_phases if p["phase"] != 3 or p["phase"] == 7]
     return relevant_phases
+
+
+async def _run_recon_phase(domain: str, url: str) -> dict:
+    """Phase 1 (Reconnaissance) — real scans against modules/recon, using the same
+    asyncio.to_thread pattern web/app.py's scan task runner uses for these modules."""
+    from modules.recon.ssl_analysis import analyze_ssl
+    from modules.recon.security_headers import check_security_headers
+    from modules.recon.port_scanner import scan_ports
+
+    recon: dict = {}
+    recon["ports"] = await asyncio.to_thread(scan_ports, domain)
+    recon["subdomains"] = await asyncio.to_thread(enumerate_subdomains, domain)
+    recon["ssl"] = await asyncio.to_thread(analyze_ssl, domain)
+    recon["headers"] = await asyncio.to_thread(check_security_headers, url)
+    recon["whois"] = await asyncio.to_thread(whois_lookup, domain)
+    recon["dns"] = await asyncio.to_thread(dns_lookup, domain)
+    recon["nmap"] = await asyncio.to_thread(nmap_scan, domain)
+    return recon
+
+
+def _findings_from_recon(domain: str, recon: dict) -> List[dict]:
+    """Build Phase 1 findings directly from modules/recon output — no templates."""
+    findings: List[dict] = []
+
+    def add(vuln: str, severity: str, endpoint: str, technique: str, proof: str, source: str) -> None:
+        findings.append({
+            "vuln": vuln,
+            "severity": severity,
+            "endpoint": endpoint,
+            "technique": technique,
+            "cvss": SEVERITY_CVSS.get(severity, 0.0),
+            "cve": "N/A",
+            "proof": proof,
+            "phase": 1,
+            "source_module": source,
+            "discovered_at": datetime.utcnow().isoformat(),
+        })
+
+    ports = recon.get("ports") or {}
+    if ports.get("error"):
+        add("Port Scan Failed", "LOW", domain, RECON_TECHNIQUE_MAP["ports"], ports["error"], "port_scanner")
+    else:
+        high_risk = [p for p in ports.get("open_ports", []) if p.get("high_risk")]
+        for p in high_risk:
+            add(
+                f"High-Risk Open Port: {p['service']} ({p['port']})", "HIGH",
+                f"{ports.get('host', domain)}:{p['port']}", RECON_TECHNIQUE_MAP["ports"],
+                f"Port {p['port']}/{p['service']} reachable" + (f" — banner: {p['banner']}" if p.get("banner") else ""),
+                "port_scanner",
+            )
+        if ports.get("open_count") and not high_risk:
+            add(
+                "Open Ports Detected", ports.get("risk_label", "LOW"), ports.get("host", domain),
+                RECON_TECHNIQUE_MAP["ports"],
+                "; ".join(ports.get("notes", [])) or f"{ports['open_count']} open ports",
+                "port_scanner",
+            )
+
+    ssl_d = recon.get("ssl") or {}
+    if ssl_d.get("error"):
+        add("SSL/TLS Analysis Failed", "LOW", f"{domain}:443", RECON_TECHNIQUE_MAP["ssl"], ssl_d["error"], "ssl_analysis")
+    elif ssl_d.get("risk_label") and ssl_d["risk_label"] != "LOW":
+        add(
+            "Expired TLS Certificate" if ssl_d.get("expired") else "TLS/Certificate Weakness",
+            ssl_d["risk_label"], f"{ssl_d.get('domain', domain)}:443", RECON_TECHNIQUE_MAP["ssl"],
+            "; ".join(ssl_d.get("notes", [])), "ssl_analysis",
+        )
+
+    headers_d = recon.get("headers") or {}
+    if headers_d.get("error"):
+        add("Security Headers Check Failed", "LOW", domain, RECON_TECHNIQUE_MAP["headers"], headers_d["error"], "security_headers")
+    else:
+        if headers_d.get("risk_label") and headers_d["risk_label"] != "LOW":
+            missing = list((headers_d.get("missing_headers") or {}).keys())
+            add(
+                "Missing Security Headers", headers_d["risk_label"], headers_d.get("url", domain),
+                RECON_TECHNIQUE_MAP["headers"],
+                f"Missing: {', '.join(missing[:5])}" if missing else f"Security grade {headers_d.get('grade')}",
+                "security_headers",
+            )
+        exposed = headers_d.get("exposed_info_headers") or {}
+        if exposed:
+            add(
+                "Information Disclosure via Headers", "MEDIUM", headers_d.get("url", domain),
+                RECON_TECHNIQUE_MAP["headers"],
+                "; ".join(f"{k}: {v['value']}" for k, v in exposed.items()), "security_headers",
+            )
+
+    subs = recon.get("subdomains") or []
+    if subs:
+        add(
+            "Subdomains Enumerated", "LOW", domain, RECON_TECHNIQUE_MAP["subdomains"],
+            f"{len(subs)} live subdomains discovered: " + ", ".join(s["subdomain"] for s in subs[:10]),
+            "subdomains",
+        )
+
+    whois_d = recon.get("whois") or {}
+    if not whois_d.get("error") and whois_d.get("emails"):
+        add(
+            "Exposed WHOIS Contact Emails", "LOW", domain, RECON_TECHNIQUE_MAP["whois"],
+            f"Registrant emails exposed via WHOIS: {', '.join(whois_d['emails'][:5])}", "whois_lookup",
+        )
+
+    dns_d = recon.get("dns") or {}
+    txt = dns_d.get("TXT", [])
+    if txt:
+        add("DNS TXT Records Exposed", "LOW", domain, RECON_TECHNIQUE_MAP["dns"], "; ".join(txt[:5]), "dns_lookup")
+
+    nmap_d = recon.get("nmap") or {}
+    nmap_ports = nmap_d.get("ports", [])
+    if not nmap_d.get("error") and nmap_ports:
+        add(
+            "Nmap Service Fingerprint", "LOW", nmap_d.get("hostname") or domain, RECON_TECHNIQUE_MAP["nmap"],
+            "; ".join(f"{p['port']}/{p['service']} {p.get('product', '')}".strip() for p in nmap_ports[:10]),
+            "nmap_scanner",
+        )
+
+    return findings
 
 
 def _simulate_phase_findings(target: str, attack_types: List[str], stealth: str) -> List[dict]:
