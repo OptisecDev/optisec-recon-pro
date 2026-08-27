@@ -36,14 +36,17 @@ class EncryptedString(TypeDecorator):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._fernet = Fernet(FIELD_ENCRYPTION_KEY.encode()) if FIELD_ENCRYPTION_KEY else None
+        # FIELD_ENCRYPTION_KEY is guaranteed non-empty and Fernet-valid here:
+        # app.core.config raises RuntimeError at import time otherwise, so
+        # this constructor can never silently end up without a cipher.
+        self._fernet = Fernet(FIELD_ENCRYPTION_KEY.encode())
 
     def process_bind_param(self, value, dialect):
-        if value is None or self._fernet is None:
+        if value is None:
             return value
         return self._fernet.encrypt(value.encode()).decode()
 
     def process_result_value(self, value, dialect):
-        if value is None or self._fernet is None:
+        if value is None:
             return value
         return self._fernet.decrypt(value.encode()).decode()
