@@ -32,6 +32,9 @@ class SimulationStepResponse(BaseModel):
     mitre_tactic: str
     description: str
     executed_at: str
+    simulated: bool
+    note: str
+    note_ar: str
 
 
 class AuditLogEntry(BaseModel):

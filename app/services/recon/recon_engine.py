@@ -128,6 +128,25 @@ _ATTACK_CHAIN_TEMPLATE = [
     ("Impact", "محاكاة هجوم حرمان من الخدمة (DoS) على الخدمة المستهدفة."),
 ]
 
+# No real engine backs this attack chain — every step is a fixed template
+# item, not the outcome of an actual exploitation attempt. Tagged
+# simulated=True + a bilingual note on every step, following the same
+# `_ar`-suffixed bilingual convention used elsewhere in the project (see
+# modules/ai_advanced/autonomous_redteam.py's SIMULATED_NOTE_EN/AR for
+# Phases 2/4/5/6, and modules/quantum/encryption.py's mode="simulated").
+SIMULATED_NOTE_EN = (
+    "Simulated step — this attack chain is a fixed illustrative template, not the "
+    "result of a real exploitation attempt against the target. OPTISEC has no live "
+    "engine performing initial access, privilege escalation, persistence, or impact "
+    "here. This content is illustrative only, not evidence of an actual compromise."
+)
+SIMULATED_NOTE_AR = (
+    "خطوة محاكاة — سلسلة الهجوم هذه قالب توضيحي ثابت، وليست نتيجة محاولة استغلال "
+    "فعلية للهدف. لا يمتلك OPTISEC محركاً حقيقياً ينفذ الوصول الأولي، أو رفع "
+    "الصلاحيات، أو الثبات، أو التأثير هنا. هذا المحتوى توضيحي فقط، وليس دليلاً على "
+    "اختراق فعلي."
+)
+
 
 async def simulate_attack_chain(target_id: uuid.UUID) -> list[dict]:
     """Generate a mock 4-5 step MITRE-tactic attack chain and persist it."""
@@ -154,6 +173,9 @@ async def simulate_attack_chain(target_id: uuid.UUID) -> list[dict]:
             "mitre_tactic": s.mitre_tactic,
             "description": s.description,
             "executed_at": s.executed_at.isoformat(),
+            "simulated": True,
+            "note": SIMULATED_NOTE_EN,
+            "note_ar": SIMULATED_NOTE_AR,
         }
         for s in steps
     ]
