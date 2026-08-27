@@ -1,10 +1,11 @@
 """Autonomous Red Team Engine router."""
-from fastapi import APIRouter, Request, Depends, BackgroundTasks
+from fastapi import APIRouter, Request, Depends, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.database import get_db
-from web.models import User
+from web.models import User, Target
 from web.auth import get_current_user, require_analyst_or_admin
 from web.shared_templates import templates
 from config import APP_NAME
@@ -16,24 +17,46 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     return await get_current_user(request, db)
 
 
+async def check_target_ownership(target_id: int, user: User, db: AsyncSession) -> Target:
+    """Verify target_id refers to a Target row owned by user, mirroring the
+    ownership check in web/app.py's /api/scan (Target.id + Target.user_id)."""
+    target = (await db.execute(
+        select(Target).where(Target.id == target_id, Target.user_id == user.id)
+    )).scalar_one_or_none()
+    if not target:
+        raise HTTPException(
+            404,
+            "Target not found. Register it via the Targets page before starting a red team session.",
+        )
+    return target
+
+
 @router.get("", response_class=HTMLResponse)
-async def art_home(request: Request, user: User = Depends(_user)):
+async def art_home(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     from modules.ai_advanced.autonomous_redteam import list_sessions, get_payload_library, ATTACK_PHASES
+    targets = (await db.execute(
+        select(Target).where(Target.user_id == user.id).order_by(Target.created_at.desc())
+    )).scalars().all()
     return templates.TemplateResponse(request, "autonomous_redteam.html", {
         "app_name": APP_NAME, "user": user, "active": "autonomous_rt",
         "sessions": list_sessions()[:10],
         "payload_library": get_payload_library(),
         "attack_phases": ATTACK_PHASES,
+        "targets": targets,
     })
 
 
 @router.post("/api/start")
-async def start_simulation(request: Request, user: User = Depends(_user)):
+async def start_simulation(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     data = await request.json()
+    try:
+        target_id = int(data.get("target_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(400, "target_id is required")
+    target = await check_target_ownership(target_id, user, db)
     from modules.ai_advanced.autonomous_redteam import start_autonomous_simulation
     session = await start_autonomous_simulation(
-        target=data.get("target", ""),
-        scope=data.get("scope", []),
+        target=target.url,
         attack_types=data.get("attack_types", ["web"]),
         stealth_level=data.get("stealth_level", "medium"),
         auto_exploit=data.get("auto_exploit", False),

@@ -187,7 +187,6 @@ def _save_sessions(sessions: list) -> None:
 
 async def start_autonomous_simulation(
     target: str,
-    scope: List[str],
     attack_types: List[str],
     stealth_level: str = "medium",
     auto_exploit: bool = False,
@@ -200,7 +199,6 @@ async def start_autonomous_simulation(
     session = {
         "id": session_id,
         "target": target,
-        "scope": scope,
         "attack_types": attack_types,
         "stealth_level": stealth_level,
         "auto_exploit": auto_exploit,
@@ -216,7 +214,7 @@ async def start_autonomous_simulation(
 
     groq_key = os.environ.get("GROQ_API_KEY", "")
     if groq_key:
-        session["ai_analysis"] = await _ai_attack_analysis(target, scope, attack_types, groq_key)
+        session["ai_analysis"] = await _ai_attack_analysis(target, attack_types, groq_key)
 
     session["findings"] = _simulate_phase_findings(target, attack_types, stealth_level)
     session["payloads_generated"] = sum(len(PAYLOAD_TEMPLATES.get(at, {}).get("payloads", [])) for at in attack_types)
@@ -298,11 +296,10 @@ def _calculate_risk_score(findings: List[dict]) -> int:
     return min(100, score)
 
 
-async def _ai_attack_analysis(target: str, scope: list, attack_types: list, api_key: str) -> dict:
+async def _ai_attack_analysis(target: str, attack_types: list, api_key: str) -> dict:
     prompt = f"""You are an elite penetration tester performing a controlled security assessment.
 
 Target: {target}
-Scope: {', '.join(scope)}
 Attack Types: {', '.join(attack_types)}
 
 Provide a concise attack analysis in JSON:
@@ -358,7 +355,6 @@ def generate_pentest_report(session: dict) -> dict:
         "generated_at": datetime.utcnow().isoformat(),
         "engagement": {
             "target": session["target"],
-            "scope": session.get("scope", []),
             "assessment_type": "Autonomous Red Team Simulation",
             "started": session.get("started_at"),
             "completed": session.get("completed_at"),

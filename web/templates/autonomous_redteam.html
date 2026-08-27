@@ -70,13 +70,18 @@
       <h3 style="color:#FF6B6B;margin-bottom:16px">Configure Simulation</h3>
 
       <div style="margin-bottom:14px">
-        <label style="font-size:11px;color:var(--text-dim)">Target System / Domain</label>
-        <input type="text" id="art-target" class="form-control" placeholder="e.g. target.example.com" style="margin-top:4px">
-      </div>
-
-      <div style="margin-bottom:14px">
-        <label style="font-size:11px;color:var(--text-dim)">Scope (comma-separated)</label>
-        <input type="text" id="art-scope" class="form-control" placeholder="*.example.com, 192.168.1.0/24" style="margin-top:4px">
+        <label style="font-size:11px;color:var(--text-dim)">Target (must be a registered Target)</label>
+        <select id="art-target-id" class="form-control" style="margin-top:4px">
+          <option value="">— Select a registered target —</option>
+          {% for t in targets %}
+          <option value="{{ t.id }}">{{ t.name or t.url }}</option>
+          {% endfor %}
+        </select>
+        {% if not targets %}
+        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+          No targets registered yet. <a href="/targets">Add a target</a> first.
+        </div>
+        {% endif %}
       </div>
 
       <div style="margin-bottom:14px">
@@ -271,9 +276,8 @@ function copyPayload(el) {
 }
 
 async function launchSimulation() {
-  const target = document.getElementById('art-target').value.trim();
-  if (!target) { alert('Enter a target'); return; }
-  const scope = document.getElementById('art-scope').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const targetId = document.getElementById('art-target-id').value;
+  if (!targetId) { alert('Select a registered target'); return; }
   const types = [...selectedTypes];
   if (!types.length) { alert('Select at least one attack type'); return; }
 
@@ -297,10 +301,11 @@ async function launchSimulation() {
   try {
     const resp = await fetch('/autonomous-redteam/api/start', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({target, scope, attack_types: types,
+      body: JSON.stringify({target_id: targetId, attack_types: types,
         stealth_level: document.getElementById('art-stealth').value, auto_exploit: false})
     });
     const data = await resp.json();
+    if (!resp.ok) { throw new Error(data.error || 'Failed to start simulation'); }
     clearInterval(interval);
     document.getElementById('progress-bar').style.width = '100%';
     document.getElementById('progress-pct').textContent = '100%';
