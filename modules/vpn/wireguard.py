@@ -40,15 +40,29 @@ def _next_peer_ip(peers: list) -> str:
 
 
 def _wg_genkey() -> tuple[str, str]:
-    """Generate WireGuard keypair. Falls back to mock if wg not installed."""
+    """Generate WireGuard keypair. Falls back to a real Curve25519 keypair
+    (via python-cryptography) if the wg CLI is not installed."""
     try:
         priv = subprocess.check_output(["wg", "genkey"], text=True).strip()
         pub = subprocess.check_output(["wg", "pubkey"], input=priv, text=True).strip()
         return priv, pub
     except (FileNotFoundError, subprocess.CalledProcessError):
-        import base64, secrets
-        priv = base64.b64encode(secrets.token_bytes(32)).decode()
-        pub = base64.b64encode(secrets.token_bytes(32)).decode()
+        import base64
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        from cryptography.hazmat.primitives import serialization
+
+        key = X25519PrivateKey.generate()
+        priv_bytes = key.private_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PrivateFormat.Raw,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+        pub_bytes = key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        priv = base64.b64encode(priv_bytes).decode()
+        pub = base64.b64encode(pub_bytes).decode()
         return priv, pub
 
 
