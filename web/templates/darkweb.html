@@ -32,7 +32,26 @@
 .risk-medium{background:#FFCA2822;color:#FFCA28;border:1px solid #FFCA28}
 .risk-low{background:#66BB6A22;color:#66BB6A;border:1px solid #66BB6A}
 .risk-clean{background:#42A5F522;color:#42A5F5;border:1px solid #42A5F5}
+.sim-banner{display:flex;align-items:flex-start;gap:10px;background:rgba(255,167,38,0.1);
+  border:1px solid #FFA726;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px}
+.sim-banner .sim-icon{font-size:16px;line-height:1;flex-shrink:0}
+.sim-banner .sim-en{color:var(--text);font-weight:600}
+.sim-banner .sim-ar{color:var(--text-dim);margin-top:3px;direction:rtl;text-align:right}
+.live-badge{display:inline-flex;align-items:center;gap:5px;background:rgba(0,255,136,0.12);
+  border:1px solid #00ff88;color:#00ff88;border-radius:20px;padding:3px 10px;font-size:10px;
+  font-weight:700;text-transform:uppercase;letter-spacing:.03em}
+.live-badge .dot{width:6px;height:6px;border-radius:50%;background:#00ff88;box-shadow:0 0 6px #00ff88}
 </style>
+
+{% macro sim_banner() %}
+<div class="sim-banner">
+  <span class="sim-icon">⚠️</span>
+  <div>
+    <div class="sim-en">Simulated data — not a live scan. This tab is generated locally from a static reference list and a random/hash-seeded generator, not a real-time query. For live-queried results (HIBP, IntelligenceX, LeakCheck, AlienVault OTX), use the Continuous Monitoring tab below.</div>
+    <div class="sim-ar">بيانات محاكاة — ليست فحصاً حياً. هذا التبويب مولّد محلياً من قائمة مرجعية ثابتة ومولّد عشوائي، وليس استعلاماً حقيقياً في الوقت الفعلي. للنتائج الحية (HIBP، IntelligenceX، LeakCheck، AlienVault OTX)، استخدم تبويب «المراقبة المستمرة» أدناه.</div>
+  </div>
+</div>
+{% endmacro %}
 
 <!-- Stats row -->
 <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
@@ -57,16 +76,17 @@
 </div>
 
 <div class="tabs" style="margin-bottom:20px">
-  <button class="tab-btn active" onclick="showTab('breach')">Breach Detection</button>
+  <button class="tab-btn active" onclick="showTab('breach')">⚠️ Breach Detection</button>
   <button class="tab-btn" onclick="showTab('paste')">Paste Monitor</button>
-  <button class="tab-btn" onclick="showTab('tor')">Tor Intelligence</button>
+  <button class="tab-btn" onclick="showTab('tor')">⚠️ Tor Intelligence</button>
   <button class="tab-btn" onclick="showTab('keywords')">Keyword Alerts</button>
-  <button class="tab-btn" onclick="showTab('ransomware')">Ransomware Groups</button>
-  <button class="tab-btn" onclick="showTab('monitor')">Continuous Monitoring · المراقبة المستمرة</button>
+  <button class="tab-btn" onclick="showTab('ransomware')">⚠️ Ransomware Groups</button>
+  <button class="tab-btn" onclick="showTab('monitor')">🟢 Continuous Monitoring · المراقبة المستمرة</button>
 </div>
 
 <!-- BREACH DETECTION TAB -->
 <div id="tab-breach">
+  {{ sim_banner() }}
   <div class="grid grid-2">
     <div class="dw-card">
       <h3 style="color:#FF6B6B;margin-bottom:16px">Domain Breach Check</h3>
@@ -144,6 +164,7 @@
 
 <!-- TOR INTELLIGENCE TAB -->
 <div id="tab-tor" style="display:none">
+  {{ sim_banner() }}
   <div class="grid grid-2">
     <div class="dw-card">
       <h3 style="color:#7E57C2;margin-bottom:16px">Monitored Tor Services</h3>
@@ -234,6 +255,7 @@
 
     <div class="dw-card">
       <h3 style="color:#26C6DA;margin-bottom:16px">Generate Threat Report</h3>
+      {{ sim_banner() }}
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Generate a comprehensive dark web threat report for a domain including breach exposure, keyword hits, and ransomware mention risk.</p>
       <div style="display:flex;gap:8px;margin-bottom:16px">
         <input type="text" id="report-domain" class="form-control" placeholder="target-domain.com">
@@ -246,6 +268,7 @@
 
 <!-- RANSOMWARE GROUPS TAB -->
 <div id="tab-ransomware" style="display:none">
+  {{ sim_banner() }}
   <div class="grid grid-3">
     {% for rw in tor_monitor.ransomware_groups %}
     <div class="dw-card rw-group {{ 'rw-active' if rw.active else 'rw-inactive' }}">
@@ -270,6 +293,9 @@
 
 <!-- CONTINUOUS MONITORING TAB -->
 <div id="tab-monitor" style="display:none">
+  <div style="margin-bottom:16px">
+    <span class="live-badge"><span class="dot"></span>Live data · بيانات حية</span>
+  </div>
   <div class="grid grid-2">
     <div class="dw-card">
       <h3 style="color:#00D4AA;margin-bottom:16px">Add Target to Monitoring · إضافة هدف للمراقبة</h3>

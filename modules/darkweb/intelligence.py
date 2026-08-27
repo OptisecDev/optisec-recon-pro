@@ -87,6 +87,30 @@ _PASTE_PATTERNS = [
      "risk": "critical", "category": "malware"},
 ]
 
+# This module is a legacy mock surface: breach hits, response times and threat
+# scores below are generated locally from a static reference list plus
+# random/hash-seeded fabrication — never a real-time query against Tor hidden
+# services or a breach-intelligence feed. Every response is tagged
+# simulated=True + a bilingual note, following the `_ar`-suffixed bilingual
+# convention used elsewhere in the project (see
+# app/services/recon/recon_engine.py's SIMULATED_NOTE_EN/AR and
+# modules/quantum/encryption.py's mode="simulated"). The real, live-queried
+# surface lives in modules/darkweb/monitor.py / modules/osint/darkweb_intelligence.py
+# (HIBP, IntelligenceX, LeakCheck, AlienVault OTX) and is untouched by this tag.
+SIMULATED_NOTE_EN = (
+    "Simulated data — this response is generated locally from a static reference "
+    "list and a deterministic hash/random-seeded generator, not a real-time query "
+    "against Tor hidden services or breach-intelligence feeds. For live breach and "
+    "leak monitoring, see the Continuous Monitoring tab (HIBP, IntelligenceX, "
+    "LeakCheck, AlienVault OTX)."
+)
+SIMULATED_NOTE_AR = (
+    "بيانات محاكاة — هذه الاستجابة مولّدة محلياً من قائمة مرجعية ثابتة ومولّد عشوائي "
+    "مبذور بدالة تجزئة (hash)، وليست استعلاماً حقيقياً في الوقت الفعلي على خدمات تور "
+    "المخفية أو مصادر استخبارات الاختراقات. للمراقبة الحية للاختراقات والتسريبات، "
+    "راجع تبويب «المراقبة المستمرة» (HIBP، IntelligenceX، LeakCheck، AlienVault OTX)."
+)
+
 _SIMULATED_TOR_SERVICES = [
     {"onion": "facebookwkhpilnemxj7asber7cynu4mowqbpqfh7ihrnekp4r7eqlxkyd.onion",
      "name": "Facebook Onion", "category": "social", "status": "online", "verified": True},
@@ -154,6 +178,9 @@ def check_domain_breach(domain: str) -> dict:
         "results": results,
         "risk_level": "critical" if any(r["severity"] == "critical" for r in results)
                       else "high" if results else "low",
+        "simulated": True,
+        "note": SIMULATED_NOTE_EN,
+        "note_ar": SIMULATED_NOTE_AR,
     }
     data["breach_checks"].insert(0, check)
     data["breach_checks"] = data["breach_checks"][:100]
@@ -189,6 +216,9 @@ def check_email_breach(email: str) -> dict:
         "pwned": len(breaches) > 0,
         "high_risk": any(b["password_exposed"] for b in breaches),
         "recommendations": _email_breach_recommendations(breaches),
+        "simulated": True,
+        "note": SIMULATED_NOTE_EN,
+        "note_ar": SIMULATED_NOTE_AR,
     }
 
 
@@ -278,6 +308,9 @@ def simulate_tor_monitor() -> dict:
         "services": services,
         "marketplaces": _DARK_WEB_MARKETPLACES,
         "ransomware_groups": _RANSOMWARE_GROUPS,
+        "simulated": True,
+        "note": SIMULATED_NOTE_EN,
+        "note_ar": SIMULATED_NOTE_AR,
     }
 
 
@@ -324,4 +357,7 @@ def generate_threat_report(domain: str) -> dict:
             "Implement credential stuffing protection on login endpoints",
             "Monitor ransomware group leak sites for organizational mentions",
         ],
+        "simulated": True,
+        "note": SIMULATED_NOTE_EN,
+        "note_ar": SIMULATED_NOTE_AR,
     }
