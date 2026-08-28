@@ -34,7 +34,7 @@ async def check_target_ownership(target_id: int, user: User, db: AsyncSession) -
 
 @router.get("", response_class=HTMLResponse)
 async def art_home(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("autonomous_redteam")
+    require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import list_sessions, get_payload_library, ATTACK_PHASES
     targets = (await db.execute(
         select(Target).where(Target.user_id == user.id).order_by(Target.created_at.desc())
@@ -50,7 +50,7 @@ async def art_home(request: Request, user: User = Depends(_user), db: AsyncSessi
 
 @router.post("/api/start")
 async def start_simulation(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("autonomous_redteam")
+    require_feature_or_402("autonomous_redteam", user)
     data = await request.json()
     try:
         target_id = int(data.get("target_id"))
@@ -69,14 +69,14 @@ async def start_simulation(request: Request, user: User = Depends(_user), db: As
 
 @router.get("/api/sessions")
 async def list_sessions(user: User = Depends(_user)):
-    require_feature_or_402("autonomous_redteam")
+    require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import list_sessions
     return {"sessions": list_sessions()}
 
 
 @router.get("/api/sessions/{session_id}")
 async def get_session(session_id: str, user: User = Depends(_user)):
-    require_feature_or_402("autonomous_redteam")
+    require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import get_session
     session = get_session(session_id)
     if not session:
@@ -87,21 +87,21 @@ async def get_session(session_id: str, user: User = Depends(_user)):
 
 @router.get("/api/payload-library")
 async def payload_library(user: User = Depends(_user)):
-    require_feature_or_402("autonomous_redteam")
+    require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import get_payload_library
     return get_payload_library()
 
 
 @router.get("/api/attack-phases")
 async def attack_phases(user: User = Depends(_user)):
-    require_feature_or_402("autonomous_redteam")
+    require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import ATTACK_PHASES
     return {"phases": ATTACK_PHASES}
 
 
 @router.post("/api/generate-report/{session_id}")
 async def generate_report(session_id: str, user: User = Depends(_user)):
-    require_feature_or_402("autonomous_redteam")
+    require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import get_session, generate_pentest_report
     session = get_session(session_id)
     if not session:

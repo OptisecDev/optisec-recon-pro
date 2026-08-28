@@ -95,7 +95,7 @@ async def already_shared_values(db: AsyncSession) -> set[str]:
     description="Live IOC feed merging AlienVault OTX pulses (if OTX_API_KEY is configured) with the built-in sample feed — the receiving side of Threat Sharing.",
 )
 async def get_threat_feed(limit: int = 50, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("threat_sharing")
+    require_feature_or_402("threat_sharing", user)
     from modules.threat_intel.global_feed import get_live_ioc_feed, fetch_real_urlhaus_iocs
     from web.routers.threat_feed import _build_feed
 
@@ -118,7 +118,7 @@ async def get_threat_feed(limit: int = 50, user: User = Depends(_user), db: Asyn
     description="Whether outbound threat sharing is enabled (ENABLE_THREAT_SHARING) and whether OTX_API_KEY is configured — read this before showing any sharing UI.",
 )
 async def sharing_status(user: User = Depends(_user)):
-    require_feature_or_402("threat_sharing")
+    require_feature_or_402("threat_sharing", user)
     return JSONResponse({
         "enabled": ENABLE_THREAT_SHARING,
         "otx_configured": bool(OTX_API_KEY),
@@ -135,7 +135,7 @@ async def sharing_status(user: User = Depends(_user)):
     description="Technical IOCs collected from the honeypot (attacker IPs), dark web monitoring (public paste/leak URLs) and CISA KEV (CVEs) — candidates a user can choose to export or manually share.",
 )
 async def local_iocs(limit: int = 20, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("threat_sharing")
+    require_feature_or_402("threat_sharing", user)
     iocs = await sharing.collect_local_iocs(db, per_source_limit=limit)
     shared = await already_shared_values(db)
     for ioc in iocs:
@@ -154,7 +154,7 @@ async def export_iocs(
     user: User = Depends(_user),
     db: AsyncSession = Depends(get_db),
 ):
-    require_feature_or_402("threat_sharing")
+    require_feature_or_402("threat_sharing", user)
     iocs = await sharing.collect_local_iocs(db, per_source_limit=limit)
 
     if format == "csv":
@@ -173,7 +173,7 @@ async def export_iocs(
     description="Every past manual share attempt — success, failure, disabled, or rejected as invalid.",
 )
 async def share_history(limit: int = 50, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("threat_sharing")
+    require_feature_or_402("threat_sharing", user)
     stmt = select(ThreatShare).order_by(ThreatShare.created_at.desc()).limit(min(limit, 200))
     rows = (await db.execute(stmt)).scalars().all()
     return JSONResponse({"shares": [_share_to_dict(r) for r in rows]})
@@ -190,7 +190,7 @@ async def share_history(limit: int = 50, user: User = Depends(_user), db: AsyncS
     ),
 )
 async def share_ioc_endpoint(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("threat_sharing")
+    require_feature_or_402("threat_sharing", user)
     data = await request.json()
     ioc_type = (data.get("type") or "").strip().lower()
     value = (data.get("value") or "").strip()

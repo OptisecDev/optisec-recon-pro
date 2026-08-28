@@ -105,7 +105,7 @@ async def run_check_and_persist(monitor: DarkWebMonitor, db: AsyncSession) -> tu
     description="List every domain/email currently on the calling user's dark web monitoring watchlist.",
 )
 async def list_monitors(user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("darkweb_intel")
+    require_feature_or_402("darkweb_intel", user)
     monitors = (await db.execute(
         select(DarkWebMonitor).where(DarkWebMonitor.user_id == user.id).order_by(DarkWebMonitor.created_at.desc())
     )).scalars().all()
@@ -122,7 +122,7 @@ async def list_monitors(user: User = Depends(_user), db: AsyncSession = Depends(
     ),
 )
 async def add_monitor(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("darkweb_intel")
+    require_feature_or_402("darkweb_intel", user)
     data = await request.json()
     target = (data.get("target") or "").strip()
     if not target:
@@ -153,7 +153,7 @@ async def add_monitor(request: Request, user: User = Depends(_user), db: AsyncSe
     description="Permanently remove a monitored target and its stored alert history. Only the owning user can delete it.",
 )
 async def delete_monitor(monitor_id: int, request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("darkweb_intel")
+    require_feature_or_402("darkweb_intel", user)
     monitor = await _get_owned_monitor(monitor_id, user, db)
     await db.delete(monitor)
     await db.commit()
@@ -172,7 +172,7 @@ async def delete_monitor(monitor_id: int, request: Request, user: User = Depends
     ),
 )
 async def check_monitor(monitor_id: int, request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("darkweb_intel")
+    require_feature_or_402("darkweb_intel", user)
     monitor = await _get_owned_monitor(monitor_id, user, db)
 
     from modules.darkweb.monitor import build_arabic_alert_message
@@ -205,7 +205,7 @@ async def check_monitor(monitor_id: int, request: Request, user: User = Depends(
     summary="List stored alerts for a monitored target",
 )
 async def list_monitor_alerts(monitor_id: int, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("darkweb_intel")
+    require_feature_or_402("darkweb_intel", user)
     monitor = await _get_owned_monitor(monitor_id, user, db)
     alerts = (await db.execute(
         select(DarkWebAlert).where(DarkWebAlert.monitor_id == monitor.id).order_by(DarkWebAlert.discovered_at.desc())
@@ -219,7 +219,7 @@ async def list_monitor_alerts(monitor_id: int, user: User = Depends(_user), db: 
     description="The 20 most recent leak alerts across all of the calling user's monitored targets — powers the dashboard alert feed.",
 )
 async def recent_alerts(user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("darkweb_intel")
+    require_feature_or_402("darkweb_intel", user)
     rows = (await db.execute(
         select(DarkWebAlert, DarkWebMonitor)
         .join(DarkWebMonitor, DarkWebAlert.monitor_id == DarkWebMonitor.id)
@@ -245,6 +245,6 @@ async def recent_alerts(user: User = Depends(_user), db: AsyncSession = Depends(
     ),
 )
 async def scheduler_status(user: User = Depends(_user)):
-    require_feature_or_402("darkweb_intel")
+    require_feature_or_402("darkweb_intel", user)
     from modules.darkweb.scheduler import get_status
     return JSONResponse(get_status())

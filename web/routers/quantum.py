@@ -20,7 +20,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def quantum_home(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("quantum")
+    require_feature_or_402("quantum", user)
     from modules.quantum.encryption import get_algorithms, get_hybrid_schemes, list_keys
     return templates.TemplateResponse(request, "quantum.html", {
         "app_name": APP_NAME, "user": user, "active": "quantum",
@@ -32,14 +32,14 @@ async def quantum_home(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/algorithms")
 async def list_algorithms(user: User = Depends(_user)):
-    require_feature_or_402("quantum")
+    require_feature_or_402("quantum", user)
     from modules.quantum.encryption import get_algorithms, get_hybrid_schemes
     return {"algorithms": get_algorithms(), "hybrid_schemes": get_hybrid_schemes()}
 
 
 @router.post("/api/keypair")
 async def generate_keypair(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("quantum")
+    require_feature_or_402("quantum", user)
     data = await request.json()
     from modules.quantum.encryption import generate_keypair
     result = generate_keypair(algorithm=data.get("algorithm", "kyber768"))
@@ -50,7 +50,7 @@ async def generate_keypair(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/encapsulate")
 async def encapsulate(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("quantum")
+    require_feature_or_402("quantum", user)
     data = await request.json()
     from modules.quantum.encryption import encapsulate as _enc
     return await _enc(
@@ -64,7 +64,7 @@ async def encapsulate(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/encrypt")
 async def encrypt_data(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("quantum")
+    require_feature_or_402("quantum", user)
     data = await request.json()
     from modules.quantum.encryption import encrypt_data as _enc
     try:
@@ -78,7 +78,7 @@ async def encrypt_data(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/assess")
 async def assess_algorithm(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("quantum")
+    require_feature_or_402("quantum", user)
     data = await request.json()
     from modules.quantum.encryption import assess_crypto_strength
     return assess_crypto_strength(data.get("algorithm", ""))
@@ -86,6 +86,6 @@ async def assess_algorithm(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/keys")
 async def list_keys_api(user: User = Depends(_user)):
-    require_feature_or_402("quantum")
+    require_feature_or_402("quantum", user)
     from modules.quantum.encryption import list_keys
     return {"keys": list_keys()}

@@ -21,7 +21,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def correlations_page(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("ioc_correlations")
+    require_feature_or_402("ioc_correlations", user)
     from modules.ioc_correlation import load_cached, run_correlation
 
     data = load_cached()

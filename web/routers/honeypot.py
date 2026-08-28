@@ -150,7 +150,7 @@ async def list_events(
     user: User = Depends(_user),
     db: AsyncSession = Depends(get_db),
 ):
-    require_feature_or_402("honeypot")
+    require_feature_or_402("honeypot", user)
     since = datetime.utcnow() - timedelta(hours=hours) if hours else None
     events = await query_events(
         db, service=service, source_ip=source_ip, risk_level=risk_level,
@@ -165,7 +165,7 @@ async def list_events(
     description="Aggregated honeypot stats: totals by service/risk level, top attacker IPs/countries, and a 7-day activity heatmap for the dashboard.",
 )
 async def stats(user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("honeypot")
+    require_feature_or_402("honeypot", user)
     return JSONResponse(await compute_stats(db))
 
 
@@ -175,7 +175,7 @@ async def stats(user: User = Depends(_user), db: AsyncSession = Depends(get_db))
     description="Whether the honeypot subsystem is enabled and which of the SSH/FTP/HTTP-admin listeners are currently bound.",
 )
 async def status(user: User = Depends(_user)):
-    require_feature_or_402("honeypot")
+    require_feature_or_402("honeypot", user)
     from modules.honeypot.manager import get_status
     return JSONResponse(get_status())
 
@@ -184,7 +184,7 @@ async def status(user: User = Depends(_user)):
 
 @page_router.get("/honeypot", response_class=HTMLResponse)
 async def honeypot_page(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("honeypot")
+    require_feature_or_402("honeypot", user)
     from modules.honeypot.manager import get_status
 
     recent_events = await query_events(db, limit=50)

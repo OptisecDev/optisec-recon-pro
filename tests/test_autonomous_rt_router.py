@@ -26,27 +26,10 @@ from sqlalchemy.pool import StaticPool
 from web.database import Base
 from web.models import User, Target
 import web.routers.autonomous_rt as art_router
-import web.license as license_module
 
 
 def _run(coro):
     return asyncio.run(coro)
-
-
-def _enterprise_license() -> license_module.License:
-    """autonomous_redteam is enterprise-only; these tests are about target
-    ownership, not licensing, so give every test an always-entitled license."""
-    return license_module.License(
-        tier="enterprise", issued_to="test", email="",
-        issued_at="2026-01-01T00:00:00", expires_at="2099-01-01T00:00:00", key="TEST",
-        features=license_module.TIER_FEATURES["enterprise"],
-        max_targets=-1, max_scans_day=-1, max_users=-1,
-    )
-
-
-@pytest.fixture(autouse=True)
-def _enterprise_tier(monkeypatch):
-    monkeypatch.setattr(license_module, "get_license", _enterprise_license)
 
 
 @pytest.fixture
@@ -68,8 +51,12 @@ def db_factory():
 
 
 def _fake_user(user_id: int = 1) -> User:
+    """autonomous_redteam is enterprise-only; these tests are about target
+    ownership, not licensing, so every fake user carries an
+    always-entitled subscription_tier (web/license.py now gates per-user,
+    not off the instance-wide license)."""
     return User(id=user_id, username=f"analyst{user_id}", email=f"a{user_id}@example.com",
-                password_hash="x", role="analyst")
+                password_hash="x", role="analyst", subscription_tier="enterprise")
 
 
 class _FakeRequest:

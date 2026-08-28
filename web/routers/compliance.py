@@ -20,7 +20,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def compliance_home(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("compliance")
+    require_feature_or_402("compliance", user)
     from modules.compliance.checker import get_frameworks
     return templates.TemplateResponse(request, "compliance.html", {
         "app_name": APP_NAME, "user": user, "active": "compliance",
@@ -30,14 +30,14 @@ async def compliance_home(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/frameworks")
 async def list_frameworks(user: User = Depends(_user)):
-    require_feature_or_402("compliance")
+    require_feature_or_402("compliance", user)
     from modules.compliance.checker import get_frameworks
     return get_frameworks()
 
 
 @router.get("/api/frameworks/{framework}/controls")
 async def framework_controls(framework: str, user: User = Depends(_user)):
-    require_feature_or_402("compliance")
+    require_feature_or_402("compliance", user)
     from modules.compliance.checker import get_framework_controls
     controls = get_framework_controls(framework)
     if not controls:
@@ -48,7 +48,7 @@ async def framework_controls(framework: str, user: User = Depends(_user)):
 
 @router.post("/api/assess")
 async def assess(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("compliance")
+    require_feature_or_402("compliance", user)
     data = await request.json()
     from modules.compliance.checker import assess_target
     target = data.get("target_url") or data.get("target", "")
@@ -61,7 +61,7 @@ async def assess(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/probe")
 async def probe_target(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("compliance")
+    require_feature_or_402("compliance", user)
     data = await request.json()
     from modules.compliance.checker import auto_probe_target
     target = data.get("target_url") or data.get("target", "")

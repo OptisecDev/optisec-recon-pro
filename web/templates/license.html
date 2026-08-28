@@ -169,7 +169,7 @@
       </thead>
       <tbody>
         {% for feat_id, feat_label in features %}
-        <tr class="{% if lic.has_feature(feat_id) %}lic-row-active{% endif %}">
+        <tr class="{% if user_has_feature(user, feat_id) %}lic-row-active{% endif %}">
           <td>
             <div style="font-size:13px;font-weight:500;color:var(--text)">{{ feat_label }}</div>
             <div style="font-size:10px;color:var(--text-dim);font-family:monospace">{{ feat_id }}</div>

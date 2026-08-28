@@ -20,7 +20,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def darkweb_home(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     from modules.darkweb.intelligence import simulate_tor_monitor, get_monitored_keywords, get_breach_intelligence
 
     monitors = (await db.execute(
@@ -46,7 +46,7 @@ async def darkweb_home(request: Request, user: User = Depends(_user), db: AsyncS
 
 @router.post("/api/check-domain")
 async def check_domain(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import check_domain_breach
     return check_domain_breach(data.get("domain", ""))
@@ -54,7 +54,7 @@ async def check_domain(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/check-email")
 async def check_email(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import check_email_breach
     return check_email_breach(data.get("email", ""))
@@ -62,7 +62,7 @@ async def check_email(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/scan-paste")
 async def scan_paste(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     content = data.get("content", "")
     if not content.strip():
@@ -73,7 +73,7 @@ async def scan_paste(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/add-keyword")
 async def add_keyword(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import add_keyword_alert
     return add_keyword_alert(
@@ -84,14 +84,14 @@ async def add_keyword(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/keywords")
 async def get_keywords(user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     from modules.darkweb.intelligence import get_monitored_keywords
     return {"keywords": get_monitored_keywords()}
 
 
 @router.post("/api/threat-report")
 async def threat_report(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import generate_threat_report
     return generate_threat_report(data.get("domain", ""))
@@ -99,13 +99,13 @@ async def threat_report(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/tor-monitor")
 async def tor_monitor(user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     from modules.darkweb.intelligence import simulate_tor_monitor
     return simulate_tor_monitor()
 
 
 @router.get("/api/breach-intel")
 async def breach_intel(user: User = Depends(_user)):
-    require_feature_or_402("osint_darkweb")
+    require_feature_or_402("osint_darkweb", user)
     from modules.darkweb.intelligence import get_breach_intelligence
     return get_breach_intelligence()

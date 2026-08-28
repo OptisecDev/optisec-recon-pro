@@ -19,7 +19,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def ngfw_home(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("ngfw")
+    require_feature_or_402("ngfw", user)
     from modules.firewall.ngfw_v2 import get_traffic_stats, get_geo_block_list, DPI_SIGNATURES
     return templates.TemplateResponse(request, "ngfw.html", {
         "app_name": APP_NAME, "user": user, "active": "ngfw",
@@ -31,7 +31,7 @@ async def ngfw_home(request: Request, user: User = Depends(_user)):
 
 @router.post("/api/inspect")
 async def inspect(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("ngfw")
+    require_feature_or_402("ngfw", user)
     data = await request.json()
     from modules.firewall.ngfw_v2 import deep_inspect
     return deep_inspect(
@@ -47,14 +47,14 @@ async def inspect(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/stats")
 async def traffic_stats(user: User = Depends(_user)):
-    require_feature_or_402("ngfw")
+    require_feature_or_402("ngfw", user)
     from modules.firewall.ngfw_v2 import get_traffic_stats
     return get_traffic_stats()
 
 
 @router.post("/api/simulate-traffic")
 async def simulate_traffic(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("ngfw")
+    require_feature_or_402("ngfw", user)
     data = await request.json()
     n = min(int(data.get("count", 20)), 50)
     from modules.firewall.ngfw_v2 import simulate_traffic_burst
@@ -64,13 +64,13 @@ async def simulate_traffic(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/geo-blocks")
 async def geo_blocks(user: User = Depends(_user)):
-    require_feature_or_402("ngfw")
+    require_feature_or_402("ngfw", user)
     from modules.firewall.ngfw_v2 import get_geo_block_list
     return get_geo_block_list()
 
 
 @router.get("/api/rules")
 async def get_rules(user: User = Depends(_user)):
-    require_feature_or_402("ngfw")
+    require_feature_or_402("ngfw", user)
     from modules.firewall.ngfw_v2 import DPI_SIGNATURES
     return {"rules": DPI_SIGNATURES, "total": len(DPI_SIGNATURES)}

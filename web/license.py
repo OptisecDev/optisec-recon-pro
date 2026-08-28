@@ -322,30 +322,93 @@ def deactivate_license() -> None:
 
 
 # ─── Feature Gate Helper ──────────────────────────────────────────────────────
+#
+# There are two independent gates in this module:
+#
+#   - require_feature_or_402(feature, user) -- PER-USER. Checks the
+#     requesting account's own users.subscription_tier (web.models.User,
+#     upgraded by redeeming a LicenseKey via web/routers/license_routes.py).
+#     This is what every authenticated route should call: a free-tier user
+#     must not reach pro/enterprise features just because *some* user on
+#     the installation, or the installation itself, holds a paid tier.
+#
+#   - require_instance_feature_or_402(feature) -- INSTANCE-WIDE. Checks the
+#     signed key in data/license.json (get_license(), activated via the
+#     /license admin page). There is no per-user identity to check this
+#     against for machine-to-machine calls (e.g. peer nodes hitting
+#     /api/federation/* with a shared node key, not a user JWT) -- for
+#     those, whether the *installation* has the feature enabled is the
+#     only question that makes sense.
+#
+# Do not use the instance-wide gate for user-facing routes: it was the
+# root cause of every free-tier account silently getting pro/enterprise
+# access whenever the installation had a paid instance license active.
 
-def require_feature(feature: str) -> tuple[bool, str]:
-    """Return (allowed, upgrade_message). Use in route handlers."""
-    lic = get_license()
-    if lic.has_feature(feature):
+def user_tier(user) -> str:
+    """The subscription tier `user` is actually entitled to. `user` may be
+    None (unauthenticated/template context with no session) -- treated as
+    free tier, same as an unrecognized tier value."""
+    tier = getattr(user, "subscription_tier", None) or "free"
+    return tier if tier in TIER_FEATURES else "free"
+
+
+def user_has_feature(user, feature: str) -> bool:
+    """True if `user`'s own subscription_tier includes `feature`. Shared by
+    require_feature_or_402() and the template layer (base.html, license.html)
+    so the lock icons/feature table shown to a user always match what the
+    402 gate actually enforces for that same account."""
+    features = TIER_FEATURES[user_tier(user)]
+    return "*" in features or feature in features
+
+
+def require_feature(feature: str, user) -> tuple[bool, str]:
+    """Return (allowed, upgrade_message) for `user`'s own subscription_tier.
+    Use in route handlers alongside require_feature_or_402."""
+    tier = user_tier(user)
+    if user_has_feature(user, feature):
         return True, ""
     label = FEATURE_LABELS.get(feature, feature)
-    if lic.tier == "free":
-        return False, f'"{label}" requires PRO or ENTERPRISE license.'
-    if lic.tier == "pro":
-        return False, f'"{label}" requires ENTERPRISE license.'
-    return False, f'"{label}" is not available in your plan.'
+    if tier == "free":
+        return False, f'"{label}" requires a PRO or ENTERPRISE subscription.'
+    if tier == "pro":
+        return False, f'"{label}" requires an ENTERPRISE subscription.'
+    return False, f'"{label}" is not available on your subscription.'
 
 
-def require_feature_or_402(feature: str) -> None:
-    """Route guard: raise HTTPException(402) when the active license tier
-    doesn't include `feature`. Mirrors web.auth.require_roles's inline-call
-    pattern (e.g. require_analyst_or_admin(user)) -- call this alongside,
-    not instead of, any RBAC guard the route already has. The two gates are
-    independent: RBAC checks who the user is, this checks what the
-    installation's license tier is entitled to.
+def require_feature_or_402(feature: str, user) -> None:
+    """Route guard: raise HTTPException(402) when `user`'s own
+    subscription_tier doesn't include `feature`. Mirrors
+    web.auth.require_roles's inline-call pattern (e.g.
+    require_analyst_or_admin(user)) -- call this alongside, not instead of,
+    any RBAC guard the route already has. The two gates are independent:
+    RBAC checks who the user is, this checks what tier that specific
+    account is subscribed to. See the module-level note above for why this
+    is per-user rather than instance-wide.
     """
     from fastapi import HTTPException
 
-    allowed, message = require_feature(feature)
+    allowed, message = require_feature(feature, user)
     if not allowed:
+        raise HTTPException(status_code=402, detail=message)
+
+
+def require_instance_feature_or_402(feature: str) -> None:
+    """Route guard for machine-to-machine endpoints with no user identity
+    (e.g. /api/federation/ping, /api/federation/execute, authenticated by
+    a shared node key instead of a user JWT): raise HTTPException(402)
+    when the *installation's* instance-wide license (data/license.json)
+    doesn't include `feature`. Do not use this for user-facing routes --
+    use require_feature_or_402(feature, user) instead.
+    """
+    from fastapi import HTTPException
+
+    lic = get_license()
+    if not lic.has_feature(feature):
+        label = FEATURE_LABELS.get(feature, feature)
+        if lic.tier == "free":
+            message = f'"{label}" requires PRO or ENTERPRISE license.'
+        elif lic.tier == "pro":
+            message = f'"{label}" requires ENTERPRISE license.'
+        else:
+            message = f'"{label}" is not available in your plan.'
         raise HTTPException(status_code=402, detail=message)

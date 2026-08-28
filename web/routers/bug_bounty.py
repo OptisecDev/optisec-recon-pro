@@ -20,7 +20,7 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 
 @router.get("", response_class=HTMLResponse)
 async def bug_bounty_home(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     return templates.TemplateResponse(request, "bug_bounty.html", {
         "app_name": APP_NAME, "user": user, "active": "bug_bounty",
     })
@@ -30,28 +30,28 @@ async def bug_bounty_home(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/hackerone/programs")
 async def h1_programs(keyword: str = "", limit: int = 20, user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     from modules.bug_bounty.hackerone import search_programs
     return await search_programs(keyword, limit)
 
 
 @router.get("/api/hackerone/scope/{handle}")
 async def h1_scope(handle: str, user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     from modules.bug_bounty.hackerone import get_program_scope
     return await get_program_scope(handle)
 
 
 @router.get("/api/hackerone/reports")
 async def h1_reports(state: str = "all", user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     from modules.bug_bounty.hackerone import get_my_reports
     return await get_my_reports(state)
 
 
 @router.post("/api/hackerone/submit")
 async def h1_submit(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     data = await request.json()
     from modules.bug_bounty.hackerone import submit_report
     return await submit_report(
@@ -69,21 +69,21 @@ async def h1_submit(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/bugcrowd/programs")
 async def bc_programs(user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     from modules.bug_bounty.bugcrowd import bc_list_programs
     return await bc_list_programs()
 
 
 @router.get("/api/bugcrowd/targets/{code}")
 async def bc_targets(code: str, user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     from modules.bug_bounty.bugcrowd import bc_get_targets
     return await bc_get_targets(code)
 
 
 @router.post("/api/bugcrowd/submit")
 async def bc_submit(request: Request, user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     data = await request.json()
     from modules.bug_bounty.bugcrowd import bc_submit_report
     return await bc_submit_report(
@@ -98,14 +98,14 @@ async def bc_submit(request: Request, user: User = Depends(_user)):
 
 @router.get("/api/intigriti/programs")
 async def ig_programs(user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     from modules.bug_bounty.bugcrowd import ig_list_programs
     return await ig_list_programs()
 
 
 @router.get("/api/intigriti/program/{handle}")
 async def ig_program(handle: str, user: User = Depends(_user)):
-    require_feature_or_402("bug_bounty")
+    require_feature_or_402("bug_bounty", user)
     from modules.bug_bounty.bugcrowd import ig_get_program
     return await ig_get_program(handle)
 
