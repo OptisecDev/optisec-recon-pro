@@ -125,6 +125,8 @@ async def create_draft(db: AsyncSession, *, user: User, payload: dict, finding: 
     if not merged.get("title") or not merged.get("description"):
         raise ValueError("title and description are required (either supply them or derive from finding_id)")
 
+    cve_pipeline.validate_credits(merged.get("credits"))
+
     row = CveDraft(
         draft_ref=cve_pipeline.new_draft_ref(),
         user_id=user.id,
@@ -199,6 +201,8 @@ async def cve_draft(request: Request, user: User = Depends(_user), db: AsyncSess
 
     try:
         row = await create_draft(db, user=user, payload=data, finding=finding)
+    except cve_pipeline.InvalidCveDraftField as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -244,7 +248,10 @@ async def cve_draft_export(draft_id: int, user: User = Depends(_user), db: Async
     if row is None:
         raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
 
-    record = cve_pipeline.build_cve_json_5(_draft_to_dict(row))
+    try:
+        record = cve_pipeline.build_cve_json_5(_draft_to_dict(row))
+    except cve_pipeline.InvalidCveDraftField as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
     row.status = "exported"
     row.exported_at = datetime.utcnow()

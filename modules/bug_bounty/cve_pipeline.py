@@ -121,6 +121,44 @@ def draft_from_finding(finding: dict) -> dict:
     }
 
 
+class InvalidCveDraftField(ValueError):
+    """A draft field's shape doesn't match what CVE JSON 5.0 export expects.
+    A ValueError subclass so existing `except ValueError` handling still
+    catches it, but distinct enough that a caller (see
+    web/routers/cve_submission.py) can map it to 422 specifically instead
+    of a generic 400/500."""
+
+
+def validate_credits(credits) -> None:
+    """Validate the CVE draft `credits` field's shape before it's persisted
+    (create_draft) or rendered (build_cve_json_5). A CVE JSON 5.0 credits
+    entry is an object, e.g. {"name": "Jane Doe", "type": "finder"} -- not
+    a bare string. Passing e.g. ["Jane Doe", "John Smith"] used to reach
+    build_cve_json_5's `c.get("name", "")` and raise an unhandled
+    AttributeError (surfaced as a 500) since a str has no .get(). None/
+    omitted is fine (treated as no credits)."""
+    if credits is None:
+        return
+    if not isinstance(credits, list):
+        raise InvalidCveDraftField(
+            "credits must be a list of objects shaped like "
+            '{"name": "...", "type": "finder"}, got '
+            f"{type(credits).__name__}"
+        )
+    for i, entry in enumerate(credits):
+        if not isinstance(entry, dict):
+            raise InvalidCveDraftField(
+                f"credits[{i}] must be an object shaped like "
+                '{"name": "...", "type": "finder"}, got '
+                f"{type(entry).__name__} ({entry!r}) — a plain list of name strings is not accepted"
+            )
+        if not isinstance(entry.get("name"), str) or not entry.get("name").strip():
+            raise InvalidCveDraftField(
+                f'credits[{i}] is missing a non-empty string "name" field, e.g. '
+                '{"name": "Jane Doe", "type": "finder"}'
+            )
+
+
 def build_cve_json_5(draft: dict) -> dict:
     """Render a draft (as a dict of CveDraft fields) as a CVE JSON 5.0
     CVE Record. `cveId`/`assignerOrgId` are left as TBD placeholders since no
@@ -128,6 +166,7 @@ def build_cve_json_5(draft: dict) -> dict:
     time, which this tool does not perform."""
     references = draft.get("references") or []
     credits = draft.get("credits") or []
+    validate_credits(credits)
     versions = draft.get("versions_affected") or [{"version": "unspecified", "status": "affected"}]
 
     problem_type = draft.get("problem_type") or ""

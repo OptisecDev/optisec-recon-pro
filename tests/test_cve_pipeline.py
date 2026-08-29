@@ -20,12 +20,15 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import web.app as app_module
 import web.database as database
-from web.database import Base
+from web.database import Base, get_db
 from web.models import User, Target, Scan, Finding, CveDraft
+from web.auth import create_access_token, hash_password
 import modules.bug_bounty.cve_pipeline as pipeline
 import web.routers.cve_submission as cve_router
 
@@ -295,6 +298,46 @@ class TestBuildCveJson5:
         record = pipeline.build_cve_json_5(self._base_draft(cna_org=None))
         assert record["containers"]["cna"]["providerMetadata"]["shortName"] == "TBD"
 
+    def test_plain_string_list_credits_rejected_not_500(self):
+        """The bug this closes: credits sent as a bare list of name strings
+        (["name1", "name2"]) instead of [{"name": ...}, ...] used to reach
+        `c.get("name", "")` on a str and raise an unhandled AttributeError."""
+        with pytest.raises(pipeline.InvalidCveDraftField):
+            pipeline.build_cve_json_5(self._base_draft(credits=["name1", "name2"]))
+
+
+# ── 5b. validate_credits — shape guard for the `credits` draft field ──────
+
+class TestValidateCredits:
+    def test_none_is_accepted(self):
+        pipeline.validate_credits(None)  # must not raise
+
+    def test_empty_list_is_accepted(self):
+        pipeline.validate_credits([])  # must not raise
+
+    def test_well_formed_entries_accepted(self):
+        pipeline.validate_credits([{"name": "Jane Doe", "type": "finder"}, {"name": "John Smith"}])
+
+    def test_plain_string_list_rejected(self):
+        with pytest.raises(pipeline.InvalidCveDraftField, match="object"):
+            pipeline.validate_credits(["Jane Doe", "John Smith"])
+
+    def test_non_list_rejected(self):
+        with pytest.raises(pipeline.InvalidCveDraftField):
+            pipeline.validate_credits("Jane Doe")
+
+    def test_dict_missing_name_rejected(self):
+        with pytest.raises(pipeline.InvalidCveDraftField, match="name"):
+            pipeline.validate_credits([{"type": "finder"}])
+
+    def test_entry_with_non_string_name_rejected(self):
+        with pytest.raises(pipeline.InvalidCveDraftField):
+            pipeline.validate_credits([{"name": 123}])
+
+    def test_is_a_value_error_subclass(self):
+        """So existing `except ValueError` call sites still catch it."""
+        assert issubclass(pipeline.InvalidCveDraftField, ValueError)
+
 
 # ── 6. search_nvd — read-only lookup, mocked HTTP, never raises ───────────
 
@@ -490,6 +533,30 @@ class TestCreateDraft:
                 )
         assert _run(go()).status == "draft"
 
+    def test_rejects_plain_string_list_credits(self, db):
+        async def go():
+            user = await _seed_user(db)
+            async with db() as db_:
+                await cve_router.create_draft(
+                    db_, user=user,
+                    payload={"title": "A", "description": "d", "credits": ["Jane Doe", "John Smith"]},
+                    finding=None,
+                )
+        with pytest.raises(pipeline.InvalidCveDraftField):
+            _run(go())
+
+    def test_accepts_well_formed_credits(self, db):
+        async def go():
+            user = await _seed_user(db)
+            async with db() as db_:
+                return await cve_router.create_draft(
+                    db_, user=user,
+                    payload={"title": "A", "description": "d", "credits": [{"name": "Jane Doe", "type": "finder"}]},
+                    finding=None,
+                )
+        row = _run(go())
+        assert row.credits == [{"name": "Jane Doe", "type": "finder"}]
+
 
 class TestListDrafts:
     def test_lists_only_requesting_users_drafts(self, db):
@@ -615,3 +682,77 @@ class TestNoLiveSubmissionCapability:
     def test_router_has_no_submit_route(self):
         paths = {getattr(r, "path", "") for r in cve_router.router.routes}
         assert not any("submit" in p for p in paths)
+
+
+# ── 10. POST /api/cve/draft — end-to-end HTTP: malformed credits is 422 ────
+
+class TestCveDraftEndpointCreditsValidation:
+    """The bug this closes surfaces over real HTTP as an unhandled 500 (an
+    AttributeError from build_cve_json_5 leaking past FastAPI's exception
+    handling) whenever it was hit at export time; create_draft's new
+    validate_credits() call means it's now caught at creation time instead,
+    as a real 422 with a clear message -- proven here through the actual
+    TestClient/HTTP stack, not just the pure functions above."""
+
+    @pytest.fixture
+    def client(self):
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
+        session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+        async def _setup():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+        _run(_setup())
+
+        async def override_get_db():
+            async with session_factory() as session:
+                yield session
+
+        app_module.app.dependency_overrides[get_db] = override_get_db
+        c = TestClient(app_module.app)
+        yield c, session_factory
+        app_module.app.dependency_overrides.pop(get_db, None)
+        _run(engine.dispose())
+
+    def _token(self, session_factory) -> str:
+        async def go():
+            async with session_factory() as db_:
+                user = User(
+                    username="cve_user", email="cve_user@example.com",
+                    password_hash=hash_password("Passw0rd!1"),
+                    role="analyst", subscription_tier="pro", is_active=True,
+                )
+                db_.add(user)
+                await db_.commit()
+                await db_.refresh(user)
+                return user.id
+        user_id = _run(go())
+        return create_access_token(user_id, "analyst")
+
+    def test_plain_string_list_credits_returns_422_not_500(self, client):
+        c, session_factory = client
+        token = self._token(session_factory)
+        resp = c.post(
+            "/api/cve/draft",
+            json={"title": "XSS in Foo", "description": "desc", "credits": ["Jane Doe", "John Smith"]},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 422, resp.text
+        # web/app.py's HTTPException handler reshapes detail as {"error": ...}
+        assert "name" in resp.json()["error"] or "object" in resp.json()["error"]
+
+    def test_well_formed_credits_returns_200(self, client):
+        c, session_factory = client
+        token = self._token(session_factory)
+        resp = c.post(
+            "/api/cve/draft",
+            json={"title": "XSS in Foo", "description": "desc",
+                  "credits": [{"name": "Jane Doe", "type": "finder"}]},
+            cookies={"access_token": token},
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["draft_ref"]
