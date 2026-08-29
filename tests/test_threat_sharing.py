@@ -405,9 +405,59 @@ class TestShareIoc:
         result = _run(sharing.share_ioc(ioc_type="ip", value="not-an-ip", enabled=True, api_key="key"))
         assert result["status"] == "invalid"
 
-    def test_missing_api_key_fails_gracefully(self):
+    def test_explicit_empty_api_key_short_circuits_as_not_configured(self):
         result = _run(sharing.share_ioc(ioc_type="ip", value="1.2.3.4", enabled=True, api_key=""))
+        assert result["status"] == "not_configured"
+
+    def test_config_resolved_empty_api_key_fails_gracefully(self, monkeypatch):
+        """api_key omitted entirely (production call shape) falls back to
+        config.OTX_API_KEY; if that's unset/empty, still fails cleanly
+        instead of attempting a network call."""
+        monkeypatch.setattr("config.OTX_API_KEY", "")
+        result = _run(sharing.share_ioc(ioc_type="ip", value="1.2.3.4", enabled=True))
         assert result["status"] == "failed"
+
+    def test_explicit_none_api_key_never_hits_network_or_reads_config(self, monkeypatch):
+        """The incident this closes: a caller passing api_key=None meaning
+        "don't share" must short-circuit before config.OTX_API_KEY is even
+        imported/read, and must never reach share_ioc_to_otx() (so no live
+        OTX POST is ever made). Sets config.OTX_API_KEY to a real-looking
+        value first, so if the None short-circuit regressed back to
+        falling through to the config default, this would both share
+        with a real key AND (via the share_ioc_to_otx spy below) get
+        caught immediately.
+        """
+        monkeypatch.setattr("config.OTX_API_KEY", "should-never-be-read")
+        called = []
+        monkeypatch.setattr(sharing, "share_ioc_to_otx", lambda *a, **kw: called.append((a, kw)))
+
+        result = _run(sharing.share_ioc(ioc_type="ip", value="1.2.3.4", enabled=True, api_key=None))
+        assert result["status"] == "not_configured"
+        assert called == [], "share_ioc_to_otx (the OTX HTTP call) must never be invoked"
+
+    def test_explicit_real_api_key_still_shares_normally(self, monkeypatch):
+        """Non-regression: passing an actual explicit key must keep working
+        exactly as before this fix."""
+        monkeypatch.setattr(
+            sharing, "share_ioc_to_otx",
+            lambda *a, **kw: {"success": True, "pulse_id": "real1", "pulse_url": "https://x/real1"},
+        )
+        result = _run(sharing.share_ioc(ioc_type="ip", value="1.2.3.4", enabled=True, api_key="real-key-123"))
+        assert result["status"] == "success"
+        assert result["pulse_id"] == "real1"
+
+    def test_api_key_omitted_falls_back_to_config(self, monkeypatch):
+        """Non-regression for the real production call path
+        (web/routers/threat_sharing.py never passes api_key at all) --
+        omitting the argument must still resolve from config.OTX_API_KEY,
+        unlike an explicit None/""."""
+        monkeypatch.setattr("config.OTX_API_KEY", "configured-key")
+        monkeypatch.setattr(
+            sharing, "share_ioc_to_otx",
+            lambda key, *a, **kw: {"success": True, "pulse_id": "p2", "pulse_url": "https://x/p2"} if key == "configured-key" else {"success": False, "error": "wrong key"},
+        )
+        result = _run(sharing.share_ioc(ioc_type="ip", value="1.2.3.4", enabled=True))
+        assert result["status"] == "success"
 
     def test_success_path(self, monkeypatch):
         monkeypatch.setattr(sharing, "share_ioc_to_otx",

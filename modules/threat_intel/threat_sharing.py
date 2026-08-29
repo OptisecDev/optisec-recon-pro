@@ -316,20 +316,43 @@ def share_ioc_to_otx(api_key: str, ioc_type: str, value: str, *, tlp: str = "AMB
         return {"success": False, "error": str(exc)}
 
 
+_UNSET = object()  # sentinel: "api_key not passed at all -- fall back to config.OTX_API_KEY"
+
+
 async def share_ioc(
     *, ioc_type: str, value: str, source_module: str = "manual",
     severity: str = "MEDIUM", tlp: str = "AMBER", description: str = "",
-    enabled: Optional[bool] = None, api_key: Optional[str] = None,
+    enabled: Optional[bool] = None, api_key: Optional[str] = _UNSET,
 ) -> dict:
     """The single entry point for an explicit, human-triggered share
     action. Always returns a result dict describing what happened; never
-    raises. `enabled`/`api_key` default to config.ENABLE_THREAT_SHARING /
-    config.OTX_API_KEY but can be overridden (used by tests)."""
+    raises. `enabled` defaults to config.ENABLE_THREAT_SHARING but can be
+    overridden (used by tests).
+
+    `api_key` has three states, and the distinction matters: omitting it
+    entirely (the production call path, web/routers/threat_sharing.py)
+    falls back to config.OTX_API_KEY, same as before. Passing an explicit
+    falsy value (None or "") short-circuits immediately -- before
+    config.OTX_API_KEY is ever imported or read -- and is treated as a
+    real "do not share" no-op, never a live OTX call. This used to be a
+    single `api_key: Optional[str] = None` parameter, where an explicit
+    `api_key=None` meant to disable sharing instead fell through to the
+    same `if api_key is None: from config import OTX_API_KEY` branch as
+    "not passed", silently loading and using the real configured key and
+    creating live public OTX pulses. Only an actual non-empty string
+    (real or fake) reaches share_ioc_to_otx() below."""
     import asyncio as _asyncio
+
+    if api_key is None or api_key == "":
+        return {
+            "status": "not_configured",
+            "message_en": "No OTX API key was provided — sharing was not attempted.",
+            "message_ar": "لم يتم توفير مفتاح OTX API — لم تتم محاولة المشاركة.",
+        }
 
     if enabled is None:
         from config import ENABLE_THREAT_SHARING as enabled
-    if api_key is None:
+    if api_key is _UNSET:
         from config import OTX_API_KEY as api_key
 
     if not enabled:
