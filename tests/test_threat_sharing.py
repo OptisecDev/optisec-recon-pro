@@ -391,6 +391,92 @@ class TestShareIocToOtx:
         assert called == []  # never even attempted the HTTP call
 
 
+# ── TLP policy: what "public" actually gets sent to OTX, per TLP level ─────
+
+class TestTlpPublicFieldByLevel:
+    """validate_ioc()/share_ioc() used to apply no TLP logic at all --
+    TLP:RED was published exactly like TLP:WHITE ("public": true
+    unconditionally). Only TLP:WHITE/CLEAR may ever be sent as a public
+    OTX pulse; TLP:GREEN/AMBER must be private; TLP:RED must never be
+    shared with OTX at all."""
+
+    def _sent_payload(self, monkeypatch, tlp: str) -> dict:
+        captured = {}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            captured.update(json or {})
+            return _FakeResponse(200, {"id": "pulseX"})
+
+        monkeypatch.setattr(sharing.requests, "post", fake_post)
+        sharing.share_ioc_to_otx("fake-key", "ip", "1.2.3.4", tlp=tlp)
+        return captured
+
+    def test_tlp_white_is_public(self, monkeypatch):
+        payload = self._sent_payload(monkeypatch, "WHITE")
+        assert payload["public"] is True
+        assert payload["TLP"] == "WHITE"
+
+    def test_tlp_clear_is_public(self, monkeypatch):
+        """CLEAR is the current FIRST.org name for the level historically
+        called WHITE -- must be treated identically."""
+        payload = self._sent_payload(monkeypatch, "CLEAR")
+        assert payload["public"] is True
+
+    def test_tlp_green_is_not_public(self, monkeypatch):
+        payload = self._sent_payload(monkeypatch, "GREEN")
+        assert payload["public"] is False
+        assert payload["TLP"] == "GREEN"
+
+    def test_tlp_amber_is_not_public(self, monkeypatch):
+        payload = self._sent_payload(monkeypatch, "AMBER")
+        assert payload["public"] is False
+        assert payload["TLP"] == "AMBER"
+
+    def test_tlp_red_would_not_be_public_if_it_ever_reached_otx(self, monkeypatch):
+        """share_ioc() rejects TLP:RED before this function is ever called
+        (see TestShareIocRejectsTlpRed below) -- this only guards
+        share_ioc_to_otx() itself against ever marking RED public if
+        called directly."""
+        payload = self._sent_payload(monkeypatch, "RED")
+        assert payload["public"] is False
+
+
+class TestShareIocRejectsTlpRed:
+    """share_ioc() -- the actual entry point used by the API -- must refuse
+    to share a TLP:RED indicator at all, with zero network calls, no
+    matter how "shareable" every other input looks (enabled, valid IOC,
+    real API key)."""
+
+    def test_red_is_rejected_before_any_network_call(self, monkeypatch):
+        called = []
+        monkeypatch.setattr(sharing, "share_ioc_to_otx", lambda *a, **kw: called.append(1))
+        result = _run(sharing.share_ioc(
+            ioc_type="ip", value="1.2.3.4", enabled=True, api_key="real-key", tlp="RED",
+        ))
+        assert result["status"] == "tlp_restricted"
+        assert called == []
+
+    def test_red_lowercase_is_also_rejected(self, monkeypatch):
+        called = []
+        monkeypatch.setattr(sharing, "share_ioc_to_otx", lambda *a, **kw: called.append(1))
+        result = _run(sharing.share_ioc(
+            ioc_type="ip", value="1.2.3.4", enabled=True, api_key="real-key", tlp="red",
+        ))
+        assert result["status"] == "tlp_restricted"
+        assert called == []
+
+    @pytest.mark.parametrize("tlp", ["WHITE", "CLEAR", "GREEN", "AMBER"])
+    def test_non_red_levels_still_share_normally(self, monkeypatch, tlp):
+        monkeypatch.setattr(
+            sharing, "share_ioc_to_otx",
+            lambda *a, **kw: {"success": True, "pulse_id": "p", "pulse_url": "https://x/p"},
+        )
+        result = _run(sharing.share_ioc(
+            ioc_type="ip", value="1.2.3.4", enabled=True, api_key="real-key", tlp=tlp,
+        ))
+        assert result["status"] == "success"
+
+
 # ── 5. share_ioc — the opt-in gate + validation + OTX call ────────────────
 
 class TestShareIoc:

@@ -281,6 +281,32 @@ def build_csv(iocs: list[dict]) -> str:
     return buf.getvalue()
 
 
+# ── TLP (Traffic Light Protocol) sharing policy ─────────────────────────────
+#
+# Standard TLP levels, most to least shareable. "CLEAR" is the current
+# FIRST.org name for the level historically called "WHITE" -- both are
+# accepted as synonyms.
+_TLP_PUBLIC_ALLOWED = {"WHITE", "CLEAR"}   # may be published as a fully public OTX pulse
+_TLP_BLOCKS_PUBLIC = {"GREEN", "AMBER"}    # may be shared, but never as a public pulse
+_TLP_REJECTED = {"RED"}                    # eyes-only: must never leave this circle at all
+
+
+def _normalize_tlp(tlp: str) -> str:
+    return (tlp or "").strip().upper()
+
+
+def tlp_allows_public_pulse(tlp: str) -> bool:
+    """Whether `tlp` may be published as a fully public OTX pulse.
+    Unrecognized values are treated as non-public (the safer default)."""
+    return _normalize_tlp(tlp) in _TLP_PUBLIC_ALLOWED
+
+
+def tlp_blocks_sharing(tlp: str) -> bool:
+    """Whether `tlp` must never be shared with an external platform at all,
+    public or private (TLP:RED — eyes only)."""
+    return _normalize_tlp(tlp) in _TLP_REJECTED
+
+
 # ── Outbound sharing (AlienVault OTX) ──────────────────────────────────────
 
 def _headers(api_key: str) -> dict:
@@ -289,7 +315,14 @@ def _headers(api_key: str) -> dict:
 
 def share_ioc_to_otx(api_key: str, ioc_type: str, value: str, *, tlp: str = "AMBER", description: str = "") -> dict:
     """Create a single-indicator OTX pulse. Never raises — network/HTTP
-    errors are captured in the return dict."""
+    errors are captured in the return dict.
+
+    The pulse's `public` field follows the TLP level: only TLP:WHITE/CLEAR
+    is ever published as a public pulse. TLP:GREEN and TLP:AMBER are
+    created as a private (public=False) pulse, visible only to this OTX
+    account. TLP:RED must never reach this function at all -- share_ioc()
+    rejects it before any network call is attempted; see tlp_blocks_sharing().
+    """
     otx_type = _OTX_INDICATOR_TYPE.get(ioc_type)
     if not otx_type:
         return {"success": False, "error": f"Unsupported IOC type for OTX: {ioc_type}"}
@@ -297,8 +330,8 @@ def share_ioc_to_otx(api_key: str, ioc_type: str, value: str, *, tlp: str = "AMB
     payload = {
         "name": f"OPTISEC Community Share — {ioc_type}:{value[:60]}",
         "description": description or "Shared via OPTISEC Recon Pro Threat Sharing module.",
-        "public": True,
-        "TLP": tlp.upper(),
+        "public": tlp_allows_public_pulse(tlp),
+        "TLP": _normalize_tlp(tlp),
         "indicators": [{"indicator": value, "type": otx_type}],
     }
     try:
@@ -365,6 +398,16 @@ async def share_ioc(
     valid, err = validate_ioc(ioc_type, value)
     if not valid:
         return {"status": "invalid", "message_en": err, "message_ar": f"مؤشر غير صالح للمشاركة: {err}"}
+
+    if tlp_blocks_sharing(tlp):
+        return {
+            "status": "tlp_restricted",
+            "message_en": (
+                f"TLP:{_normalize_tlp(tlp)} indicators are eyes-only and must not leave this "
+                "installation — sharing to an external platform is not permitted at any TLP:RED level."
+            ),
+            "message_ar": f"مؤشرات TLP:{_normalize_tlp(tlp)} مقيّدة للاطلاع الداخلي فقط — لا يمكن مشاركتها مع أي منصة خارجية.",
+        }
 
     if not api_key:
         return {
