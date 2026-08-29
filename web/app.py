@@ -45,8 +45,9 @@ from web.auth import (
 from web.websocket_manager import ws_manager
 from web.license import (
     get_license, reload_license, activate_license, deactivate_license,
-    generate_license_key, FEATURE_LABELS, TIER_FEATURES, user_has_feature,
+    generate_license_key, FEATURE_LABELS, TIER_FEATURES,
 )
+from web.shared_templates import register_template_globals
 
 from modules.recon.subdomains import enumerate_subdomains
 from modules.recon.dns_lookup import dns_lookup
@@ -334,8 +335,7 @@ The `/api/nlp` endpoint accepts commands in **Arabic or English**:
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-templates.env.globals["get_license"] = get_license
-templates.env.globals["user_has_feature"] = user_has_feature
+register_template_globals(templates)
 
 
 # ─── Custom Swagger UI (OPTISEC Dark Theme) ───────────────────────────────────
