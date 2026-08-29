@@ -343,6 +343,34 @@ class TestThreatActors:
         assert "domain" in dw._otx_indicator_url(TEST_DOMAIN)
         assert "domain" in dw._otx_indicator_url(TEST_EMAIL)
 
+    def test_generic_adversary_text_is_not_a_confirmed_threat_actor(self, monkeypatch):
+        """Regression for a confirmed false positive: OTX's free-text
+        `adversary` field returned "Artificial Intelligence" — a generic
+        topic phrase, not a named threat actor — which was previously
+        trusted outright and fed straight into the exposure score."""
+        monkeypatch.setattr(dw, "OTX_API_KEY", "fake-key")
+        _patch_session(monkeypatch, _const_responder(_FakeResponse(200, {
+            "pulse_info": {
+                "count": 2,
+                "pulses": [
+                    {"name": "General AI trends", "adversary": "Artificial Intelligence"},
+                    {"name": "Real APT campaign", "adversary": "APT99"},
+                ],
+            },
+        })))
+        result = _run(dw._query_threat_actors(TEST_DOMAIN))
+        assert result["threat_actors"] == ["APT99"]
+        assert result["unverified_adversary_mentions"] == ["Artificial Intelligence"]
+
+    def test_looks_like_threat_actor_name_heuristics(self):
+        assert dw._looks_like_threat_actor_name("APT99") is True
+        assert dw._looks_like_threat_actor_name("FIN7") is True
+        assert dw._looks_like_threat_actor_name("Lazarus Group") is True
+        assert dw._looks_like_threat_actor_name("Fancy Bear") is True
+        assert dw._looks_like_threat_actor_name("Artificial Intelligence") is False
+        assert dw._looks_like_threat_actor_name("This is a long generic text excerpt from a pulse") is False
+        assert dw._looks_like_threat_actor_name("") is False
+
 
 # ── 8. Dark Web Exposure Score ─────────────────────────────────────────────────
 

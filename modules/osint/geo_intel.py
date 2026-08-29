@@ -74,7 +74,7 @@ async def _query_ip_api(ip: str) -> dict:
             "org": d.get("org"),
             "asn": d.get("as"),
             "lat": d.get("lat"),
-            "lon": d.get("lng"),
+            "lon": d.get("lon"),
             "timezone": d.get("timezone"),
             "proxy": d.get("proxy", False),
             "hosting": d.get("hosting", False),

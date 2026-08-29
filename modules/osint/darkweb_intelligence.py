@@ -506,18 +506,61 @@ def _otx_indicator_url(target: str) -> str:
     return OTX_INDICATOR_DOMAIN_URL.format(domain=_email_domain(t))
 
 
+# OTX's `adversary` field is free text authored by whoever submitted the
+# pulse — it is frequently a generic descriptive phrase (e.g. "Artificial
+# Intelligence", a topic tag bleeding into the wrong field) rather than an
+# actual named threat actor. Only treat it as a confirmed threat-actor
+# mention when it matches a known naming convention; anything else is kept
+# separately as an unverified mention rather than silently trusted.
+_RE_ACTOR_CODE = re.compile(r"^(APT|UNC|TA|FIN|UAC|G)[\s-]?\d{1,4}$", re.I)
+_RE_ACTOR_ACRONYM = re.compile(r"^[A-Z]{2,6}\d{0,3}$")
+_RE_ACTOR_SUFFIX = re.compile(
+    r".*\b(Group|Team|Panda|Bear|Kitten|Spider|Tiger|Chollima|Wolf|Ocelot)$", re.I
+)
+_MAX_ACTOR_NAME_LEN = 40
+
+
+def _looks_like_threat_actor_name(name: str) -> bool:
+    """Heuristic check for whether an OTX pulse's `adversary` string
+    resembles a real threat-actor codename rather than generic free text.
+
+    Accepts: APT/UNC/TA/FIN-style numeric codes (APT28, UNC1151), short
+    all-caps acronyms (FIN7, TA505), names ending in a common threat-actor
+    suffix (Lazarus Group, Fancy Bear, Charming Kitten), or a single
+    capitalized word (Turla, Sandworm, Kimsuky). Rejects long strings and
+    multi-word generic phrases, which is what a free-text excerpt from an
+    unrelated pulse tag looks like.
+    """
+    if not name:
+        return False
+    name = name.strip()
+    if not name or len(name) > _MAX_ACTOR_NAME_LEN:
+        return False
+    if _RE_ACTOR_CODE.match(name) or _RE_ACTOR_ACRONYM.match(name) or _RE_ACTOR_SUFFIX.match(name):
+        return True
+    words = name.split()
+    if len(words) == 1 and name.isalpha() and name[0].isupper():
+        return True
+    return False
+
+
 async def _query_threat_actors(target: str) -> dict:
     """
     Query AlienVault OTX for pulses that reference `target` (or its domain,
     if `target` is an email) as an indicator, surfacing associated threat
     actors, malware families and campaigns.
 
-    Returns {source, available, target, threat_actors, malware_families,
-    campaigns, pulse_count, error}. Never raises.
+    Returns {source, available, target, threat_actors,
+    unverified_adversary_mentions, malware_families, campaigns, pulse_count,
+    error}. `threat_actors` only includes adversary values that match a
+    known threat-actor naming convention (see _looks_like_threat_actor_name);
+    everything else lands in `unverified_adversary_mentions` instead of
+    being trusted outright. Never raises.
     """
     if not OTX_API_KEY:
         return {"source": "threat_actors", "available": False, "target": target,
-                "threat_actors": [], "malware_families": [], "campaigns": [],
+                "threat_actors": [], "unverified_adversary_mentions": [],
+                "malware_families": [], "campaigns": [],
                 "pulse_count": 0, "error": "requires API key (OTX_API_KEY)"}
 
     url = _otx_indicator_url(target)
@@ -526,25 +569,32 @@ async def _query_threat_actors(target: str) -> dict:
             async with session.get(url) as resp:
                 if resp.status == 404:
                     return {"source": "threat_actors", "available": True, "target": target,
-                            "threat_actors": [], "malware_families": [], "campaigns": [],
+                            "threat_actors": [], "unverified_adversary_mentions": [],
+                            "malware_families": [], "campaigns": [],
                             "pulse_count": 0, "error": None}
                 resp.raise_for_status()
                 data = await resp.json()
     except aiohttp.ClientError as exc:
         return {"source": "threat_actors", "available": True, "target": target,
-                "threat_actors": [], "malware_families": [], "campaigns": [],
+                "threat_actors": [], "unverified_adversary_mentions": [],
+                "malware_families": [], "campaigns": [],
                 "pulse_count": 0, "error": str(exc)}
 
     pulse_info = (data or {}).get("pulse_info") or {}
     pulses = pulse_info.get("pulses") or []
 
     threat_actors: set[str] = set()
+    unverified_adversary_mentions: set[str] = set()
     malware_families: set[str] = set()
     campaigns: set[str] = set()
     for pulse in pulses:
         adversary = pulse.get("adversary")
         if adversary:
-            threat_actors.add(adversary)
+            adversary = adversary.strip()
+            if _looks_like_threat_actor_name(adversary):
+                threat_actors.add(adversary)
+            else:
+                unverified_adversary_mentions.add(adversary)
         for family in pulse.get("malware_families") or []:
             name = family.get("display_name") if isinstance(family, dict) else family
             if name:
@@ -556,6 +606,12 @@ async def _query_threat_actors(target: str) -> dict:
     return {
         "source": "threat_actors", "available": True, "target": target,
         "threat_actors": sorted(threat_actors),
+        # Adversary values from OTX pulses that failed the naming-convention
+        # check above — surfaced for transparency, but never rolled into
+        # `threat_actors` or the exposure score since their quality is
+        # unverified (raw community-authored free text, not a confirmed
+        # threat-actor identification).
+        "unverified_adversary_mentions": sorted(unverified_adversary_mentions),
         "malware_families": sorted(malware_families),
         "campaigns": sorted(campaigns),
         "pulse_count": pulse_info.get("count", len(pulses)),

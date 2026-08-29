@@ -434,6 +434,7 @@ async function runUsername() {
     const d = await API.post('/api/osint/username', {username});
     prog.style.display = 'none';
     const found = d.found || [];
+    const unverified = d.unverified || [];
     result.innerHTML = `
       <div class="osint-result-card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -452,6 +453,17 @@ async function runUsername() {
               <span class="badge badge-low">Found</span>
             </div>`).join('') : '<div style="color:var(--text-dim)">No profiles found on checked platforms</div>'}
         </div>
+        ${unverified.length ? `
+        <div style="margin-top:12px">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">UNVERIFIED — CHECK MANUALLY (${unverified.length})</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px">${esc(d.unverified_note || '')}</div>
+          ${unverified.map(p=>`
+            <div class="platform-found" style="background:rgba(255,255,255,.04);border-color:var(--border)">
+              <span style="font-weight:600;min-width:100px">${esc(p.platform)}</span>
+              <a href="${esc(p.url)}" target="_blank" class="platform-url">${esc(p.url)}</a>
+              <span class="badge badge-medium">Unverified</span>
+            </div>`).join('')}
+        </div>` : ''}
         <div style="margin-top:10px">
           <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">USERNAME VARIATIONS TO CHECK</div>
           <div style="font-family:monospace;font-size:11px;line-height:1.8;color:var(--text-dim)">${(d.variations||[]).join(' · ')}</div>
