@@ -95,6 +95,16 @@ class TestPlatformList:
                           "Steam", "Replit", "Spotify", "HackTheBox"):
             assert by_name[platform] == "unverified", platform
 
+    def test_twitter_x_is_unverified(self):
+        """Regression: a live re-check (2026-08-31) confirmed x.com now
+        serves a pure client-rendered shell for both real and nonexistent
+        usernames (HTTP 200 either way, no server-rendered distinguishing
+        content) — status-code detection is no longer reliable here, even
+        though it was previously trusted as "status" mode."""
+        by_name = {name: mode for name, _, mode in uf.PLATFORMS}
+        assert by_name["Twitter/X"] == "unverified"
+        assert "Twitter/X" in uf._UNVERIFIED_REASONS
+
 
 class TestCheckPlatform:
     def test_unverified_mode_never_hits_the_network(self, monkeypatch):

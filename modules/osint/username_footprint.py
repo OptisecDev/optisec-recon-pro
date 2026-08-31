@@ -12,6 +12,14 @@ that are blocked by anti-bot protection on automated requests (Cloudflare
 403/challenge — GitLab/Quora/PlayStation/Fiverr/Upwork/PyPI) are marked
 "unverified": we cannot confirm existence for them automatically, so they
 are never reported as FOUND, regardless of what status code they return.
+
+Re-verified 2026-08-31: x.com (Twitter/X) now also returns HTTP 200 for a
+confirmed-nonexistent username — the profile page is a pure client-rendered
+shell (no server-rendered <title>, no distinguishing og:title, identical
+markup between a real and a fake handle) — so it moved from "status" to
+"unverified". Platform detection reliability can regress as sites change
+their rendering; re-check periodically rather than trusting this list
+indefinitely.
 """
 
 import asyncio
@@ -32,7 +40,7 @@ PLATFORMS: list[tuple] = [
     ("GitHub",        "https://github.com/{u}",                       "status"),
     ("GitLab",        "https://gitlab.com/{u}",                       "unverified"),
     ("BitBucket",     "https://bitbucket.org/{u}",                    "status"),
-    ("Twitter/X",     "https://x.com/{u}",                            "status"),
+    ("Twitter/X",     "https://x.com/{u}",                            "unverified"),
     ("Instagram",     "https://www.instagram.com/{u}/",               "unverified"),
     ("TikTok",        "https://www.tiktok.com/@{u}",                  "unverified"),
     ("YouTube",       "https://www.youtube.com/@{u}",                 "status"),
@@ -92,6 +100,7 @@ _BLOCKED_REASON = (
 
 _UNVERIFIED_REASONS: dict[str, str] = {
     "GitLab": _BLOCKED_REASON,
+    "Twitter/X": _SPA_REASON,
     "Instagram": _SPA_REASON,
     "TikTok": _SPA_REASON,
     "Twitch": _SPA_REASON,
