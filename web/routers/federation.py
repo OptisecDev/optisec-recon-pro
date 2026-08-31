@@ -155,7 +155,12 @@ async def federation_execute(request: Request, x_federation_key: Optional[str] =
     data = await request.json()
     return {
         "task_id": data.get("task_id"),
-        "status": "accepted",
+        "status": "accepted_stub",
         "target": data.get("target"),
         "scan_types": data.get("scan_types"),
+        "note": (
+            "This node acknowledged the task but does not yet run remote "
+            "execution — no scan is performed and no results will become "
+            "available for this task_id. Remote execution is unimplemented."
+        ),
     }
