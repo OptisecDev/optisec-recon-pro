@@ -14,6 +14,7 @@ from app.api.v1.schemas import (
     TimelineEntry,
 )
 from app.core.config import AUDIT_LOG_ADMIN_PASSWORD
+from app.core.rate_limit import enforce_rate_limit
 from app.db.session import get_eternal_db
 from app.models.eternal.audit_log import AuditLog
 from app.models.eternal.recon_artifact import ReconArtifact
@@ -26,6 +27,14 @@ _security = HTTPBasic()
 
 
 def _require_admin(credentials: HTTPBasicCredentials = Depends(_security)) -> str:
+    """Shared auth gate for every Eternal Core v1 endpoint.
+
+    Eternal Core has no per-user account system of its own (no signup, no
+    session/cookie auth) -- AUDIT_LOG_ADMIN_PASSWORD is the one operator
+    secret this subsystem defines, originally wired only to /audit/logs.
+    scan/history/simulate previously had no auth at all, so this is reused
+    here rather than inventing a second secret/env var.
+    """
     valid = AUDIT_LOG_ADMIN_PASSWORD and secrets.compare_digest(
         credentials.password, AUDIT_LOG_ADMIN_PASSWORD
     )
@@ -47,7 +56,11 @@ async def _log_action(db: AsyncSession, request: Request, action: str, user_id: 
 
 @router.post("/scan", response_model=ScanResponse)
 async def run_scan(
-    payload: ScanRequest, request: Request, db: AsyncSession = Depends(get_eternal_db)
+    payload: ScanRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_eternal_db),
+    _rate: None = Depends(enforce_rate_limit),
+    _admin: str = Depends(_require_admin),
 ):
     session_id = uuid.uuid4()
     target = Target(input_type=payload.type, input_value=payload.value, session_id=session_id)
@@ -80,7 +93,11 @@ async def run_scan(
 
 @router.get("/history/{target_id}", response_model=list[TimelineEntry])
 async def get_history(
-    target_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_eternal_db)
+    target_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_eternal_db),
+    _rate: None = Depends(enforce_rate_limit),
+    _admin: str = Depends(_require_admin),
 ):
     timeline = await query_timeline(target_id, db)
     await _log_action(db, request, action=f"history:{target_id}")
@@ -89,7 +106,11 @@ async def get_history(
 
 @router.post("/simulate/{target_id}", response_model=list[SimulationStepResponse])
 async def run_simulation(
-    target_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_eternal_db)
+    target_id: uuid.UUID,
+    request: Request,
+    db: AsyncSession = Depends(get_eternal_db),
+    _rate: None = Depends(enforce_rate_limit),
+    _admin: str = Depends(_require_admin),
 ):
     target = await db.get(Target, target_id)
     if target is None:
@@ -102,7 +123,9 @@ async def run_simulation(
 
 @router.get("/audit/logs", response_model=list[AuditLogEntry])
 async def get_audit_logs(
-    db: AsyncSession = Depends(get_eternal_db), _admin: str = Depends(_require_admin)
+    db: AsyncSession = Depends(get_eternal_db),
+    _rate: None = Depends(enforce_rate_limit),
+    _admin: str = Depends(_require_admin),
 ):
     result = await db.execute(select(AuditLog).order_by(AuditLog.created_at.desc()))
     return result.scalars().all()
