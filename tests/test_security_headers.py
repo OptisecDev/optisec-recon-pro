@@ -64,6 +64,28 @@ def test_content_type_options_and_frame_options_always_set(client):
     assert resp.headers["X-Frame-Options"] == "DENY"
 
 
+def test_csp_denies_by_default_and_allowlists_only_jsdelivr(client):
+    resp = client.get("/login")
+    csp = resp.headers["Content-Security-Policy"]
+    assert "default-src 'none'" in csp
+    assert "frame-ancestors 'none'" in csp
+    assert "object-src 'none'" in csp
+    assert "base-uri 'self'" in csp
+    assert "form-action 'self'" in csp
+    # The only third-party origin the app actually loads anywhere.
+    assert "https://cdn.jsdelivr.net" in csp
+    # No eval-requiring code anywhere in the frontend, so this must stay out.
+    assert "unsafe-eval" not in csp
+
+
+def test_csp_set_on_every_response_not_just_templated_pages(client):
+    # /docs and /redoc build raw HTMLResponse strings, not TemplateResponse —
+    # confirm the middleware still covers them.
+    for path in ("/login", "/register", "/docs", "/redoc"):
+        resp = client.get(path)
+        assert "Content-Security-Policy" in resp.headers
+
+
 def test_permissions_policy_set(client):
     resp = client.get("/login")
     policy = resp.headers["Permissions-Policy"]

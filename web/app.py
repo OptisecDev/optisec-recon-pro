@@ -512,18 +512,49 @@ app.include_router(license_routes.page_router)
 
 
 # ─── Security response headers ─────────────────────────────────────────────────
-# CSP and the COOP/COEP/CORP trio are deliberately NOT set here: several pages
-# load third-party CDN scripts (chart.js, swagger-ui-dist, redoc) and templates
-# use inline <script> blocks throughout, so a source allowlist needs a full
-# per-template audit and live-render verification before it can ship safely —
-# tracked separately rather than guessed at here. The headers below are safe,
-# low-risk defaults with no such allowlisting dependency.
+# CSP source list was built from an actual audit of all 33 web/templates/*.html
+# + web/static/js/main.js + the inline /docs and /redoc HTML in this file, not
+# guessed:
+#   - cdn.jsdelivr.net is the ONLY third-party origin loaded anywhere (chart.js,
+#     swagger-ui-dist, redoc) — grepped every src=/href= for a non-relative URL.
+#   - 'unsafe-inline' is required for script-src and style-src: 261 inline
+#     on{click,change,keydown,...}= handlers across 28 templates, plus inline
+#     <style> blocks and style="" attributes throughout, and /docs's inline
+#     SwaggerUIBundle(...) init script. Removing these needs a real
+#     addEventListener refactor across the whole frontend — out of scope here,
+#     tracked separately. Nonces don't help with the on*= attribute form, only
+#     with <script> tag content, so they wouldn't remove the need for
+#     'unsafe-inline' anyway without that refactor.
+#   - 'unsafe-eval' is NOT included — grepped for eval(/new Function(/string-arg
+#     setTimeout(, none found in any template or main.js.
+#   - img-src/font-src allow data: only (favicon, WireGuard QR PNG, swagger-ui's
+#     own embedded icon/font data: URIs) — no external image or font host.
+#   - connect-src includes cdn.jsdelivr.net defensively for swagger-ui-dist/
+#     redoc's own internal chunk loading; every fetch() in main.js is a
+#     relative same-origin path, and scan.html's WebSocket is built from
+#     location.host, both covered by 'self'.
+# COOP/COEP/CORP are still NOT set — separate from CSP, tracked separately.
+_CSP = (
+    "default-src 'none'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self' https://cdn.jsdelivr.net; "
+    "frame-src 'none'; "
+    "frame-ancestors 'none'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = _CSP
     response.headers["Permissions-Policy"] = (
         "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
     )
