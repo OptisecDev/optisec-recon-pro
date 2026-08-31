@@ -569,6 +569,43 @@ class TestGatherDarkwebIntelligence:
         assert result["exposure"]["score"] == 0
         assert result["exposure"]["exposure_level"] == "Clean"
 
+    def test_incident_reproduction_generic_otx_pulse_does_not_mark_compromised(self, monkeypatch):
+        """End-to-end regression for the documented incident: scanning
+        test@example.com against a real-shaped OTX response whose only
+        pulse has adversary="Artificial Intelligence" (a generic topic
+        phrase, unrelated to the target) previously got folded straight
+        into `threat_actors` and pushed the exposure score into the
+        "Compromised" band with zero real evidence. Every other source is
+        clean/unavailable here, so the only way this target could end up
+        "Compromised" is if that generic OTX phrase is still being trusted."""
+        monkeypatch.setattr(dw, "HIBP_API_KEY", "")
+        monkeypatch.setattr(dw, "INTELX_API_KEY", "")
+        monkeypatch.setattr(dw, "RAPIDAPI_KEY", "")
+        monkeypatch.setattr(dw, "LEAKLOOKUP_API_KEY", "")
+        monkeypatch.setattr(dw, "OTX_API_KEY", "fake-key")
+        monkeypatch.setattr(dw, "_query_psbdmp", lambda t: _ok(source="psbdmp", pastes=[]))
+        monkeypatch.setattr(dw, "_query_github_secrets", lambda t: _ok(source="github_secrets", exposures=[]))
+
+        # _query_threat_actors is left real (unmocked) — only its HTTP call
+        # is faked — so this exercises the actual filtering logic, not a
+        # canned stand-in.
+        _patch_session(monkeypatch, _const_responder(_FakeResponse(200, {
+            "pulse_info": {
+                "count": 1,
+                "pulses": [
+                    {"name": "General AI trends roundup", "adversary": "Artificial Intelligence"},
+                ],
+            },
+        })))
+
+        result = _run(dw.gather_darkweb_intelligence(TEST_EMAIL))
+
+        assert result["threat_actors"] == []
+        assert result["threat_actor_detail"]["unverified_adversary_mentions"] == ["Artificial Intelligence"]
+        assert result["exposure"]["score"] == 0
+        assert result["exposure"]["exposure_level"] == "Clean"
+        assert result["exposure"]["exposure_level"] != "Compromised"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
