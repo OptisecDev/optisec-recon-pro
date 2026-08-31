@@ -28,6 +28,8 @@ from typing import Any
 
 import aiohttp
 
+from modules.threat_intel.actor_naming import looks_like_threat_actor_name as _looks_like_threat_actor_name
+
 logger = logging.getLogger("osint.darkweb_intel")
 
 HIBP_API_KEY = os.environ.get("HIBP_API_KEY", "")
@@ -510,38 +512,10 @@ def _otx_indicator_url(target: str) -> str:
 # pulse — it is frequently a generic descriptive phrase (e.g. "Artificial
 # Intelligence", a topic tag bleeding into the wrong field) rather than an
 # actual named threat actor. Only treat it as a confirmed threat-actor
-# mention when it matches a known naming convention; anything else is kept
+# mention when it matches a known naming convention (see
+# modules/threat_intel/actor_naming.py, shared with otx_feed.py so every
+# consumer of this field applies the same check); anything else is kept
 # separately as an unverified mention rather than silently trusted.
-_RE_ACTOR_CODE = re.compile(r"^(APT|UNC|TA|FIN|UAC|G)[\s-]?\d{1,4}$", re.I)
-_RE_ACTOR_ACRONYM = re.compile(r"^[A-Z]{2,6}\d{0,3}$")
-_RE_ACTOR_SUFFIX = re.compile(
-    r".*\b(Group|Team|Panda|Bear|Kitten|Spider|Tiger|Chollima|Wolf|Ocelot)$", re.I
-)
-_MAX_ACTOR_NAME_LEN = 40
-
-
-def _looks_like_threat_actor_name(name: str) -> bool:
-    """Heuristic check for whether an OTX pulse's `adversary` string
-    resembles a real threat-actor codename rather than generic free text.
-
-    Accepts: APT/UNC/TA/FIN-style numeric codes (APT28, UNC1151), short
-    all-caps acronyms (FIN7, TA505), names ending in a common threat-actor
-    suffix (Lazarus Group, Fancy Bear, Charming Kitten), or a single
-    capitalized word (Turla, Sandworm, Kimsuky). Rejects long strings and
-    multi-word generic phrases, which is what a free-text excerpt from an
-    unrelated pulse tag looks like.
-    """
-    if not name:
-        return False
-    name = name.strip()
-    if not name or len(name) > _MAX_ACTOR_NAME_LEN:
-        return False
-    if _RE_ACTOR_CODE.match(name) or _RE_ACTOR_ACRONYM.match(name) or _RE_ACTOR_SUFFIX.match(name):
-        return True
-    words = name.split()
-    if len(words) == 1 and name.isalpha() and name[0].isupper():
-        return True
-    return False
 
 
 async def _query_threat_actors(target: str) -> dict:

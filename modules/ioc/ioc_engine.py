@@ -41,6 +41,8 @@ from urllib.parse import urlparse
 
 from sqlalchemy import select
 
+from modules.threat_intel.actor_naming import looks_like_threat_actor_name
+
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -320,8 +322,13 @@ class IOCEngine:
             raw_by_source[source_name] = raw
             if raw.get("malware"):
                 tags.append(f"malware_family:{raw['malware']}")
-            if raw.get("adversary"):
-                tags.append(f"campaign:{raw['adversary']}")
+            # `adversary` is free text from the source (e.g. OTX's pulse
+            # `adversary` field) and frequently a generic phrase rather than
+            # a real threat actor — see modules/threat_intel/actor_naming.py.
+            # Only tag it as an attributed campaign when it passes that check.
+            adversary = (raw.get("adversary") or "").strip()
+            if looks_like_threat_actor_name(adversary):
+                tags.append(f"campaign:{adversary}")
 
         weight_total = sum(w for _, w in weighted) or 1.0
         confidence_score = round(sum(s * w for s, w in weighted) / weight_total, 2)
@@ -387,8 +394,11 @@ class IOCEngine:
             tags = []
             if item.get("pulse_name"):
                 tags.append(f"pulse:{item['pulse_name']}")
-            if item.get("adversary"):
-                tags.append(f"campaign:{item['adversary']}")
+            # See modules/threat_intel/actor_naming.py — only a validated
+            # threat-actor name earns a "campaign:" tag here.
+            adversary = (item.get("adversary") or "").strip()
+            if looks_like_threat_actor_name(adversary):
+                tags.append(f"campaign:{adversary}")
 
             if self.repository is not None:
                 await self.repository.upsert(

@@ -395,6 +395,21 @@ class TestEnrichIoc:
         assert "malware_family:Emotet" in record["tags"]
         assert "campaign:APT28" in record["tags"]
 
+    def test_generic_adversary_text_does_not_become_a_campaign_tag(self):
+        """Regression for the documented adversary-field incident: a
+        source's free-text `adversary` value (e.g. OTX's pulse field
+        returning "Artificial Intelligence") must not be trusted as a
+        confirmed campaign tag — see modules/threat_intel/actor_naming.py."""
+        engine = IOCEngine(source_clients={
+            "virustotal_domain": lambda d: {"verdict": "MALICIOUS", "score": 100},
+        })
+        record = _run(engine.enrich_ioc(
+            "evil.com", "domain",
+            additional_sources={"otx": {"score": 50, "malware": "Emotet", "adversary": "Artificial Intelligence"}},
+        ))
+        assert "malware_family:Emotet" in record["tags"]
+        assert not any(t.startswith("campaign:") for t in record["tags"])
+
     def test_ignores_falsy_additional_source_entries(self):
         engine = IOCEngine(source_clients={
             "abuseipdb_ip": lambda ip: {"verdict": "CLEAN", "score": 5},

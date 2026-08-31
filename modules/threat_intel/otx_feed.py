@@ -7,6 +7,8 @@ from typing import Optional
 
 import requests
 
+from modules.threat_intel.actor_naming import looks_like_threat_actor_name
+
 logger = logging.getLogger(__name__)
 
 # Simple in-memory cache: {api_key_prefix: (timestamp, iocs)}
@@ -94,7 +96,15 @@ def fetch_otx_pulses(api_key: str, limit: int = 50) -> list:
             pulse_created = pulse.get("created", "")
             pulse_modified = pulse.get("modified", "")
             author = pulse.get("author_name", "OTX")
-            adversary = pulse.get("adversary", "")
+            # See modules/threat_intel/actor_naming.py: OTX's `adversary`
+            # field is free text and frequently a generic phrase rather than
+            # a real threat-actor name — only the "adversary" key below is
+            # trusted for scoring/tagging by downstream consumers
+            # (ioc_correlation.py, ioc_engine.py); anything that fails the
+            # check lands in "unverified_adversary" instead, for display only.
+            adversary_raw = (pulse.get("adversary") or "").strip()
+            adversary = adversary_raw if looks_like_threat_actor_name(adversary_raw) else ""
+            unverified_adversary = adversary_raw if adversary_raw and not adversary else ""
 
             for indicator in pulse.get("indicators", []):
                 raw_type = indicator.get("type", "")
@@ -118,6 +128,7 @@ def fetch_otx_pulses(api_key: str, limit: int = 50) -> list:
                     "pulse_name": pulse_name,
                     "title": title,
                     "adversary": adversary,
+                    "unverified_adversary": unverified_adversary,
                     "first_seen": indicator.get("created", pulse_created),
                     "last_seen": pulse_modified or pulse_created,
                     "tags": pulse.get("tags", []),
@@ -153,7 +164,10 @@ def _score_indicator(indicator: dict, pulse: dict) -> int:
         base = min(100, base + 5)
     if len(pulse.get("targeted_countries", [])) > 3:
         base = min(100, base + 5)
-    if pulse.get("adversary"):
+    # Only a validated threat-actor name earns the confidence bonus — a
+    # generic phrase in the free-text `adversary` field (e.g. "Artificial
+    # Intelligence") must not inflate the score. See actor_naming.py.
+    if looks_like_threat_actor_name((pulse.get("adversary") or "").strip()):
         base = min(100, base + 8)
 
     return base

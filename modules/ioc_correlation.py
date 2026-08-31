@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from modules.threat_intel.actor_naming import looks_like_threat_actor_name
 from modules.threat_intel.global_feed import _SAMPLE_IOCS, FEED_SOURCES
 
 DATA_FILE = Path("data/ioc_correlations.json")
@@ -100,6 +101,21 @@ def _ip_subnet(ip: str) -> Optional[str]:
     if len(parts) == 4:
         return ".".join(parts[:3]) + ".0/24"
     return None
+
+
+def _verified_adversary(ioc: dict) -> str:
+    """Return the IOC's `adversary` value only if it passes
+    looks_like_threat_actor_name(), else "".
+
+    Defense-in-depth alongside the filtering already applied at the source
+    in otx_feed.fetch_otx_pulses(): correlate_iocs()/_compute_cluster_score()
+    are also called directly in tests and could receive IOC dicts from a
+    future source that hasn't been filtered upstream, so clustering/scoring/
+    pattern-detection here must not trust a raw `adversary` string either —
+    see modules/threat_intel/actor_naming.py for why (a generic phrase like
+    "Artificial Intelligence" previously inflated threat scores)."""
+    adv = (ioc.get("adversary") or "").strip()
+    return adv if looks_like_threat_actor_name(adv) else ""
 
 
 # ── IOC collection ────────────────────────────────────────────────────────────
@@ -203,7 +219,7 @@ def correlate_iocs(iocs: List[dict]) -> List[dict]:
     # ── Strategy 2: adversary attribution ────────────────────────────────────
     by_adversary: Dict[str, List[dict]] = defaultdict(list)
     for ioc in iocs:
-        adv = (ioc.get("adversary") or "").strip()
+        adv = _verified_adversary(ioc)
         if adv:
             by_adversary[adv].append(ioc)
 
@@ -227,8 +243,8 @@ def correlate_iocs(iocs: List[dict]) -> List[dict]:
 
     # Malware clusters (min 1 IOC — every family gets a cluster)
     for malware_name, members in sorted(by_malware.items()):
-        # Find unique adversaries in this cluster
-        adversaries = list({i.get("adversary", "") for i in members if i.get("adversary")})
+        # Find unique verified adversaries in this cluster
+        adversaries = list({_verified_adversary(i) for i in members if _verified_adversary(i)})
         adversary   = adversaries[0] if adversaries else ""
 
         # IOC-type breakdown
@@ -283,7 +299,7 @@ def correlate_iocs(iocs: List[dict]) -> List[dict]:
     for subnet, members in sorted(subnet_map.items()):
         if len(members) < 2:
             continue
-        adversaries = list({i.get("adversary", "") for i in members if i.get("adversary")})
+        adversaries = list({_verified_adversary(i) for i in members if _verified_adversary(i)})
         adversary   = adversaries[0] if adversaries else ""
         score       = _compute_cluster_score(members, adversary)
         clusters.append({
@@ -362,7 +378,7 @@ def _detect_patterns(iocs: List[dict]) -> List[str]:
         patterns.append("multi-hash: same file across hash types")
     if len([i for i in iocs if i["type"] in IP_TYPES]) >= 3:
         patterns.append("botnet / distributed C2 infrastructure")
-    if any(i.get("adversary") for i in iocs):
+    if any(_verified_adversary(i) for i in iocs):
         patterns.append("attributed threat actor activity")
     sources = {i["source"] for i in iocs}
     if len(sources) > 1:
