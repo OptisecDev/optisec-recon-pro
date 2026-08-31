@@ -848,6 +848,24 @@ async def landing_page(request: Request):
 
 # ─── Auth Routes ──────────────────────────────────────────────────────────────
 
+def _safe_next_path(next_url: str) -> str:
+    """Reject anything but a same-origin relative path, so /login?next=...
+    can't be turned into an open redirect (CWE-601) after a real login —
+    mirrors the exact bypass payloads modules/vuln/open_redirect.py itself
+    tests other sites for: protocol-relative //evil.com, backslash variants,
+    and absolute URLs with a scheme."""
+    from urllib.parse import unquote, urlparse
+    if not next_url:
+        return "/"
+    for candidate in (next_url, unquote(next_url)):
+        if not candidate.startswith("/") or candidate.startswith("//") or "\\" in candidate:
+            return "/"
+        parsed = urlparse(candidate)
+        if parsed.scheme or parsed.netloc:
+            return "/"
+    return next_url
+
+
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request, next: str = "/", error: str = ""):
     token = request.cookies.get("access_token")
@@ -859,7 +877,7 @@ async def login_page(request: Request, next: str = "/", error: str = ""):
         except Exception:
             pass
     return templates.TemplateResponse(request, "login.html", {
-        "app_name": APP_NAME, "next": next, "error": error,
+        "app_name": APP_NAME, "next": _safe_next_path(next), "error": error,
     })
 
 
@@ -911,7 +929,7 @@ async def login_submit(
         _cleanup_stale_initial_creds("demo")
 
     token = create_access_token(user.id, user.role)
-    response = RedirectResponse(next or "/", status_code=302)
+    response = RedirectResponse(_safe_next_path(next), status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
     return response
 
