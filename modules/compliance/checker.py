@@ -189,6 +189,22 @@ def _normalize_framework(framework: str) -> str:
     return fw
 
 
+# Controls whose compliance question is really "is HTTPS/TLS used in transit?" —
+# an objectively verifiable network fact, not a judgment call. For these,
+# auto_probe_target()'s live finding is authoritative over the self-reported answer.
+HTTPS_LINKED_CHECKS = {
+    "data_in_transit_encryption",  # NIST PR.DS-02
+    "strong_cryptography",         # PCI DSS Req 4 (protect data in transit)
+}
+
+
+async def _probe_https_signal(target_url: str, controls: list) -> Optional[bool]:
+    if not target_url or not any(c["check"] in HTTPS_LINKED_CHECKS for c in controls):
+        return None
+    probe = await auto_probe_target(target_url)
+    return probe.get("https_in_use")
+
+
 async def assess_target(target_url: str, framework: str, answers: dict) -> dict:
     framework = _normalize_framework(framework)
     framework_data = FRAMEWORKS.get(framework)
@@ -196,10 +212,13 @@ async def assess_target(target_url: str, framework: str, answers: dict) -> dict:
         return {"error": f"Unknown framework: {framework}"}
 
     controls = framework_data["controls"]
+    probe_https = await _probe_https_signal(target_url, controls)
+
     assessed = []
     passed = 0
     failed = 0
     na = 0
+    mismatches = []
 
     for ctrl in controls:
         check_key = ctrl["check"]
@@ -207,22 +226,41 @@ async def assess_target(target_url: str, framework: str, answers: dict) -> dict:
 
         if answer in ("yes", "true", "1", True):
             status = "compliant"
-            passed += 1
         elif answer in ("no", "false", "0", False):
             status = "non_compliant"
-            failed += 1
         elif answer in ("na", "n/a"):
             status = "not_applicable"
-            na += 1
         else:
             status = "unknown"
 
-        assessed.append({
+        mismatch_note = None
+        if probe_https is not None and check_key in HTTPS_LINKED_CHECKS:
+            probe_status = "compliant" if probe_https else "non_compliant"
+            if status in ("compliant", "non_compliant") and status != probe_status:
+                mismatch_note = (
+                    f"Self-reported answer says '{status}', but a live probe of the target "
+                    f"{'found' if probe_https else 'did not find'} HTTPS in use — the automated "
+                    "finding overrides the self-report for this control."
+                )
+                mismatches.append({"control_id": ctrl["id"], "check": check_key, "note": mismatch_note})
+            status = probe_status
+
+        if status == "compliant":
+            passed += 1
+        elif status == "non_compliant":
+            failed += 1
+        elif status == "not_applicable":
+            na += 1
+
+        entry = {
             **ctrl,
             "status": status,
             "answer": answer,
             "risk": _risk_level(status),
-        })
+        }
+        if mismatch_note:
+            entry["auto_probe_mismatch"] = mismatch_note
+        assessed.append(entry)
 
     total_checkable = passed + failed
     score = round((passed / total_checkable * 100) if total_checkable > 0 else 0, 1)
@@ -241,6 +279,7 @@ async def assess_target(target_url: str, framework: str, answers: dict) -> dict:
         "controls": assessed,
         "recommendations": _recommendations(assessed, framework),
         "risk_level": _overall_risk(score),
+        "auto_probe_mismatches": mismatches,
     }
 
 
