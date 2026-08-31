@@ -253,14 +253,27 @@ async def _send_to_nodes(task_id: str, target: str, assignments: list, nodes: li
 
 
 async def _local_fallback_scan(task_id: str, target: str, scan_types: list, fed: dict) -> dict:
+    """Record a task for when no peers are online.
+
+    This does NOT run any scan module -- there is no code path that later
+    executes this "local" task. The status/note say so explicitly (same
+    accepted_stub convention as web/routers/federation.py's
+    /api/federation/execute) instead of claiming a local scan will happen.
+    Callers who want a real scan against this target should call
+    POST /api/scan directly.
+    """
     task = {
         "task_id": task_id,
         "target": target,
         "scan_types": scan_types,
         "strategy": "local_fallback",
-        "status": "local",
+        "status": "not_executed_stub",
         "created_at": datetime.utcnow().isoformat(),
-        "note": "No online peers available — scan will run locally",
+        "note": (
+            "No online peers available, and local fallback execution is not "
+            "implemented -- no scan was run for this task. Use POST /api/scan "
+            "to run a real scan against this target."
+        ),
         "assignments": [{"node_id": "local", "node_name": "This Node", "scan_types": scan_types}],
     }
     fed["tasks"].append(task)
@@ -269,7 +282,16 @@ async def _local_fallback_scan(task_id: str, target: str, scan_types: list, fed:
 
 
 async def collect_results(task_id: str) -> dict:
-    """Poll all nodes for results of a dispatched task."""
+    """Poll all nodes for results of a dispatched task.
+
+    Peer nodes do not yet expose a real /api/federation/results/{task_id}
+    (execute is a stub -- see web/routers/federation.py), so every peer
+    request below fails today. Failures are recorded per node instead of
+    being silently dropped, and the task/merged results are labeled
+    "completed_stub" rather than "completed" unless at least one peer
+    actually returned real data, so an empty merge can't be mistaken for a
+    clean zero-finding scan.
+    """
     fed = _load_federation()
     task = next((t for t in fed["tasks"] if t["task_id"] == task_id), None)
     if not task:
@@ -279,6 +301,7 @@ async def collect_results(task_id: str) -> dict:
     for assignment in task.get("assignments", []):
         node = next((n for n in fed["nodes"] if n["id"] == assignment["node_id"]), None)
         if not node or node["status"] != "online":
+            collected.append({"node_id": assignment["node_id"], "error": "node offline or unknown"})
             continue
         async with httpx.AsyncClient(timeout=15) as client:
             try:
@@ -291,13 +314,26 @@ async def collect_results(task_id: str) -> dict:
                     data["node_id"] = node["id"]
                     data["node_name"] = node["name"]
                     collected.append(data)
+                else:
+                    collected.append({
+                        "node_id": node["id"],
+                        "error": f"peer returned {r.status_code} -- remote result retrieval "
+                                 "is not implemented on peer nodes yet",
+                    })
             except Exception as e:
                 collected.append({"node_id": node["id"], "error": str(e)})
 
     merged = _merge_results(collected)
+    any_real_results = any("error" not in c for c in collected)
+    if not any_real_results:
+        merged["note"] = (
+            "Federation result retrieval is not implemented yet -- peer nodes "
+            "do not serve real scan results, so this will always be empty "
+            "until remote execution and a results endpoint are built."
+        )
     task["collected_results"] = collected
     task["merged_results"] = merged
-    task["status"] = "completed"
+    task["status"] = "completed" if any_real_results else "completed_stub"
     _save_federation(fed)
     return {"task_id": task_id, "results": merged, "node_results": collected}
 

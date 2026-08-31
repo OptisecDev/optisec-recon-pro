@@ -143,13 +143,16 @@
             <code style="color:var(--accent);font-size:11px">{{ task.task_id[:8] }}</code>
             <strong style="margin-left:8px">{{ task.target }}</strong>
           </div>
-          <span class="badge badge-{{ 'low' if task.status == 'completed' else 'medium' if task.status == 'running' else 'info' }}">
+          <span class="badge badge-{{ 'low' if task.status == 'completed' else 'medium' if (task.status == 'running' or task.status.endswith('_stub')) else 'info' }}">
             {{ task.status }}
           </span>
         </div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
           Types: {{ task.scan_types|join(', ') }} | Nodes: {{ task.node_count or 0 }} | {{ task.created_at[:10] }}
         </div>
+        {% if task.status.endswith('_stub') %}
+        <div style="font-size:11px;color:var(--yellow);margin-top:2px">⚠️ {{ task.note or 'No real scan ran for this task — federation execution is not implemented yet.' }}</div>
+        {% endif %}
         {% if task.status == 'running' %}
         <button class="btn btn-secondary btn-sm" style="margin-top:4px" onclick="collectResults('{{ task.task_id }}')">📥 Collect Results</button>
         {% endif %}
@@ -241,23 +244,27 @@ async function dispatchScan() {
   });
   const data = await r.json();
   const stubbed = (data.dispatch_results || []).some(d => d.response?.status === 'accepted_stub');
+  const notExecuted = data.status === 'not_executed_stub';
+  const headline = notExecuted
+    ? '⚠️ No online peers — scan was NOT executed'
+    : '✅ Sent to ' + data.node_count + ' node(s)';
   el.innerHTML = `
-    <div class="card" style="border-color:var(--accent)">
-      <div style="color:var(--accent);font-weight:600">✅ ${data.strategy === 'local_fallback' ? 'Running locally (no online peers)' : 'Sent to ' + data.node_count + ' node(s)'}</div>
+    <div class="card" style="border-color:${notExecuted ? 'var(--yellow)' : 'var(--accent)'}">
+      <div style="color:${notExecuted ? 'var(--yellow)' : 'var(--accent)'};font-weight:600">${headline}</div>
       <div style="font-size:11px;margin-top:4px"><strong>Task ID:</strong> <code>${escHtml(data.task_id)}</code></div>
       <div style="font-size:11px"><strong>Target:</strong> ${escHtml(data.target)}</div>
       <div style="font-size:11px"><strong>Types:</strong> ${escHtml(data.scan_types?.join(', ') || '')}</div>
-      ${data.note ? `<div class="alert alert-info" style="margin-top:6px;font-size:11px">${escHtml(data.note)}</div>` : ''}
+      ${data.note ? `<div class="alert ${notExecuted ? 'alert-warning' : 'alert-info'}" style="margin-top:6px;font-size:11px">${escHtml(data.note)}</div>` : ''}
       ${stubbed ? `<div class="alert alert-warning" style="margin-top:6px;font-size:11px">⚠️ Remote execution is not yet implemented on the receiving node(s) — they acknowledged the task but will not actually scan or produce results.</div>` : ''}
-      <button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="collectResults('${data.task_id}')">📥 Collect Results</button>
+      ${notExecuted ? '' : `<button class="btn btn-secondary btn-sm" style="margin-top:8px" onclick="collectResults('${data.task_id}')">📥 Collect Results</button>`}
     </div>`;
 }
 
 async function collectResults(task_id) {
   const r = await fetch(`/federation/api/tasks/${task_id}/results`);
   const data = await r.json();
-  if (!data.results?.total_findings && !data.results?.subdomains?.length) {
-    alert('No results available — remote nodes have not executed real scans yet (remote execution is unimplemented).');
+  if (data.results?.note) {
+    alert(data.results.note);
     return;
   }
   alert(`Results collected: ${data.results?.total_findings || 0} findings, ${data.results?.subdomains?.length || 0} subdomains`);
