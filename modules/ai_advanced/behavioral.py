@@ -98,8 +98,17 @@ class BehavioralAnalyzer:
                 "detail": f"{len(recent)} failed logins in last 20 events",
             })
 
-        # Off-hours access
-        hour = datetime.fromisoformat(event["timestamp"]).hour
+        # Off-hours access -- an explicit "hour" field lets a caller flag the
+        # hour an event actually happened at (e.g. backfilling historical
+        # events, or a client in a different timezone) without having to
+        # construct a full "timestamp" for it; only fall back to deriving the
+        # hour from "timestamp" (itself defaulted to the server's current
+        # time in record_event() when absent) when "hour" isn't sent at all.
+        hour = event.get("hour")
+        try:
+            hour = int(hour) if hour is not None else datetime.fromisoformat(event["timestamp"]).hour
+        except (TypeError, ValueError):
+            hour = datetime.fromisoformat(event["timestamp"]).hour
         if hour < 6 or hour > 22:
             anomalies.append({
                 "type": "off_hours_access",
