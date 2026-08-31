@@ -40,6 +40,7 @@ from web.auth import (
     require_admin, require_analyst_or_admin,
     check_rate_limit, record_failed_attempt, clear_attempts,
     log_auth_event, validate_password_strength, get_client_ip,
+    generate_csrf_token, verify_csrf_token,
     SECRET_KEY, ALGORITHM,
 )
 from web.websocket_manager import ws_manager
@@ -2197,6 +2198,7 @@ async def license_page(request: Request, user: User = Depends(web_user),
         "flash_msg": msg,
         "flash_type": msg_type or "info",
         "prefill_key": "",
+        "csrf_token": generate_csrf_token(request.cookies.get("access_token", "")),
     })
 
 
@@ -2204,9 +2206,12 @@ async def license_page(request: Request, user: User = Depends(web_user),
 async def license_activate_form(
     request: Request,
     key: str = Form(...),
+    csrf_token: str = Form(...),
     user: User = Depends(web_user),
 ):
     require_admin(user)
+    if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
     ip = get_client_ip(request)
 
     allowed, remaining = check_rate_limit(ip)
@@ -2224,6 +2229,7 @@ async def license_activate_form(
             "flash_msg": f"Too many attempts. Try again in {minutes} minute(s).",
             "flash_type": "error",
             "prefill_key": key,
+            "csrf_token": generate_csrf_token(request.cookies.get("access_token", "")),
         }, status_code=429)
 
     success, message, new_lic = activate_license(key.strip())
@@ -2245,12 +2251,19 @@ async def license_activate_form(
         "flash_msg": message,
         "flash_type": "success" if success else "error",
         "prefill_key": "" if success else key,
+        "csrf_token": generate_csrf_token(request.cookies.get("access_token", "")),
     })
 
 
 @app.post("/license/deactivate", include_in_schema=False)
-async def license_deactivate_form(request: Request, user: User = Depends(web_user)):
+async def license_deactivate_form(
+    request: Request,
+    csrf_token: str = Form(...),
+    user: User = Depends(web_user),
+):
     require_admin(user)
+    if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
     deactivate_license()
     return RedirectResponse("/license?msg=تم+إلغاء+الترخيص+والعودة+للنسخة+المجانية&msg_type=warning",
                             status_code=302)

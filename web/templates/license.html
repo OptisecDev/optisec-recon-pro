@@ -65,6 +65,7 @@
     <div class="alert alert-{{ flash_type }}" style="margin-bottom:12px">{{ flash_msg }}</div>
     {% endif %}
     <form method="POST" action="/license/activate" id="activate-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div class="form-group">
         <label>مفتاح الترخيص</label>
         <input type="text" name="key" id="license-key-input"
@@ -84,6 +85,7 @@
     <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
       <form method="POST" action="/license/deactivate"
             onsubmit="return confirm('إلغاء الترخيص وتحويله للنسخة المجانية؟')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn btn-danger btn-sm" style="width:100%;justify-content:center">
           ✗ إلغاء الترخيص الحالي
         </button>

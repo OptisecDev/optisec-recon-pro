@@ -31,6 +31,14 @@ from web import auth as auth_module
 
 RATE_LIMIT_MAX = auth_module.RATE_LIMIT_MAX
 
+# The web_user dependency is overridden below, bypassing the real
+# cookie-login flow, so the test client needs an access_token cookie set
+# by hand (any non-empty value -- verify_csrf_token() rejects an empty
+# session value on purpose, since a real browser session always carries a
+# real cookie) and the matching CSRF token computed from that same value.
+FAKE_SESSION_COOKIE = "fixture-session-value"
+CSRF_TOKEN = auth_module.generate_csrf_token(FAKE_SESSION_COOKIE)
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -72,6 +80,7 @@ def client():
     app_module.app.dependency_overrides[app_module.web_user] = _admin_user_override
     auth_module._login_attempts.clear()
     test_client = TestClient(app_module.app)
+    test_client.cookies.set("access_token", FAKE_SESSION_COOKIE)
     yield test_client
     app_module.app.dependency_overrides.clear()
     auth_module._login_attempts.clear()
@@ -89,10 +98,10 @@ def test_api_license_activate_rate_limits_after_max_failed_attempts(client):
 
 def test_license_activate_form_rate_limits_after_max_failed_attempts(client):
     for _ in range(RATE_LIMIT_MAX):
-        resp = client.post("/license/activate", data={"key": "not-a-real-key"})
+        resp = client.post("/license/activate", data={"key": "not-a-real-key", "csrf_token": CSRF_TOKEN})
         assert resp.status_code == 200  # form re-renders with a flash error, not a raw 4xx
 
-    resp = client.post("/license/activate", data={"key": "not-a-real-key"})
+    resp = client.post("/license/activate", data={"key": "not-a-real-key", "csrf_token": CSRF_TOKEN})
     assert resp.status_code == 429
 
 

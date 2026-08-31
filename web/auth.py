@@ -3,6 +3,7 @@ import re
 import time
 import secrets
 import hashlib
+import hmac
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -143,6 +144,27 @@ def hash_api_key(api_key: str) -> str:
     the plaintext key is never stored, only shown once at issue time.
     """
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+
+
+def generate_csrf_token(session_value: str) -> str:
+    """Stateless CSRF token bound to the caller's access_token cookie.
+
+    This app has no server-side session store (auth is a self-contained
+    JWT cookie), so the token can't be stashed server-side like a classic
+    synchronizer token. Instead it's an HMAC of the session's own
+    access_token value: only someone who already holds that httponly
+    cookie (i.e. the real browser session, not a cross-site attacker page)
+    can be handed a token that will verify -- an attacker page can trigger
+    a cross-site POST but can't read the cookie to compute a matching one.
+    """
+    return hmac.new(SECRET_KEY.encode("utf-8"), session_value.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def verify_csrf_token(session_value: str, submitted_token: str) -> bool:
+    if not session_value or not submitted_token:
+        return False
+    expected = generate_csrf_token(session_value)
+    return hmac.compare_digest(expected, submitted_token)
 
 
 async def get_current_user(request: Request, db: AsyncSession):
