@@ -29,7 +29,7 @@ psycopg2-binary==2.9.12
 pandas==3.0.5
 pyarrow==25.0.1
 minio==7.2.20
-Pillow==12.2.0
+Pillow==12.3.0
 
 # Auth — JWT + password hashing
 python-jose[cryptography]==3.5.0
@@ -78,7 +78,7 @@ maigret==0.6.1
 holehe==1.61
 
 # Cryptography (Quantum-Safe Encryption AES-GCM)
-cryptography==49.0.0
+cryptography==50.0.0
 
 # QR Code generation (WireGuard peer configs)
 qrcode[pil]==8.2
