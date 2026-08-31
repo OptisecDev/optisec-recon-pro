@@ -28,8 +28,8 @@ async def _admin(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 @router.get("", response_class=HTMLResponse)
 async def vpn_home(request: Request, user: User = Depends(_user)):
     require_feature_or_402("vpn", user)
-    from modules.vpn.wireguard import list_peers, get_wg_status
-    peers = list_peers()
+    from modules.vpn.wireguard import list_peers_public, get_wg_status
+    peers = list_peers_public()
     status = await get_wg_status()
     return templates.TemplateResponse(request, "vpn.html", {
         "app_name": APP_NAME, "user": user, "active": "vpn",
@@ -47,8 +47,8 @@ async def vpn_status(user: User = Depends(_user)):
 @router.get("/api/peers")
 async def list_peers_api(user: User = Depends(_user)):
     require_feature_or_402("vpn", user)
-    from modules.vpn.wireguard import list_peers
-    return {"peers": list_peers()}
+    from modules.vpn.wireguard import list_peers_public
+    return {"peers": list_peers_public()}
 
 
 @router.post("/api/peers")

@@ -208,6 +208,21 @@ def list_peers() -> list:
     return _load_peers()
 
 
+_PEER_SECRET_FIELDS = ("private_key", "psk")
+
+
+def list_peers_public() -> list:
+    """Peer list for display/listing surfaces (dashboard, GET /vpn/api/peers):
+    strips private_key and psk. Those only belong in the per-peer .conf
+    download and QR endpoints, which an admin uses to provision that one
+    peer's own device -- not in a general list response any caller can
+    read to view peer metadata."""
+    return [
+        {k: v for k, v in peer.items() if k not in _PEER_SECRET_FIELDS}
+        for peer in _load_peers()
+    ]
+
+
 async def get_wg_status() -> dict:
     """Get live WireGuard status via `wg show`."""
     try:
