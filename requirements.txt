@@ -42,6 +42,7 @@ websockets==16.0
 # Security scanning
 dnspython==2.8.0
 python-whois==0.9.6
+defusedxml==0.7.1
 
 # Reports
 reportlab==4.5.1

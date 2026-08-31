@@ -2,7 +2,7 @@ import logging
 import socket
 import subprocess
 import shutil
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
