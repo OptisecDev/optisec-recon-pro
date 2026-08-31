@@ -52,7 +52,7 @@
 
 <div class="tabs" style="margin-bottom:20px">
   <button class="tab-btn active" onclick="showTab('inspect')">DPI Inspect</button>
-  <button class="tab-btn" onclick="showTab('traffic')">Live Traffic</button>
+  <button class="tab-btn" onclick="showTab('traffic')">Traffic Log</button>
   <button class="tab-btn" onclick="showTab('rules')">DPI Rules</button>
   <button class="tab-btn" onclick="showTab('geo')">Geo Intelligence</button>
 </div>
@@ -109,12 +109,15 @@
 <!-- LIVE TRAFFIC TAB -->
 <div id="tab-traffic" style="display:none">
   <div class="fw-card" style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-      <h3>Real-Time Traffic Monitor</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+      <h3>Inspected Traffic Log</h3>
       <div style="display:flex;gap:8px">
         <button class="btn btn-secondary btn-sm" onclick="refreshTraffic()">Refresh</button>
         <button class="btn btn-primary btn-sm" onclick="startAutoRefresh()" id="auto-btn">Auto (5s)</button>
       </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px">
+      This log shows requests you submitted via DPI Inspect or Simulate Traffic — it is not a passive capture of live network traffic. NGFW v2 is an on-demand inspection tool, not an inline traffic gateway.
     </div>
 
     <div style="margin-bottom:16px">
