@@ -511,6 +511,27 @@ app.include_router(license_routes.router)
 app.include_router(license_routes.page_router)
 
 
+# ─── Security response headers ─────────────────────────────────────────────────
+# CSP and the COOP/COEP/CORP trio are deliberately NOT set here: several pages
+# load third-party CDN scripts (chart.js, swagger-ui-dist, redoc) and templates
+# use inline <script> blocks throughout, so a source allowlist needs a full
+# per-template audit and live-render verification before it can ship safely —
+# tracked separately rather than guessed at here. The headers below are safe,
+# low-risk defaults with no such allowlisting dependency.
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Permissions-Policy"] = (
+        "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
+    )
+    if IS_PRODUCTION:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
 # ─── Session timeout middleware (sliding 30-min window) ───────────────────────
 
 @app.middleware("http")
