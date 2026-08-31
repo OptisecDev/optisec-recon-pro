@@ -2,6 +2,7 @@
 import json
 import hashlib
 import random
+import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, TYPE_CHECKING
@@ -283,12 +284,35 @@ def _malware_from_tags(tags: Optional[List[str]]) -> str:
     return "Unknown"
 
 
+# `ioc["malware"]` traces to free text a third party attached to the IOC (a
+# URLhaus reporter's tag, an OTX pulse's malware_families label — see
+# modules/threat_intel/urlhaus_feed.py / otx_feed.py). The original checks
+# below (`any(apt in malware for apt in [...])`, `"apt" in malware.lower()`)
+# were a *substring* match, so any tag merely containing those letters
+# (e.g. "adapter" contains "apt") got mislabeled nation-state — same bug
+# class as the OTX `adversary` incident (modules/threat_intel/actor_naming.py).
+#
+# This is deliberately a small curated allowlist rather than
+# actor_naming.looks_like_threat_actor_name(): that heuristic's
+# single-capitalized-word fallback is correct for a field whose whole
+# purpose is attribution (OTX's `adversary`), but a malware *family* name
+# being one capitalized word is the norm, not the exception (Mirai, Ryuk,
+# Emotet, Conti, LockBit, ...) — reusing it here would trade one false
+# positive for a much larger one.
+_NATION_STATE_MALWARE_LABELS = {"apt", "lazarus", "lazarus group", "sandworm", "hafnium"}
+_RE_APT_CODE = re.compile(r"^apt[\s-]?\d{1,4}$", re.I)
+
+
+def _is_nation_state_malware_label(malware: str) -> bool:
+    label = (malware or "").strip().lower()
+    return bool(label) and (label in _NATION_STATE_MALWARE_LABELS or bool(_RE_APT_CODE.match(label)))
+
+
 def _aggregate_threat_score(ioc: dict) -> int:
     base = ioc.get("confidence", 50)
     source = next((s for s in FEED_SOURCES if s["id"] == ioc.get("source", "")), None)
     reliability = source["reliability"] if source else 0.7
-    malware = ioc.get("malware", "")
-    multiplier = 1.2 if any(apt in malware for apt in ["APT", "Lazarus", "Sandworm", "HAFNIUM"]) else 1.0
+    multiplier = 1.2 if _is_nation_state_malware_label(ioc.get("malware", "")) else 1.0
     return min(100, int(base * reliability * multiplier))
 
 
@@ -310,7 +334,8 @@ def _generate_tags(ioc: dict) -> List[str]:
         tags.append("file-indicator")
     if ioc["type"] == "cve":
         tags.append("vulnerability")
-    if "apt" in ioc.get("malware", "").lower():
+    # Same fix as _aggregate_threat_score() above — see its comment.
+    if _is_nation_state_malware_label(ioc.get("malware", "")):
         tags.append("nation-state")
     return tags
 

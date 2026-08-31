@@ -95,6 +95,75 @@ class TestMalwareFromTags:
 
 
 # ---------------------------------------------------------------------------
+# _is_nation_state_malware_label / _aggregate_threat_score / _generate_tags
+#
+# `ioc["malware"]` traces back to free text a third party attached to the
+# IOC (a URLhaus reporter's tag via _malware_from_tags(), or an OTX pulse's
+# malware_families label). The original code used a substring check
+# (`any(apt in malware for apt in [...])` / `"apt" in malware.lower()`),
+# so any tag merely *containing* those letters mislabeled the IOC
+# nation-state — e.g. "adapter" contains "apt". Same bug class as the OTX
+# `adversary` incident (modules/threat_intel/actor_naming.py), found during
+# a follow-up audit of other free-text fields trusted the same way.
+# ---------------------------------------------------------------------------
+
+class TestIsNationStateMalwareLabel:
+    def test_known_group_names_match(self):
+        for label in ("APT", "APT29", "apt-29", "Lazarus", "Lazarus Group", "Sandworm", "HAFNIUM"):
+            assert global_feed._is_nation_state_malware_label(label) is True
+
+    def test_substring_false_positive_is_rejected(self):
+        """Regression: the old `"apt" in malware.lower()` check matched
+        "adapter" (contains "apt" as a substring) — must not any more."""
+        assert global_feed._is_nation_state_malware_label("adapter") is False
+        assert global_feed._is_nation_state_malware_label("aptitude") is False
+
+    def test_ordinary_malware_family_names_are_not_nation_state(self):
+        """Ordinary malware families are commonly a single capitalized
+        word too (unlike OTX's `adversary` field, where that shape is a
+        good signal) — must not be misclassified as nation-state actors."""
+        for label in ("Mirai", "Emotet", "Ryuk", "Conti", "LockBit", "Zeus", "QakBot"):
+            assert global_feed._is_nation_state_malware_label(label) is False
+
+    def test_empty_or_missing_is_not_nation_state(self):
+        assert global_feed._is_nation_state_malware_label("") is False
+        assert global_feed._is_nation_state_malware_label(None) is False
+
+
+class TestAggregateThreatScoreNationStateBonus:
+    def test_known_group_name_earns_multiplier(self):
+        with_actor = global_feed._aggregate_threat_score(
+            {"malware": "Sandworm", "confidence": 80, "source": "URLHAUS"})
+        without_actor = global_feed._aggregate_threat_score(
+            {"malware": "Mirai", "confidence": 80, "source": "URLHAUS"})
+        assert with_actor > without_actor
+
+    def test_substring_false_positive_does_not_earn_multiplier(self):
+        """End-to-end regression: a URLhaus tag of "adapter" (a plausible,
+        innocuous real-world tag) must not inflate the aggregated score the
+        way "APT" would."""
+        adapter_score = global_feed._aggregate_threat_score(
+            {"malware": "adapter", "confidence": 80, "source": "URLHAUS"})
+        no_malware_score = global_feed._aggregate_threat_score(
+            {"malware": "", "confidence": 80, "source": "URLHAUS"})
+        assert adapter_score == no_malware_score
+
+
+class TestGenerateTagsNationStateLabel:
+    def test_known_group_name_gets_nation_state_tag(self):
+        tags = global_feed._generate_tags({"type": "url", "malware": "HAFNIUM"})
+        assert "nation-state" in tags
+
+    def test_substring_false_positive_does_not_get_nation_state_tag(self):
+        tags = global_feed._generate_tags({"type": "url", "malware": "adapter"})
+        assert "nation-state" not in tags
+
+    def test_ordinary_malware_family_does_not_get_nation_state_tag(self):
+        tags = global_feed._generate_tags({"type": "url", "malware": "Mirai"})
+        assert "nation-state" not in tags
+
+
+# ---------------------------------------------------------------------------
 # fetch_real_urlhaus_iocs — real DB read via IOCRepository
 # ---------------------------------------------------------------------------
 
