@@ -63,7 +63,7 @@ from modules.ai.triage_engine import classify_findings_batch
 from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
-from config import APP_NAME, APP_VERSION, REPORTS_DIR
+from config import APP_NAME, APP_VERSION, REPORTS_DIR, IS_PRODUCTION
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
 from web.routers import darkweb_monitor
@@ -524,7 +524,7 @@ async def session_refresh_middleware(request: Request, call_next):
             new_token = create_access_token(int(payload["sub"]), payload["role"])
             response.set_cookie(
                 "access_token", new_token,
-                httponly=True, max_age=1800, samesite="lax",
+                httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION,
             )
         except Exception:
             pass
@@ -835,7 +835,7 @@ async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
     await db.commit()
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax")
+    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
     return response
 
 
@@ -912,7 +912,7 @@ async def login_submit(
 
     token = create_access_token(user.id, user.role)
     response = RedirectResponse(next or "/", status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax")
+    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
     return response
 
 
@@ -975,7 +975,7 @@ async def register_submit(
 
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax")
+    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
     return response
 
 

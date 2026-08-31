@@ -43,6 +43,16 @@ _DEV_TESTING_ENV_VALUES = {"development", "dev", "test", "testing"}
 _INSECURE_DEV_JWT_SECRET = "optisec-INSECURE-dev-default-key-do-not-use-in-production"
 
 
+def _resolve_is_production() -> bool:
+    return os.environ.get("GROQ_ENV") == "production" or bool(os.environ.get("RENDER"))
+
+
+# Shared with the session cookie's Secure flag (web/app.py) so a plain HTTP
+# local dev server keeps working -- Secure cookies are dropped by browsers
+# on a non-HTTPS connection.
+IS_PRODUCTION = _resolve_is_production()
+
+
 def _resolve_jwt_secret() -> str:
     secret = os.environ.get("JWT_SECRET")
     if secret:
