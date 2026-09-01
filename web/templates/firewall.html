@@ -3,7 +3,7 @@
 {% block page_title %}AI Firewall — Deep Packet Inspection{% endblock %}
 
 {% block content %}
-<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
+<div class="iec26f5e10">
   <button class="btn btn-primary" data-onclick="showTab" data-onclick-args='["inspector"]'>🔍 Request Inspector</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["log-analyzer"]'>📄 Log Analyzer</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["rules"]'>📋 Firewall Rules</button>
@@ -12,7 +12,7 @@
 
 <!-- Request Inspector -->
 <div id="tab-inspector">
-  <div class="grid-2" style="align-items:start">
+  <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
         <div class="card-title">🔍 Request Inspector</div>
@@ -41,26 +41,26 @@
         <label>Extra Headers (optional, JSON)</label>
         <input type="text" id="req-headers" placeholder='{"X-Forwarded-For": "127.0.0.1"}' />
       </div>
-      <button class="btn btn-primary" data-onclick="inspectRequest" style="width:100%;justify-content:center">
+      <button class="btn btn-primary ied6167dca" data-onclick="inspectRequest" >
         🔬 Inspect Request
       </button>
-      <div style="margin-top:10px;font-size:11px;color:var(--text-dim)">
+      <div class="ie4fc2a98d">
         Scans: URL path · Query params · Request body · Headers
       </div>
     </div>
 
     <div id="inspect-results">
-      <div class="card" style="border:1px dashed var(--border);opacity:0.5;text-align:center;padding:48px">
-        <div style="font-size:40px;margin-bottom:10px">🛡️</div>
-        <div style="color:var(--text-dim)">Submit a request to analyze</div>
-        <div style="color:var(--text-dim);font-size:11px;margin-top:6px">Try SQL injection in body + XSS in URL</div>
+      <div class="card ieb0174491" >
+        <div class="ie8e001c98">🛡️</div>
+        <div class="ied605eae1">Submit a request to analyze</div>
+        <div class="ie3284d774">Try SQL injection in body + XSS in URL</div>
       </div>
     </div>
   </div>
 </div>
 
 <!-- Log Analyzer -->
-<div id="tab-log-analyzer" style="display:none">
+<div id="tab-log-analyzer" class="iecb458930">
   <div class="card">
     <div class="card-header">
       <div class="card-title">📄 Apache / Nginx Log Analyzer</div>
@@ -71,21 +71,21 @@
 10.0.0.5 - - [27/Jun/2026:10:00:01 +0000] "POST /login HTTP/1.1" 401 512
 10.0.0.5 - - [27/Jun/2026:10:00:02 +0000] "GET /?id=1 UNION SELECT 1,2,3-- HTTP/1.1" 200 2048'></textarea>
     </div>
-    <button class="btn btn-primary" data-onclick="analyzeLogs" style="width:100%;justify-content:center">
+    <button class="btn btn-primary ied6167dca" data-onclick="analyzeLogs" >
       🔍 Analyze Logs
     </button>
-    <div id="log-results" style="margin-top:16px"></div>
+    <div id="log-results" class="ieb0043ef4"></div>
   </div>
 </div>
 
 <!-- Rules -->
-<div id="tab-rules" style="display:none">
+<div id="tab-rules" class="iecb458930">
   <div class="card">
     <div class="card-header">
       <div class="card-title">📋 Active Firewall Rules</div>
       <span class="badge badge-low">{{ rules|length }} Rules Active</span>
     </div>
-    <div style="overflow-x:auto">
+    <div class="iedf74e8d8">
       <table class="data-table">
         <thead>
           <tr><th>Rule ID</th><th>Name</th><th>Category</th><th>Severity</th><th>Status</th></tr>
@@ -93,7 +93,7 @@
         <tbody>
           {% for rule in rules %}
           <tr>
-            <td><code style="color:var(--accent)">{{ rule.id }}</code></td>
+            <td><code class="iebb2b0e55">{{ rule.id }}</code></td>
             <td>{{ rule.name }}</td>
             <td><span class="badge badge-info">{{ rule.category }}</span></td>
             <td>
@@ -112,8 +112,8 @@
 </div>
 
 <!-- Rate Limiting -->
-<div id="tab-rate" style="display:none">
-  <div class="card" style="max-width:500px">
+<div id="tab-rate" class="iecb458930">
+  <div class="card ie5ab11840" >
     <div class="card-header"><div class="card-title">⏱️ Rate Limit Check</div></div>
     <div class="form-group">
       <label>IP Address</label>
@@ -127,8 +127,8 @@
       <label>Max Requests</label>
       <input type="number" id="rate-max" value="100" />
     </div>
-    <button class="btn btn-primary" data-onclick="checkRate" style="width:100%;justify-content:center">Check Rate</button>
-    <div id="rate-result" style="margin-top:12px"></div>
+    <button class="btn btn-primary ied6167dca" data-onclick="checkRate" >Check Rate</button>
+    <div id="rate-result" class="ie002535c2"></div>
   </div>
 </div>
 
@@ -159,12 +159,12 @@ function actionBadge(action) {
     allow: { bg:'#00ff88', label:'✅ ALLOW' },
   };
   const c = cfg[action] || { bg:'#888', label: action.toUpperCase() };
-  return `<span style="font-size:14px;font-weight:800;padding:5px 18px;border-radius:5px;background:${c.bg};color:#000;letter-spacing:1px">${c.label}</span>`;
+  return `<span data-dyn-style="font-size:14px;font-weight:800;padding:5px 18px;border-radius:5px;background:${c.bg};color:#000;letter-spacing:1px">${c.label}</span>`;
 }
 
 function severityBadge(sev) {
   const col = SEV_COLOR[sev] || '#888';
-  return `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:${col};color:#000">${sev}</span>`;
+  return `<span data-dyn-style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:${col};color:#000">${sev}</span>`;
 }
 
 function locationBadge(loc) {
@@ -174,11 +174,11 @@ function locationBadge(loc) {
     request_body: '📦 Request Body',
     headers: '📋 Headers',
   };
-  return `<span style="font-size:11px;padding:2px 8px;border-radius:3px;background:rgba(255,255,255,0.08);color:var(--accent)">${labels[loc] || loc}</span>`;
+  return `<span class="ie3ae613b4">${labels[loc] || loc}</span>`;
 }
 
 function categoryBadge(cat) {
-  return `<span style="font-size:10px;padding:2px 7px;border-radius:3px;background:rgba(255,255,255,0.06);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px">${escHtml(cat)}</span>`;
+  return `<span class="ie8b6bd30f">${escHtml(cat)}</span>`;
 }
 
 function renderThreatCard(t) {
@@ -186,41 +186,41 @@ function renderThreatCard(t) {
   const bg  = SEV_BG[t.severity]   || 'transparent';
   const bdr = SEV_BORDER[t.severity] || '#444';
   return `
-    <div style="border:1px solid ${bdr};border-left:4px solid ${col};border-radius:6px;background:${bg};padding:14px;margin-bottom:10px">
+    <div data-dyn-style="border:1px solid ${bdr};border-left:4px solid ${col};border-radius:6px;background:${bg};padding:14px;margin-bottom:10px">
       <!-- Row 1: name + badges -->
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:8px;flex-wrap:wrap">
+      <div class="ied7498cad">
         <div>
-          <span style="font-weight:700;color:${col};font-size:13px">${escHtml(t.name)}</span>
-          <code style="font-size:11px;color:var(--accent);margin-left:8px">[${escHtml(t.rule_id)}]</code>
+          <span data-dyn-style="font-weight:700;color:${col};font-size:13px">${escHtml(t.name)}</span>
+          <code class="ie499327b8">[${escHtml(t.rule_id)}]</code>
         </div>
-        <div style="display:flex;gap:5px;align-items:center;flex-shrink:0">
+        <div class="ie3d3ba028">
           ${severityBadge(t.severity)}
           ${categoryBadge(t.category)}
         </div>
       </div>
 
       <!-- Row 2: location -->
-      <div style="margin-bottom:8px;display:flex;align-items:center;gap:6px;font-size:12px">
-        <span style="color:var(--text-dim)">Found in:</span>
+      <div class="ie6a73b0f5">
+        <span class="ied605eae1">Found in:</span>
         ${locationBadge(t.found_in)}
       </div>
 
       <!-- Row 3: matched payload -->
       ${t.matched_payload ? `
-      <div style="margin-bottom:10px">
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px">Matched Payload</div>
-        <code style="display:block;background:rgba(0,0,0,0.5);border:1px solid ${col};border-radius:4px;padding:7px 12px;font-size:12px;color:#ffee88;word-break:break-all;line-height:1.5">${escHtml(t.matched_payload)}</code>
+      <div class="iea7409f75">
+        <div class="ie35691b90">Matched Payload</div>
+        <code data-dyn-style="display:block;background:rgba(0,0,0,0.5);border:1px solid ${col};border-radius:4px;padding:7px 12px;font-size:12px;color:#ffee88;word-break:break-all;line-height:1.5">${escHtml(t.matched_payload)}</code>
       </div>` : ''}
 
       <!-- Row 4: description -->
       ${t.description ? `
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.5">
+      <div class="ie8fb86949">
         ℹ️ ${escHtml(t.description)}
       </div>` : ''}
 
       <!-- Row 5: recommendation -->
       ${t.recommendation ? `
-      <div style="font-size:12px;background:rgba(0,212,170,0.07);border-left:3px solid #00D4AA;padding:8px 12px;border-radius:0 4px 4px 0;color:#00D4AA;line-height:1.5">
+      <div class="ied0f115cb">
         💡 <strong>Remediation:</strong> ${escHtml(t.recommendation)}
       </div>` : ''}
     </div>`;
@@ -242,7 +242,7 @@ async function inspectRequest() {
   };
 
   const el = document.getElementById('inspect-results');
-  el.innerHTML = `<div class="card" style="text-align:center;padding:32px;color:var(--text-dim)">🔬 Analyzing...</div>`;
+  el.innerHTML = `<div class="card ie2762ae4a" >🔬 Analyzing...</div>`;
 
   let r;
   try {
@@ -252,12 +252,12 @@ async function inspectRequest() {
       body: JSON.stringify(payload),
     });
   } catch(e) {
-    el.innerHTML = `<div class="card" style="border-color:#ff3366;color:#ff3366">Network error: ${escHtml(e.message)}</div>`;
+    el.innerHTML = `<div class="card iebe66fd38" >Network error: ${escHtml(e.message)}</div>`;
     return;
   }
 
   if (!r.ok) {
-    el.innerHTML = `<div class="card" style="border-color:#ff3366;color:#ff3366">Error ${r.status}: ${r.statusText}</div>`;
+    el.innerHTML = `<div class="card iebe66fd38" >Error ${r.status}: ${r.statusText}</div>`;
     return;
   }
 
@@ -268,62 +268,63 @@ async function inspectRequest() {
   const anomalyPct = ((data.anomaly?.score || 0) * 100).toFixed(1);
 
   el.innerHTML = `
-    <div class="card" style="border-color:${actionColor}">
+    <div class="card" data-dyn-style="border-color:${actionColor}">
       <!-- Header -->
-      <div class="card-header" style="margin-bottom:16px">
-        <div class="card-title" style="color:${actionColor}">🛡️ Inspection Result</div>
+      <div class="card-header ie8e86974b" >
+        <div class="card-title" data-dyn-style="color:${actionColor}">🛡️ Inspection Result</div>
         ${actionBadge(data.action)}
       </div>
 
       <!-- Score panel -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px">
-        <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:6px;padding:14px;text-align:center">
-          <div style="font-size:28px;font-weight:800;color:${rc};line-height:1">${riskScore}</div>
-          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.5px">Risk Score /100</div>
-          <div style="margin-top:8px;height:4px;border-radius:2px;background:rgba(255,255,255,0.1)">
-            <div style="height:4px;border-radius:2px;background:${rc};width:${Math.min(riskScore,100)}%"></div>
+      <div class="ie1c479501">
+        <div class="ie5f4701c7">
+          <div data-dyn-style="font-size:28px;font-weight:800;color:${rc};line-height:1">${riskScore}</div>
+          <div class="ie81037eab">Risk Score /100</div>
+          <div class="ieb71a5ed8">
+            <div data-dyn-style="height:4px;border-radius:2px;background:${rc};width:${Math.min(riskScore,100)}%"></div>
           </div>
         </div>
-        <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:6px;padding:14px;text-align:center">
-          <div style="font-size:28px;font-weight:800;color:${data.threats?.length ? '#ff3366' : '#00ff88'};line-height:1">${data.threats?.length || 0}</div>
-          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.5px">Threats Found</div>
+        <div class="ie5f4701c7">
+          <div data-dyn-style="font-size:28px;font-weight:800;color:${data.threats?.length ? '#ff3366' : '#00ff88'};line-height:1">${data.threats?.length || 0}</div>
+          <div class="ie81037eab">Threats Found</div>
         </div>
-        <div style="background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:6px;padding:14px;text-align:center">
-          <div style="font-size:28px;font-weight:800;color:${(data.anomaly?.score||0)>0.5?'#ffaa00':'var(--text)'};line-height:1">${anomalyPct}%</div>
-          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;text-transform:uppercase;letter-spacing:0.5px">Anomaly Score</div>
+        <div class="ie5f4701c7">
+          <div data-dyn-style="font-size:28px;font-weight:800;color:${(data.anomaly?.score||0)>0.5?'#ffaa00':'var(--text)'};line-height:1">${anomalyPct}%</div>
+          <div class="ie81037eab">Anomaly Score</div>
         </div>
       </div>
 
       <!-- Threat cards -->
       ${data.threats?.length ? `
-      <div style="margin-bottom:14px">
-        <div style="font-weight:700;font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">
+      <div class="ie6179637e">
+        <div class="ie57f0f8ae">
           ⚠️ Threats Detected (${data.threats.length})
         </div>
         ${data.threats.map(renderThreatCard).join('')}
       </div>` : `
-      <div style="color:#00ff88;padding:12px 16px;border:1px solid rgba(0,255,136,0.25);border-radius:6px;margin-bottom:14px;font-size:13px">
+      <div class="iefcbf426e">
         ✅ No signature threats detected in this request
       </div>`}
 
       <!-- Anomaly signals -->
       ${data.anomaly?.signals?.length ? `
-      <div style="border-top:1px solid var(--border);padding-top:14px">
-        <div style="font-weight:700;font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">
+      <div class="iee3bb3332">
+        <div class="ie375f8b83">
           🤖 Behavioral Anomaly Signals
         </div>
         ${data.anomaly.signals.map(s => `
-          <div style="padding:5px 0;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border);display:flex;gap:8px">
-            <span style="color:#ffaa00;flex-shrink:0">⚡</span>
+          <div class="ie1c4cf6eb">
+            <span class="ie21ca7f1c">⚡</span>
             <span>${escHtml(s)}</span>
           </div>`).join('')}
       </div>` : ''}
 
       <!-- Footer timestamp -->
-      <div style="margin-top:14px;font-size:11px;color:var(--text-dim);text-align:right">
+      <div class="ie176d4db6">
         Scanned at ${escHtml(data.timestamp || new Date().toISOString())} UTC
       </div>
     </div>`;
+  optisecApplyDynStyles(el);
 }
 
 async function analyzeLogs() {
@@ -336,33 +337,34 @@ async function analyzeLogs() {
   const data = await r.json();
   const el = document.getElementById('log-results');
   el.innerHTML = `
-    <div class="stats-grid" style="margin-bottom:16px">
+    <div class="stats-grid ie8e86974b" >
       <div class="stat-card"><div class="stat-value">${data.analyzed}</div><div class="stat-label">Analyzed</div></div>
-      <div class="stat-card"><div class="stat-value" style="color:#ff3366">${data.blocked}</div><div class="stat-label">Blocked</div></div>
-      <div class="stat-card"><div class="stat-value" style="color:#ffaa00">${data.alerted}</div><div class="stat-label">Alerted</div></div>
-      <div class="stat-card"><div class="stat-value" style="color:#00ff88">${data.allowed}</div><div class="stat-label">Allowed</div></div>
+      <div class="stat-card"><div class="stat-value iee0281c78" >${data.blocked}</div><div class="stat-label">Blocked</div></div>
+      <div class="stat-card"><div class="stat-value ie0458e39c" >${data.alerted}</div><div class="stat-label">Alerted</div></div>
+      <div class="stat-card"><div class="stat-value ie146bf057" >${data.allowed}</div><div class="stat-label">Allowed</div></div>
     </div>
     ${data.top_threats?.length ? `
     <div class="card">
       <div class="card-header"><div class="card-title">🎯 Top Threat Categories</div></div>
       ${data.top_threats.map(t => `
-        <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-          <span style="text-transform:uppercase;color:var(--text)">${escHtml(t.category)}</span>
+        <div class="ie96b5ae97">
+          <span class="ieec8dd956">${escHtml(t.category)}</span>
           <span class="badge badge-high">${t.count} hits</span>
         </div>`).join('')}
     </div>` : ''}
     ${data.high_risk_requests?.length ? `
-    <div class="card" style="margin-top:12px">
+    <div class="card ie002535c2" >
       <div class="card-header"><div class="card-title">🚨 Blocked Requests</div></div>
       ${data.high_risk_requests.slice(0,10).map(req => `
-        <div style="padding:6px;border-bottom:1px solid var(--border);font-size:11px;font-family:monospace">
-          <span style="color:#ff3366;font-weight:700">[BLOCK]</span>
-          <span style="color:var(--text-dim)"> ${escHtml(req.method)} </span>
+        <div class="ie1c94d520">
+          <span class="ie84184e40">[BLOCK]</span>
+          <span class="ied605eae1"> ${escHtml(req.method)} </span>
           <span>${escHtml((req.path||'').slice(0,100))}</span>
-          <span style="color:var(--text-dim)"> — ${escHtml(req.ip||'')}</span>
-          <span style="float:right;color:${riskColor(req.risk_score)}">${req.risk_score}/100</span>
+          <span class="ied605eae1"> — ${escHtml(req.ip||'')}</span>
+          <span data-dyn-style="float:right;color:${riskColor(req.risk_score)}">${req.risk_score}/100</span>
         </div>`).join('')}
     </div>` : ''}`;
+  optisecApplyDynStyles(el);
 }
 
 async function checkRate() {
@@ -376,16 +378,18 @@ async function checkRate() {
     }),
   });
   const data = await r.json();
-  document.getElementById('rate-result').innerHTML = `
-    <div class="card" style="border-color:${data.rate_limited ? '#ff3366' : '#00ff88'}">
-      <div style="display:flex;justify-content:space-between;align-items:center">
+  const rateResultEl = document.getElementById('rate-result');
+  rateResultEl.innerHTML = `
+    <div class="card" data-dyn-style="border-color:${data.rate_limited ? '#ff3366' : '#00ff88'}">
+      <div class="ie510ea680">
         <strong>${escHtml(data.ip)}</strong>
         <span class="badge badge-${data.rate_limited ? 'critical' : 'low'}">${data.rate_limited ? '⛔ RATE LIMITED' : '✅ OK'}</span>
       </div>
-      <div style="font-size:12px;color:var(--text-dim);margin-top:6px">
+      <div class="ie387cab18">
         ${data.requests_in_window} / ${data.limit} requests in ${data.window_seconds}s window
       </div>
     </div>`;
+  optisecApplyDynStyles(rateResultEl);
 }
 
 function escHtml(s) {

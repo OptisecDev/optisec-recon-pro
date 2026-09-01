@@ -3,7 +3,7 @@
 {% block page_title %}Honeypot{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce }}">
 .hp-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
 .hp-section{margin-bottom:24px}
 .hp-status-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
@@ -35,20 +35,20 @@
 
 <!-- Listener status -->
 <div class="hp-section">
-  <div class="card-subtitle" style="margin-bottom:8px">Listener Status · حالة الخدمات المصيدة</div>
+  <div class="card-subtitle ied51702bf" >Listener Status · حالة الخدمات المصيدة</div>
   <div class="hp-status-row">
     {% for svc, cfg in manager_status.services.items() %}
     <div class="hp-svc-pill">
       <span class="hp-dot {% if cfg.listening %}on{% else %}off{% endif %}"></span>
       <strong>{{ svc }}</strong> · {{ cfg.label_ar }} · port {{ cfg.port }}
-      {% if not manager_status.enabled %}<span style="color:var(--text-dim)">(disabled)</span>{% endif %}
+      {% if not manager_status.enabled %}<span class="ied605eae1">(disabled)</span>{% endif %}
     </div>
     {% endfor %}
   </div>
 </div>
 
 <!-- Stats row -->
-<div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
+<div class="stats-grid ieb10bfd06" >
   <div class="stat-card">
     <div class="stat-value">{{ stats.total_events }}</div>
     <div class="stat-label">Total Events · إجمالي المحاولات</div>
@@ -67,20 +67,20 @@
   </div>
 </div>
 
-<div class="hp-section" style="display:grid;grid-template-columns:1fr 1fr;gap:18px">
+<div class="hp-section ieeaad6a67" >
   <div class="hp-card">
-    <div class="card-title" style="margin-bottom:10px">Events by Service · حسب الخدمة</div>
+    <div class="card-title iea7409f75" >Events by Service · حسب الخدمة</div>
     <canvas id="serviceChart" height="180"></canvas>
   </div>
   <div class="hp-card">
-    <div class="card-title" style="margin-bottom:6px">Top Attacker IPs · أكثر عناوين IP نشاطاً</div>
+    <div class="card-title ie2937bfc9" >Top Attacker IPs · أكثر عناوين IP نشاطاً</div>
     <table>
       <thead><tr><th>IP</th><th>Hits</th></tr></thead>
       <tbody>
         {% for row in stats.top_attacker_ips %}
         <tr><td>{{ row.ip }}</td><td>{{ row.hits }}</td></tr>
         {% else %}
-        <tr><td colspan="2" style="color:var(--text-dim)">No events yet · لا توجد محاولات بعد</td></tr>
+        <tr><td colspan="2" class="ied605eae1">No events yet · لا توجد محاولات بعد</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -89,14 +89,14 @@
 
 <!-- Simple 7-day activity heatmap (weekday x hour) -->
 <div class="hp-card hp-section">
-  <div class="card-title" style="margin-bottom:4px">7-Day Activity Heatmap · خريطة النشاط الحرارية (7 أيام)</div>
-  <div class="card-subtitle" style="margin-bottom:4px">Rows = weekday (Mon→Sun), columns = hour of day (0→23)</div>
+  <div class="card-title iea58b070e" >7-Day Activity Heatmap · خريطة النشاط الحرارية (7 أيام)</div>
+  <div class="card-subtitle iea58b070e" >Rows = weekday (Mon→Sun), columns = hour of day (0→23)</div>
   <div id="heatmap"></div>
 </div>
 
 <!-- Recent events table -->
 <div class="hp-card">
-  <div class="card-title" style="margin-bottom:10px">Recent Attempts · المحاولات الأخيرة</div>
+  <div class="card-title iea7409f75" >Recent Attempts · المحاولات الأخيرة</div>
   <div class="hp-filters">
     <select id="filter-service">
       <option value="">All services</option>
@@ -128,10 +128,10 @@
           <td>{{ e.country or '—' }}</td>
           <td><span class="risk-badge risk-{{ e.risk_level }}">{{ e.risk_level }}</span></td>
           <td>{{ e.abuse_score }}</td>
-          <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ e.payload }}">{{ e.payload }}</td>
+          <td class="ief5293d41" title="{{ e.payload }}">{{ e.payload }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="7" style="color:var(--text-dim)">No honeypot events captured yet · لم تُسجَّل أي محاولات بعد</td></tr>
+        <tr><td colspan="7" class="ied605eae1">No honeypot events captured yet · لم تُسجَّل أي محاولات بعد</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -148,17 +148,18 @@ function renderHeatmap() {
   const maxCount = Math.max(1, ...HEATMAP.map(c => c.count));
   let html = '';
   for (let wd = 0; wd < 7; wd++) {
-    html += `<div style="display:grid;grid-template-columns:32px repeat(24,1fr);gap:2px;align-items:center;margin-bottom:2px">`;
+    html += `<div class="iea5a5c722">`;
     html += `<div class="hp-heat-row-label">${WEEKDAY_LABELS[wd]}</div>`;
     for (let h = 0; h < 24; h++) {
       const cell = HEATMAP.find(c => c.weekday === wd && c.hour === h);
       const count = cell ? cell.count : 0;
       const alpha = count === 0 ? 0.08 : 0.15 + 0.85 * (count / maxCount);
-      html += `<div class="hp-heat-cell" style="background:rgba(0,255,136,${alpha.toFixed(2)})" title="${WEEKDAY_LABELS[wd]} ${h}:00 — ${count} events"></div>`;
+      html += `<div class="hp-heat-cell" data-dyn-style="background:rgba(0,255,136,${alpha.toFixed(2)})" title="${WEEKDAY_LABELS[wd]} ${h}:00 — ${count} events"></div>`;
     }
     html += `</div>`;
   }
   wrap.innerHTML = html;
+  optisecApplyDynStyles(wrap);
 }
 renderHeatmap();
 
@@ -189,7 +190,7 @@ function eventRowHtml(e) {
     <td>${e.country || '—'}</td>
     <td><span class="risk-badge risk-${e.risk_level}">${e.risk_level}</span></td>
     <td>${e.abuse_score}</td>
-    <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${e.payload || ''}">${e.payload || ''}</td>
+    <td class="ief5293d41" title="${e.payload || ''}">${e.payload || ''}</td>
   </tr>`;
 }
 
@@ -206,7 +207,7 @@ async function reloadEvents() {
   const tbody = document.getElementById('events-tbody');
   tbody.innerHTML = data.events.length
     ? data.events.map(eventRowHtml).join('')
-    : `<tr><td colspan="7" style="color:var(--text-dim)">No matching events · لا توجد نتائج مطابقة</td></tr>`;
+    : `<tr><td colspan="7" class="ied605eae1">No matching events · لا توجد نتائج مطابقة</td></tr>`;
 }
 </script>
 {% endblock %}

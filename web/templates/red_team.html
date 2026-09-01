@@ -3,18 +3,18 @@
 {% block page_title %}AI Red Team{% endblock %}
 
 {% block content %}
-<div style="margin-bottom:16px;display:flex;gap:8px">
+<div class="ie54a09571">
   <button class="btn btn-primary" data-onclick="showTab" data-onclick-args='["engagements"]'>🎯 Engagements</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["new"]'>➕ New Engagement</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["library"]'>📚 Technique Library</button>
 </div>
 
 <!-- Engagements List -->
-<div id="tab-engagements" style="display:block">
+<div id="tab-engagements" class="iefa9aeccc">
   {% if engagements %}
   <div class="grid-2">
     {% for eng in engagements %}
-    <div class="card" data-onclick="loadEngagement" data-onclick-args='{{ [eng.id] | tojson }}' style="cursor:pointer">
+    <div class="card ieb202c6d4" data-onclick="loadEngagement" data-onclick-args='{{ [eng.id] | tojson }}' >
       <div class="card-header">
         <div>
           <div class="card-title">{{ eng.id }}</div>
@@ -24,30 +24,30 @@
           {{ eng.risk_rating }}
         </span>
       </div>
-      <div style="font-size:12px;color:var(--text-dim)">
+      <div class="ieacac8ae4">
         Categories: {{ eng.categories|join(', ') }}
       </div>
-      <div style="font-size:11px;margin-top:4px">
+      <div class="ie733aaf56">
         <span class="badge badge-{{ 'low' if eng.status == 'planned' else 'high' }}">{{ eng.status }}</span>
-        <span style="margin-left:8px;color:var(--text-dim)">{{ eng.created_at[:10] }}</span>
-        <span style="margin-left:8px;color:var(--accent)">{{ eng.findings|length }} findings</span>
+        <span class="ie0aed3d92">{{ eng.created_at[:10] }}</span>
+        <span class="ie0b5951ca">{{ eng.findings|length }} findings</span>
       </div>
     </div>
     {% endfor %}
   </div>
   {% else %}
-  <div class="card" style="text-align:center;padding:40px">
-    <div style="font-size:48px;margin-bottom:12px">🎯</div>
-    <div style="color:var(--text-dim)">No engagements yet. Create your first AI Red Team engagement.</div>
-    <button class="btn btn-primary" style="margin-top:12px" data-onclick="showTab" data-onclick-args='["new"]'>Create Engagement</button>
+  <div class="card ie6bfa799c" >
+    <div class="ie199bf1d7">🎯</div>
+    <div class="ied605eae1">No engagements yet. Create your first AI Red Team engagement.</div>
+    <button class="btn btn-primary ie002535c2"  data-onclick="showTab" data-onclick-args='["new"]'>Create Engagement</button>
   </div>
   {% endif %}
-  <div id="engagement-detail" style="margin-top:16px"></div>
+  <div id="engagement-detail" class="ieb0043ef4"></div>
 </div>
 
 <!-- New Engagement -->
-<div id="tab-new" style="display:none">
-  <div class="card" style="max-width:700px">
+<div id="tab-new" class="iecb458930">
+  <div class="card ie403688b7" >
     <div class="card-header">
       <div class="card-title">➕ New AI Red Team Engagement</div>
     </div>
@@ -78,15 +78,15 @@
       <label>Rules of Engagement</label>
       <textarea id="eng-roe" rows="3" placeholder="No production data exfiltration. No DoS. Test only on agreed systems..."></textarea>
     </div>
-    <button class="btn btn-primary" data-onclick="createEngagement" style="width:100%;justify-content:center">
+    <button class="btn btn-primary ied6167dca" data-onclick="createEngagement" >
       🤖 Generate AI Red Team Plan
     </button>
-    <div id="eng-result" style="margin-top:12px"></div>
+    <div id="eng-result" class="ie002535c2"></div>
   </div>
 </div>
 
 <!-- Technique Library -->
-<div id="tab-library" style="display:none">
+<div id="tab-library" class="iecb458930">
   <div class="grid-2">
     {% for category, techs in technique_library.items() %}
     <div class="card">
@@ -94,14 +94,14 @@
         <div class="card-title">{{ category.replace('_',' ').title() }}</div>
       </div>
       {% for tech in techs %}
-      <div style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between">
-          <strong style="font-size:13px">{{ tech.name }}</strong>
-          <code style="color:var(--accent);font-size:10px">{{ tech.id }}</code>
+      <div class="ie59d37738">
+        <div class="ie1141c430">
+          <strong class="ie3044b600">{{ tech.name }}</strong>
+          <code class="ied080a09e">{{ tech.id }}</code>
         </div>
-        <div style="margin-top:4px">
+        <div class="iea18ac805">
           {% for step in tech.steps %}
-          <div style="font-size:11px;color:var(--text-dim)">→ {{ step }}</div>
+          <div class="ie5b3cc826">→ {{ step }}</div>
           {% endfor %}
         </div>
       </div>
@@ -172,40 +172,40 @@ function renderEngagementDetail(data) {
         <span class="badge badge-${data.risk_rating === 'critical' ? 'critical' : 'high'}">${(data.risk_rating||'').toUpperCase()}</span>
       </div>
 
-      ${plan.executive_summary ? `<div style="padding:10px;background:rgba(0,255,136,0.05);border-radius:6px;margin-bottom:12px;font-size:13px">${escHtml(plan.executive_summary)}</div>` : ''}
+      ${plan.executive_summary ? `<div class="ie66ee4707">${escHtml(plan.executive_summary)}</div>` : ''}
 
-      <div class="stats-grid" style="margin-bottom:12px">
+      <div class="stats-grid iefa3e1c7d" >
         <div class="stat-card"><div class="stat-value">${plan.estimated_duration_days || '?'}</div><div class="stat-label">Days</div></div>
         <div class="stat-card"><div class="stat-value">${plan.phases?.length || 0}</div><div class="stat-label">Phases</div></div>
         <div class="stat-card"><div class="stat-value">${data.findings?.length || 0}</div><div class="stat-label">Findings</div></div>
       </div>
 
       ${plan.phases?.length ? plan.phases.map((phase, i) => `
-        <div style="padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center">
+        <div class="iee13270ff">
+          <div class="ie510ea680">
             <strong>Phase ${i+1}: ${escHtml(phase.phase_name)}</strong>
-            <span style="font-size:11px;color:var(--text-dim)">${phase.duration_days}d</span>
+            <span class="ie5b3cc826">${phase.duration_days}d</span>
           </div>
-          <div style="font-size:12px;color:var(--text-dim);margin-top:4px">${escHtml(phase.success_criteria)}</div>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">
+          <div class="ieebc423f0">${escHtml(phase.success_criteria)}</div>
+          <div class="ie7a6ae249">
             ${(phase.tools||[]).map(t => `<span class="badge badge-info">${escHtml(t)}</span>`).join('')}
           </div>
-          <div style="margin-top:6px">
-            ${(phase.techniques||[]).map(t => `<code style="font-size:10px;color:var(--accent);margin-right:4px">${escHtml(t)}</code>`).join('')}
+          <div class="ie9e3c4ccb">
+            ${(phase.techniques||[]).map(t => `<code class="ied2be0c05">${escHtml(t)}</code>`).join('')}
           </div>
         </div>`).join('') : ''}
 
       ${plan.key_attack_vectors?.length ? `
-      <div style="margin-top:8px">
-        <div style="font-weight:600;font-size:12px;margin-bottom:4px;color:var(--text-dim)">KEY ATTACK VECTORS</div>
-        ${plan.key_attack_vectors.map(v => `<div style="font-size:12px;padding:2px 0;color:#ff6600">→ ${escHtml(v)}</div>`).join('')}
+      <div class="ied4316970">
+        <div class="ie0446ac56">KEY ATTACK VECTORS</div>
+        ${plan.key_attack_vectors.map(v => `<div class="ie9c8f428e">→ ${escHtml(v)}</div>`).join('')}
       </div>` : ''}
 
-      <div style="margin-top:12px">
+      <div class="ie002535c2">
         <button class="btn btn-secondary btn-sm" data-onclick="showLogFinding" data-onclick-args="${optisecArgs([data.id])}">➕ Log Finding</button>
       </div>
 
-      <div id="log-finding-form-${data.id}" style="display:none;margin-top:12px">
+      <div id="log-finding-form-${data.id}" class="ie68acf7d2">
         <div class="form-group"><label>Finding Title</label><input type="text" id="finding-title-${data.id}" placeholder="XSS in login page" /></div>
         <div class="form-group"><label>Severity</label>
           <select id="finding-sev-${data.id}"><option>critical</option><option>high</option><option>medium</option><option>low</option></select>

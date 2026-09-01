@@ -3,7 +3,7 @@
 {% block page_title %}Security Scanner{% endblock %}
 
 {% block content %}
-<div class="grid-2" style="align-items:start">
+<div class="grid-2 ie2a4dac26" >
   <div>
     <div class="card">
       <div class="card-header">
@@ -55,19 +55,19 @@
           </label>
           {% endfor %}
         </div>
-        <div style="margin-top:8px;display:flex;gap:8px">
+        <div class="ief9de584c">
           <button class="btn btn-secondary btn-sm" data-onclick="selectAll" data-onclick-args="[true]">Select All</button>
           <button class="btn btn-secondary btn-sm" data-onclick="selectAll" data-onclick-args="[false]">Deselect All</button>
         </div>
       </div>
 
       <div class="progress-bar" id="scan-progress">
-        <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        <div class="progress-fill ie9c33ea5e" id="progress-fill" ></div>
       </div>
-      <div id="ws-step" style="font-size:11px;color:var(--text-dim);margin-top:4px;min-height:16px"></div>
+      <div id="ws-step" class="iefe8d6740"></div>
 
-      <button class="btn btn-primary" id="scan-btn" data-onclick="startScan"
-              style="width:100%;justify-content:center;margin-top:8px">
+      <button class="btn btn-primary ie2a50f831" id="scan-btn" data-onclick="startScan"
+              >
         ▶ Start Scan
       </button>
     </div>
@@ -80,28 +80,28 @@
       <div class="card-header">
         <div class="card-title">ℹ️ Scan Guide</div>
       </div>
-      <div style="font-size:13px;color:var(--text-dim);line-height:1.8">
-        <p>• For <strong style="color:var(--text)">vulnerability scans</strong>, include parameters:<br>
-          <code style="color:var(--accent)">https://example.com/page?id=1</code></p>
-        <p style="margin-top:8px">• For <strong style="color:var(--text)">recon only</strong>, use domain:<br>
-          <code style="color:var(--accent)">example.com</code></p>
-        <p style="margin-top:8px">• Nmap requires <code>nmap</code> to be installed</p>
-        <p style="margin-top:8px">• AI analysis requires <code>GROQ_API_KEY</code></p>
-        <p style="margin-top:8px">• Progress updates via <span style="color:var(--accent)">WebSocket</span> in real-time</p>
+      <div class="iec9dd3454">
+        <p>• For <strong class="ieaee76f91">vulnerability scans</strong>, include parameters:<br>
+          <code class="iebb2b0e55">https://example.com/page?id=1</code></p>
+        <p class="ied4316970">• For <strong class="ieaee76f91">recon only</strong>, use domain:<br>
+          <code class="iebb2b0e55">example.com</code></p>
+        <p class="ied4316970">• Nmap requires <code>nmap</code> to be installed</p>
+        <p class="ied4316970">• AI analysis requires <code>GROQ_API_KEY</code></p>
+        <p class="ied4316970">• Progress updates via <span class="iebb2b0e55">WebSocket</span> in real-time</p>
       </div>
     </div>
 
-    <div class="card" id="ws-status-card" style="display:none">
+    <div class="card iecb458930" id="ws-status-card" >
       <div class="card-header">
         <div class="card-title">📡 Live Progress</div>
       </div>
-      <div id="ws-log" style="font-size:12px;font-family:monospace;line-height:1.8;max-height:200px;overflow-y:auto"></div>
+      <div id="ws-log" class="ief1615291"></div>
     </div>
   </div>
 </div>
 
-<div id="scan-results" style="margin-top:24px"></div>
-<div id="ai-output" style="margin-top:8px"></div>
+<div id="scan-results" class="ie062d4a88"></div>
+<div id="ai-output" class="ied4316970"></div>
 {% endblock %}
 
 {% block scripts %}
@@ -219,9 +219,9 @@ function finishScan(scanId, results, target) {
   if (statusEl) statusEl.innerHTML = `
     <div class="alert alert-success">
       Scan completed!
-      <button class="btn btn-secondary btn-sm" style="margin-left:8px"
+      <button class="btn btn-secondary btn-sm iec3f83707" 
               data-onclick="generateReport" data-onclick-args="${optisecArgs([target])}">📄 Generate Report</button>
-      <button class="btn btn-secondary btn-sm" style="margin-left:4px"
+      <button class="btn btn-secondary btn-sm ie132fb96a" 
               data-onclick="analyzeWithAI" data-onclick-args="${optisecArgs([target])}">🤖 AI Analysis</button>
     </div>`;
   renderScanResults(results, target);

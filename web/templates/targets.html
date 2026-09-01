@@ -3,7 +3,7 @@
 {% block page_title %}Target Manager{% endblock %}
 
 {% block content %}
-<div class="grid-2" style="align-items:start">
+<div class="grid-2 ie2a4dac26" >
   <div class="card">
     <div class="card-header">
       <div>
@@ -51,10 +51,10 @@
           <tr id="target-row-{{ t.id }}">
             <td class="mono">
               <a href="{{ t.url if t.url.startswith('http') else 'https://' + t.url }}"
-                 target="_blank" style="color:var(--accent)">{{ t.url }}</a>
+                 target="_blank" class="iebb2b0e55">{{ t.url }}</a>
             </td>
             <td>{{ t.name or '—' }}</td>
-            <td class="dim" style="font-size:12px">
+            <td class="dim ie6b9c179a" >
               {{ t.created_at.strftime('%Y-%m-%d') if t.created_at else '—' }}
             </td>
             <td>

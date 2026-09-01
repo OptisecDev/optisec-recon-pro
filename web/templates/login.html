@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sign In — {{ app_name }}</title>
   <link rel="stylesheet" href="/static/css/style.css">
-  <style>
+  <link rel="stylesheet" href="/static/css/inline-extracted.css">
+  <style nonce="{{ request.state.csp_nonce }}">
     body { display:flex; align-items:center; justify-content:center; min-height:100vh; background: var(--bg); }
     .auth-wrap { width:400px; }
     .auth-logo { text-align:center; margin-bottom:28px; }
@@ -47,7 +48,7 @@
 
   <div class="card">
     {% if error %}
-    <div class="alert alert-error" style="margin-bottom:16px">{{ error }}</div>
+    <div class="alert alert-error ie8e86974b" >{{ error }}</div>
     {% endif %}
     <form method="POST" action="/login">
       <input type="hidden" name="next" value="{{ next }}">
@@ -59,13 +60,13 @@
         <label>Password</label>
         <input type="password" name="password" placeholder="••••••••" required autocomplete="current-password">
       </div>
-      <button type="submit" class="btn btn-secondary" style="width:100%;justify-content:center;margin-top:4px">
+      <button type="submit" class="btn btn-secondary ief585b429" >
         Sign In →
       </button>
     </form>
-    <div style="text-align:center;margin-top:16px;font-size:13px;color:var(--text-dim)">
-      New here? <a href="/register" style="color:var(--accent)">Create account</a>
-      · <a href="/landing" style="color:var(--text-dim)">Learn more</a>
+    <div class="ie4c483f25">
+      New here? <a href="/register" class="iebb2b0e55">Create account</a>
+      · <a href="/landing" class="ied605eae1">Learn more</a>
     </div>
   </div>
 </div>

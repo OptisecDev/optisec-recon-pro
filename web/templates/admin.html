@@ -42,7 +42,7 @@
           <td class="mono dim">{{ u.id }}</td>
           <td>
             <strong>{{ u.username }}</strong>
-            {% if u.id == user.id %}<span class="badge badge-info" style="margin-left:4px">you</span>{% endif %}
+            {% if u.id == user.id %}<span class="badge badge-info ie132fb96a" >you</span>{% endif %}
           </td>
           <td class="dim">{{ u.email }}</td>
           <td>
@@ -58,11 +58,11 @@
               {{ 'Active' if u.is_active else 'Disabled' }}
             </span>
           </td>
-          <td class="dim" style="font-size:12px">
+          <td class="dim ie6b9c179a" >
             {{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else 'Never' }}
           </td>
           <td>
-            <code class="mono dim" style="font-size:10px">
+            <code class="mono dim iebcf88ef7" >
               {{ (u.api_key[:16] + '…') if u.api_key else '—' }}
             </code>
           </td>
@@ -84,13 +84,13 @@
 </div>
 
 <div class="card">
-  <div class="card-header" style="display:flex;justify-content:space-between;align-items:center">
+  <div class="card-header ie510ea680" >
     <div>
       <div class="card-title">🔐 Auth Log</div>
       <div class="card-subtitle">Login attempts, registrations, and logouts — newest first</div>
     </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <select id="log-filter" data-onchange="filterLog" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px">
+    <div class="iefaaa794c">
+      <select id="log-filter" data-onchange="filterLog" class="ie8f33ea97">
         <option value="">All events</option>
         <option value="SUCCESS">Success only</option>
         <option value="FAILURE">Failures only</option>
@@ -114,28 +114,28 @@
         </tr>
       </thead>
       <tbody id="auth-log-body">
-        <tr><td colspan="6" style="text-align:center;color:var(--text-dim)">Loading…</td></tr>
+        <tr><td colspan="6" class="ied8520f00">Loading…</td></tr>
       </tbody>
     </table>
   </div>
 </div>
 
-<div class="card" style="max-width:480px">
+<div class="card iea80092e0" >
   <div class="card-header">
     <div class="card-title">🔑 My API Key</div>
     <div class="card-subtitle">Use as X-API-Key header or for direct API access</div>
   </div>
-  <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:12px;word-break:break-all">
-    <code id="my-api-key" class="mono" style="font-size:12px">{{ user.api_key }}</code>
+  <div class="ie3bc199d2">
+    <code id="my-api-key" class="mono ie6b9c179a" >{{ user.api_key }}</code>
   </div>
-  <div style="display:flex;gap:8px;margin-bottom:8px">
+  <div class="ied34ea2f9">
     <button class="btn btn-secondary" data-onclick="copyApiKey">📋 Copy</button>
     <button class="btn btn-secondary" data-onclick="regenApiKey">🔄 Regenerate</button>
   </div>
   <div id="apikey-out"></div>
-  <div style="margin-top:16px;font-size:12px;color:var(--text-dim)">
+  <div class="ieb369e037">
     <strong>API Usage:</strong><br>
-    <code style="color:var(--accent)">curl -H "X-API-Key: &lt;key&gt;" http://localhost:8000/api/scans</code>
+    <code class="iebb2b0e55">curl -H "X-API-Key: &lt;key&gt;" http://localhost:8000/api/scans</code>
   </div>
 </div>
 {% endblock %}
@@ -146,32 +146,32 @@ let _allLogEntries = [];
 
 async function loadAuthLog() {
   const tbody = document.getElementById('auth-log-body');
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">Loading…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" class="ied8520f00">Loading…</td></tr>';
   try {
     const data = await API.get('/api/admin/auth-log?lines=200');
     _allLogEntries = Array.isArray(data) ? data : [];
     renderLog(_allLogEntries);
   } catch(e) {
-    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--critical)">Failed to load log</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="ie54533922">Failed to load log</td></tr>';
   }
 }
 
 function renderLog(entries) {
   const tbody = document.getElementById('auth-log-body');
   if (!entries.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim)">No entries</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="ied8520f00">No entries</td></tr>';
     return;
   }
   tbody.innerHTML = entries.map(e => {
     const isSuccess = e.status === 'SUCCESS';
     const statusBadge = `<span class="badge badge-${isSuccess ? 'info' : 'critical'}">${e.status}</span>`;
     return `<tr>
-      <td class="mono dim" style="font-size:11px;white-space:nowrap">${e.timestamp}</td>
+      <td class="mono dim ie8fec68f7" >${e.timestamp}</td>
       <td>${statusBadge}</td>
-      <td><code style="font-size:11px">${e.event}</code></td>
-      <td class="mono" style="font-size:12px">${e.user || '—'}</td>
-      <td class="mono dim" style="font-size:12px">${e.ip || '—'}</td>
-      <td class="dim" style="font-size:11px">${e.detail || ''}</td>
+      <td><code class="ie8b685211">${e.event}</code></td>
+      <td class="mono ie6b9c179a" >${e.user || '—'}</td>
+      <td class="mono dim ie6b9c179a" >${e.ip || '—'}</td>
+      <td class="dim ie8b685211" >${e.detail || ''}</td>
     </tr>`;
   }).join('');
 }

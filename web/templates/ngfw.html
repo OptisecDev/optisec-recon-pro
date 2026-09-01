@@ -3,7 +3,7 @@
 {% block page_title %}Next-Gen Firewall v2{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce }}">
 .fw-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
 .traffic-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;
   margin-bottom:6px;background:var(--bg-secondary);border:1px solid var(--border);
@@ -27,30 +27,30 @@
 </style>
 
 <!-- Stats -->
-<div class="stats-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px">
+<div class="stats-grid ie98c9aa3b" >
   <div class="stat-card">
     <div class="stat-value">{{ stats.totals.total }}</div>
     <div class="stat-label">Total Requests</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#FF6B6B">{{ stats.totals.blocked }}</div>
+    <div class="stat-value iee22d2807" >{{ stats.totals.blocked }}</div>
     <div class="stat-label">Blocked</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#FFA726">{{ stats.totals.anomalies }}</div>
+    <div class="stat-value ie78539534" >{{ stats.totals.anomalies }}</div>
     <div class="stat-label">Anomalies</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#00ff88">{{ stats.dpi_rules_count }}</div>
+    <div class="stat-value ie146bf057" >{{ stats.dpi_rules_count }}</div>
     <div class="stat-label">DPI Rules</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#7E57C2">{{ geo_blocks.blocked_countries|length }}</div>
+    <div class="stat-value ie29925b1a" >{{ geo_blocks.blocked_countries|length }}</div>
     <div class="stat-label">Geo Blocks</div>
   </div>
 </div>
 
-<div class="tabs" style="margin-bottom:20px">
+<div class="tabs ie3019698e" >
   <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["inspect"]'>DPI Inspect</button>
   <button class="tab-btn" data-onclick="showTab" data-onclick-args='["traffic"]'>Traffic Log</button>
   <button class="tab-btn" data-onclick="showTab" data-onclick-args='["rules"]'>DPI Rules</button>
@@ -61,35 +61,35 @@
 <div id="tab-inspect">
   <div class="grid grid-2">
     <div class="fw-card">
-      <h3 style="color:var(--accent);margin-bottom:16px">Deep Packet Inspection</h3>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <h3 class="ieb3c688e0">Deep Packet Inspection</h3>
+      <div class="ie459fe4b3">
+        <div class="ief56ef11e">
           <div>
-            <label style="font-size:11px;color:var(--text-dim)">Method</label>
-            <select id="dpi-method" class="form-control" style="margin-top:4px;font-size:12px">
+            <label class="ie5b3cc826">Method</label>
+            <select id="dpi-method" class="form-control ie4c704819" >
               <option>GET</option><option>POST</option><option>PUT</option><option>DELETE</option><option>TRACE</option>
             </select>
           </div>
           <div>
-            <label style="font-size:11px;color:var(--text-dim)">Destination Port</label>
-            <input type="number" id="dpi-port" class="form-control" value="80" style="margin-top:4px;font-size:12px">
+            <label class="ie5b3cc826">Destination Port</label>
+            <input type="number" id="dpi-port" class="form-control ie4c704819" value="80" >
           </div>
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">Source IP</label>
-          <input type="text" id="dpi-ip" class="form-control" placeholder="e.g. 185.234.216.45" style="margin-top:4px;font-size:12px">
+          <label class="ie5b3cc826">Source IP</label>
+          <input type="text" id="dpi-ip" class="form-control ie4c704819" placeholder="e.g. 185.234.216.45" >
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">Request Path</label>
-          <input type="text" id="dpi-path" class="form-control" placeholder="/api/users?id=1" style="margin-top:4px;font-size:12px">
+          <label class="ie5b3cc826">Request Path</label>
+          <input type="text" id="dpi-path" class="form-control ie4c704819" placeholder="/api/users?id=1" >
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">Request Body</label>
-          <textarea id="dpi-body" class="form-control" rows="3" style="font-size:12px;font-family:monospace;resize:vertical" placeholder="username=admin&password=' OR '1'='1"></textarea>
+          <label class="ie5b3cc826">Request Body</label>
+          <textarea id="dpi-body" class="form-control iee15dd117" rows="3"  placeholder="username=admin&password=' OR '1'='1"></textarea>
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">User-Agent</label>
-          <input type="text" id="dpi-ua" class="form-control" placeholder="Mozilla/5.0 or sqlmap/1.7..." style="margin-top:4px;font-size:12px">
+          <label class="ie5b3cc826">User-Agent</label>
+          <input type="text" id="dpi-ua" class="form-control ie4c704819" placeholder="Mozilla/5.0 or sqlmap/1.7..." >
         </div>
         <button class="btn btn-primary" data-onclick="runDPI">Inspect Packet</button>
         <button class="btn btn-secondary btn-sm" data-onclick="simulateTraffic">Simulate 20 Requests</button>
@@ -97,9 +97,9 @@
     </div>
 
     <div class="fw-card" id="dpi-result-panel">
-      <h3 style="margin-bottom:16px;color:var(--accent)">Analysis Result</h3>
-      <div id="dpi-result" style="text-align:center;padding:40px;color:var(--text-dim)">
-        <div style="font-size:32px;margin-bottom:8px">🛡️</div>
+      <h3 class="ieff203577">Analysis Result</h3>
+      <div id="dpi-result" class="ie570955b5">
+        <div class="ieab372897">🛡️</div>
         <div>Submit a request to inspect</div>
       </div>
     </div>
@@ -107,74 +107,74 @@
 </div>
 
 <!-- LIVE TRAFFIC TAB -->
-<div id="tab-traffic" style="display:none">
-  <div class="fw-card" style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+<div id="tab-traffic" class="iecb458930">
+  <div class="fw-card ie8e86974b" >
+    <div class="ie631785f9">
       <h3>Inspected Traffic Log</h3>
-      <div style="display:flex;gap:8px">
+      <div class="ie9c68691e">
         <button class="btn btn-secondary btn-sm" data-onclick="refreshTraffic">Refresh</button>
         <button class="btn btn-primary btn-sm" data-onclick="startAutoRefresh" id="auto-btn">Auto (5s)</button>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px">
+    <div class="ie1afbb3ba">
       This log shows requests you submitted via DPI Inspect or Simulate Traffic — it is not a passive capture of live network traffic. NGFW v2 is an on-demand inspection tool, not an inline traffic gateway.
     </div>
 
-    <div style="margin-bottom:16px">
-      <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">Category Breakdown</div>
+    <div class="ie8e86974b">
+      <div class="ie1fceb166">Category Breakdown</div>
       <div id="cat-breakdown"></div>
     </div>
 
-    <div id="live-chart" style="margin-bottom:16px">
-      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--text-dim);font-size:12px">Loading chart...</div>
+    <div id="live-chart" class="ie8e86974b">
+      <div class="ieb43a20b6">Loading chart...</div>
     </div>
   </div>
 
   <div class="fw-card">
-    <h3 style="margin-bottom:12px">Recent Traffic Log</h3>
+    <h3 class="iefa3e1c7d">Recent Traffic Log</h3>
     <div id="traffic-log">Loading...</div>
   </div>
 </div>
 
 <!-- DPI RULES TAB -->
-<div id="tab-rules" style="display:none">
+<div id="tab-rules" class="iecb458930">
   <div class="fw-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div class="iebec8399a">
       <h3>DPI Signature Database ({{ stats.dpi_rules_count }} rules)</h3>
-      <input type="text" class="form-control" style="max-width:200px;font-size:12px" placeholder="Search rules..." data-oninput="searchRulesFromInput">
+      <input type="text" class="form-control iebe2c09c4"  placeholder="Search rules..." data-oninput="searchRulesFromInput">
     </div>
     <div id="rules-list">
       {% for rule in dpi_rules %}
       <div class="dpi-rule dpi-{{ rule.severity.lower() }}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <div class="ie631785f9">
           <div>
-            <code style="font-size:10px;color:var(--accent)">{{ rule.id }}</code>
-            <span style="font-size:12px;font-weight:700;margin-left:8px">{{ rule.name }}</span>
+            <code class="ie92835564">{{ rule.id }}</code>
+            <span class="iebe1fb673">{{ rule.name }}</span>
           </div>
           <span class="badge badge-{{ 'critical' if rule.severity == 'CRITICAL' else 'high' if rule.severity == 'HIGH' else 'medium' }}">{{ rule.severity }}</span>
         </div>
-        <div style="font-size:10px;color:var(--text-dim)">Category: {{ rule.category }} · Base confidence: {{ rule.confidence_base }}%</div>
-        <div style="font-size:10px;font-family:monospace;color:#7E57C2;margin-top:4px;word-break:break-all">{{ rule.pattern[:80] }}…</div>
+        <div class="ie3122d8b0">Category: {{ rule.category }} · Base confidence: {{ rule.confidence_base }}%</div>
+        <div class="ie81222d86">{{ rule.pattern[:80] }}…</div>
       </div>
       {% endfor %}
-      <div style="text-align:center;padding:16px;color:var(--text-dim);font-size:11px">
-        Showing 10 of {{ stats.dpi_rules_count }} rules — <a href="/ngfw/api/rules" target="_blank" style="color:var(--accent)">View all via API</a>
+      <div class="ie9bbb60d7">
+        Showing 10 of {{ stats.dpi_rules_count }} rules — <a href="/ngfw/api/rules" target="_blank" class="iebb2b0e55">View all via API</a>
       </div>
     </div>
   </div>
 </div>
 
 <!-- GEO INTELLIGENCE TAB -->
-<div id="tab-geo" style="display:none">
+<div id="tab-geo" class="iecb458930">
   <div class="grid grid-2">
     <div class="fw-card">
-      <h3 style="color:#FF6B6B;margin-bottom:16px">Geo-Blocking Rules</h3>
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:14px">{{ geo_blocks.note }}</p>
+      <h3 class="ief9398a66">Geo-Blocking Rules</h3>
+      <p class="ie284a9df1">{{ geo_blocks.note }}</p>
       {% for code, country in geo_blocks.blocked_countries.items() %}
       <div class="geo-country">
         <div>
-          <div style="font-size:12px;font-weight:700">{{ country }}</div>
-          <div style="font-size:10px;color:var(--text-dim)">{{ code }}</div>
+          <div class="iedff98dc3">{{ country }}</div>
+          <div class="ie3122d8b0">{{ code }}</div>
         </div>
         <span class="badge badge-critical">BLOCK</span>
       </div>
@@ -182,19 +182,19 @@
     </div>
 
     <div class="fw-card">
-      <h3 style="margin-bottom:16px">Top Source IPs</h3>
+      <h3 class="ie8e86974b">Top Source IPs</h3>
       {% if stats.top_source_ips %}
         {% for item in stats.top_source_ips %}
         <div class="geo-country">
-          <code style="font-size:12px">{{ item.ip }}</code>
+          <code class="ie6b9c179a">{{ item.ip }}</code>
           <span class="badge badge-{{ 'critical' if item.count > 100 else 'high' if item.count > 20 else 'medium' }}">{{ item.count }} req</span>
         </div>
         {% endfor %}
       {% else %}
-        <p style="color:var(--text-dim);font-size:12px">No traffic logged yet. Run a simulation first.</p>
+        <p class="ie77593361">No traffic logged yet. Run a simulation first.</p>
       {% endif %}
 
-      <h3 style="margin-top:20px;margin-bottom:12px">Geo Distribution</h3>
+      <h3 class="ieb9bb0237">Geo Distribution</h3>
       {% if stats.geo_distribution %}
         {% for code, count in stats.geo_distribution.items() %}
         <div class="geo-country">
@@ -203,7 +203,7 @@
         </div>
         {% endfor %}
       {% else %}
-        <p style="color:var(--text-dim);font-size:12px">No geo data yet.</p>
+        <p class="ie77593361">No geo data yet.</p>
       {% endif %}
     </div>
   </div>
@@ -240,35 +240,36 @@ function renderDPIResult(data) {
   const scoreColor = data.threat_score >= 70 ? '#FF6B6B' : data.threat_score >= 40 ? '#FFA726' : '#66BB6A';
   const el = document.getElementById('dpi-result');
   el.innerHTML = `
-    <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:14px;
+    <div data-dyn-style="display:flex;align-items:center;gap:16px;margin-bottom:16px;padding:14px;
       background:${scoreColor}18;border:1px solid ${scoreColor};border-radius:8px">
-      <div style="text-align:center;min-width:70px">
-        <div style="font-size:28px;font-weight:700;color:${scoreColor}">${data.threat_score}</div>
-        <div style="font-size:9px;color:var(--text-dim)">THREAT SCORE</div>
+      <div class="iedb9d0bcd">
+        <div data-dyn-style="font-size:28px;font-weight:700;color:${scoreColor}">${data.threat_score}</div>
+        <div class="iee974f2d0">THREAT SCORE</div>
       </div>
-      <div style="flex:1">
-        <div style="font-size:16px;font-weight:700;color:${scoreColor}" class="action-${data.action}">${data.action}</div>
-        <div style="font-size:11px;color:var(--text-dim)">${data.top_threat}</div>
-        <div style="font-size:10px;color:var(--text-dim);margin-top:2px">${data.src_ip} → Port ${data.dst_port} (${data.port_name})</div>
+      <div class="ieda5cd676">
+        <div data-dyn-style="font-size:16px;font-weight:700;color:${scoreColor}" class="action-${data.action}">${data.action}</div>
+        <div class="ie5b3cc826">${data.top_threat}</div>
+        <div class="ie855fc9db">${data.src_ip} → Port ${data.dst_port} (${data.port_name})</div>
       </div>
     </div>
-    ${data.signature_hits.length ? `<div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:#FF6B6B">Signature Hits (${data.signature_hits.length})</div>
-      ${data.signature_hits.map(h=>`<div style="background:var(--bg-secondary);border-radius:6px;padding:8px;margin-bottom:4px;display:flex;justify-content:space-between">
-        <div><code style="font-size:9px">${h.id}</code> <span style="font-size:11px">${h.name}</span></div>
+    ${data.signature_hits.length ? `<div class="ie6179637e">
+      <div class="iec43ffac4">Signature Hits (${data.signature_hits.length})</div>
+      ${data.signature_hits.map(h=>`<div class="ie37b96727">
+        <div><code class="ied9e14ae8">${h.id}</code> <span class="ie8b685211">${h.name}</span></div>
         <span class="badge badge-${h.severity.toLowerCase()}">${h.confidence.toFixed(0)}%</span>
       </div>`).join('')}
     </div>` : ''}
-    <div style="margin-bottom:14px">
-      <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--accent)">ML Features</div>
+    <div class="ie6179637e">
+      <div class="ie4fd68982">ML Features</div>
       ${Object.entries(data.ml_features||{}).map(([k,v])=>`<div class="ml-feature"><span>${k.replace(/_/g,' ')}</span><strong>${v}</strong></div>`).join('')}
     </div>
     <div>
-      <div style="font-size:11px;font-weight:700;margin-bottom:6px">Geo: ${data.geo?.country||'Unknown'} (${data.geo?.country_code||'??'})</div>
-      ${data.geo?.is_high_risk ? `<div style="color:#FF6B6B;font-size:11px">⚠ High-risk country — ${data.geo.risk_reason}</div>` : ''}
-      ${data.ua_suspicious ? `<div style="color:#FFA726;font-size:11px;margin-top:4px">⚠ Suspicious User-Agent detected: ${data.user_agent}</div>` : ''}
+      <div class="ieac36f935">Geo: ${data.geo?.country||'Unknown'} (${data.geo?.country_code||'??'})</div>
+      ${data.geo?.is_high_risk ? `<div class="ie4ed05eb1">⚠ High-risk country — ${data.geo.risk_reason}</div>` : ''}
+      ${data.ua_suspicious ? `<div class="iea1c47735">⚠ Suspicious User-Agent detected: ${data.user_agent}</div>` : ''}
     </div>
   `;
+  optisecApplyDynStyles(el);
 }
 
 async function simulateTraffic() {
@@ -283,25 +284,28 @@ async function refreshTraffic() {
   const resp = await fetch('/ngfw/api/stats');
   const data = await resp.json();
   const log = document.getElementById('traffic-log');
-  if (!data.recent_log?.length) { log.innerHTML = '<p style="color:var(--text-dim);font-size:12px;text-align:center;padding:20px">No traffic logged. Run a simulation.</p>'; return; }
+  if (!data.recent_log?.length) { log.innerHTML = '<p class="ie50df17a4">No traffic logged. Run a simulation.</p>'; return; }
   log.innerHTML = data.recent_log.map(r => `<div class="traffic-row ${r.action}">
-    <span class="action-${r.action}" style="min-width:48px" title="${r.simulated ? (r.note||'Simulated traffic') : ''}">${r.action}${r.simulated ? '<sup style="opacity:0.7">*</sup>' : ''}</span>
-    <span style="min-width:60px;font-weight:700;color:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}">${r.threat_score}</span>
-    <div class="threat-bar"><div class="threat-fill" style="width:${r.threat_score}%;background:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}"></div></div>
-    <code style="min-width:110px;font-size:10px">${r.src_ip}</code>
-    <span style="color:var(--text-dim);min-width:48px">${r.port_name}</span>
-    <span style="color:var(--text-dim);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.path}</span>
-    <span class="badge badge-${r.geo?.is_high_risk?'critical':'info'}" style="font-size:9px">${r.geo?.country_code||'??'}</span>
-    <span style="color:var(--text-dim);font-size:10px;min-width:65px">${new Date(r.timestamp).toLocaleTimeString()}</span>
-  </div>`).join('') + (data.recent_log.some(r => r.simulated) ? `<div style="margin-top:8px;font-size:9px;color:var(--text-dim)">* Rows marked with an asterisk are synthetic demo traffic from "Simulate Requests", not real inspected network requests.</div>` : '');
+    <span class="action-${r.action} iefc2c3a92"  title="${r.simulated ? (r.note||'Simulated traffic') : ''}">${r.action}${r.simulated ? '<sup class="ie72cd8085">*</sup>' : ''}</span>
+    <span data-dyn-style="min-width:60px;font-weight:700;color:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}">${r.threat_score}</span>
+    <div class="threat-bar"><div class="threat-fill" data-dyn-style="width:${r.threat_score}%;background:${r.threat_score>=70?'#FF6B6B':r.threat_score>=40?'#FFA726':'#66BB6A'}"></div></div>
+    <code class="ie20b610e3">${r.src_ip}</code>
+    <span class="iea7f20ca2">${r.port_name}</span>
+    <span class="ie18995ab9">${r.path}</span>
+    <span class="badge badge-${r.geo?.is_high_risk?'critical':'info'} ied9e14ae8" >${r.geo?.country_code||'??'}</span>
+    <span class="ie0656dc4b">${new Date(r.timestamp).toLocaleTimeString()}</span>
+  </div>`).join('') + (data.recent_log.some(r => r.simulated) ? `<div class="iebfdf0207">* Rows marked with an asterisk are synthetic demo traffic from "Simulate Requests", not real inspected network requests.</div>` : '');
+  optisecApplyDynStyles(log);
 
   // Category breakdown
   const cats = data.category_breakdown || {};
   const catColors = {sqli:'#FF6B6B',xss:'#FFA726',lfi:'#FFCA28',cmdi:'#7E57C2',ssrf:'#EC407A',c2:'#AB47BC',evasion:'#78909C',protocol:'#42A5F5'};
   const maxCat = Math.max(1, ...Object.values(cats));
-  document.getElementById('cat-breakdown').innerHTML = Object.entries(cats).map(([k,v]) =>
-    `<div class="cat-bar"><span style="min-width:70px;font-size:10px;color:var(--text-dim)">${k}</span><div style="flex:1;height:10px;background:var(--bg-secondary);border-radius:5px;overflow:hidden"><div class="cat-fill" style="width:${v/maxCat*100}%;background:${catColors[k]||'#888'}"></div></div><span style="min-width:25px;text-align:right;font-size:10px">${v}</span></div>`
-  ).join('') || '<p style="font-size:11px;color:var(--text-dim)">No threats detected yet.</p>';
+  const catBreakdownEl = document.getElementById('cat-breakdown');
+  catBreakdownEl.innerHTML = Object.entries(cats).map(([k,v]) =>
+    `<div class="cat-bar"><span class="ief5b86102">${k}</span><div class="iefc7a5319"><div class="cat-fill" data-dyn-style="width:${v/maxCat*100}%;background:${catColors[k]||'#888'}"></div></div><span class="ie5fa7d3b4">${v}</span></div>`
+  ).join('') || '<p class="ie5b3cc826">No threats detected yet.</p>';
+  optisecApplyDynStyles(catBreakdownEl);
 
   // Chart
   renderChart(data.recent_log.slice(0,20).reverse());
@@ -316,7 +320,10 @@ function renderChart(log) {
     const bar = document.createElement('div');
     bar.className = 'chart-bar';
     const h = (entry.threat_score / 100) * 180;
-    bar.style.cssText = `left:${i*(barW+gap)+8}px;height:${h}px;width:${barW}px;background:${entry.threat_score>=70?'#FF6B6B':entry.threat_score>=40?'#FFA726':'#66BB6A'}`;
+    bar.style.setProperty('left', `${i*(barW+gap)+8}px`);
+    bar.style.setProperty('height', `${h}px`);
+    bar.style.setProperty('width', `${barW}px`);
+    bar.style.setProperty('background', entry.threat_score>=70?'#FF6B6B':entry.threat_score>=40?'#FFA726':'#66BB6A');
     bar.title = `${entry.src_ip}: ${entry.threat_score}/100 ${entry.action}`;
     chart.appendChild(bar);
   });

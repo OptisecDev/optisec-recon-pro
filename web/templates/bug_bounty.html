@@ -3,7 +3,7 @@
 {% block page_title %}Bug Bounty Platform{% endblock %}
 
 {% block content %}
-<div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
+<div class="iec26f5e10">
   <button class="btn btn-primary" id="tab-btn-hackerone" data-onclick="showTab" data-onclick-args='["hackerone"]'>🎯 HackerOne</button>
   <button class="btn btn-secondary" id="tab-btn-bugcrowd" data-onclick="showTab" data-onclick-args='["bugcrowd"]'>🐛 Bugcrowd</button>
   <button class="btn btn-secondary" id="tab-btn-intigriti" data-onclick="showTab" data-onclick-args='["intigriti"]'>🔵 Intigriti</button>
@@ -12,74 +12,74 @@
 </div>
 
 <!-- ══ Scope Modal ══════════════════════════════════════════════════════════ -->
-<div id="scope-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)" data-onclick="closeModalIfBackdrop" data-onclick-event>
-  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(680px,95vw);max-height:88vh;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:0">
+<div id="scope-modal" class="ie50240f0f" data-onclick="closeModalIfBackdrop" data-onclick-event>
+  <div class="ieec1b89ff">
     <!-- Modal Header -->
-    <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg-card);z-index:1">
-      <img id="modal-logo" src="" alt="" style="width:36px;height:36px;border-radius:6px;object-fit:contain;display:none" data-onerror="hideImgOnError" />
-      <div style="flex:1;min-width:0">
-        <div id="modal-name" style="font-weight:700;font-size:15px"></div>
-        <div id="modal-state-row" style="margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
+    <div class="ie5c58c4c6">
+      <img id="modal-logo" src="" alt="" class="ie94afd63e" data-onerror="hideImgOnError" />
+      <div class="ie89bd09bd">
+        <div id="modal-name" class="ie6bd33ad2"></div>
+        <div id="modal-state-row" class="iefda9df9d"></div>
       </div>
-      <button data-onclick="closeScopeModal" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1;padding:4px">✕</button>
+      <button data-onclick="closeScopeModal" class="ie796be23e">✕</button>
     </div>
 
     <!-- Bounty Ranges -->
-    <div id="modal-bounty" style="padding:14px 20px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:8px;font-weight:600">💰 Bounty Ranges</div>
+    <div id="modal-bounty" class="ie0bc14f06">
+      <div class="ied962b699">💰 Bounty Ranges</div>
       <div id="modal-bounty-body"></div>
     </div>
 
     <!-- In-Scope -->
-    <div id="modal-inscope-section" style="padding:14px 20px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:8px;font-weight:600">✅ In Scope</div>
+    <div id="modal-inscope-section" class="ie0bc14f06">
+      <div class="ied962b699">✅ In Scope</div>
       <div id="modal-inscope"></div>
     </div>
 
     <!-- Out-of-Scope -->
-    <div id="modal-outscope-section" style="padding:14px 20px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:8px;font-weight:600">❌ Out of Scope</div>
+    <div id="modal-outscope-section" class="ie0bc14f06">
+      <div class="ied962b699">❌ Out of Scope</div>
       <div id="modal-outscope"></div>
     </div>
 
     <!-- Program Rules -->
-    <div id="modal-rules-section" style="padding:14px 20px;border-bottom:1px solid var(--border)">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:8px;font-weight:600">📜 Program Rules</div>
-      <div id="modal-rules" style="font-size:12px;color:var(--text-dim);white-space:pre-wrap;max-height:160px;overflow-y:auto;line-height:1.5"></div>
+    <div id="modal-rules-section" class="ie0bc14f06">
+      <div class="ied962b699">📜 Program Rules</div>
+      <div id="modal-rules" class="iecb3cfdc5"></div>
     </div>
 
     <!-- Footer Actions -->
-    <div style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap">
+    <div class="iea860584b">
       <button id="modal-scan-btn" class="btn btn-primary btn-sm" data-onclick="scanModalTarget">🎯 Scan This Target</button>
-      <a id="modal-h1-link" href="#" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">🔗 View Full Program</a>
-      <button data-onclick="closeScopeModal" class="btn btn-secondary btn-sm" style="margin-left:auto">Close</button>
+      <a id="modal-h1-link" href="#" target="_blank" class="btn btn-secondary btn-sm ie116e33d4" >🔗 View Full Program</a>
+      <button data-onclick="closeScopeModal" class="btn btn-secondary btn-sm ie83456371" >Close</button>
     </div>
   </div>
 </div>
 
 <!-- ══ HackerOne Tab ════════════════════════════════════════════════════════ -->
 <div id="tab-hackerone">
-  <div class="card" style="margin-bottom:16px">
+  <div class="card ie8e86974b" >
     <div class="card-header">
       <div>
         <div class="card-title">🎯 HackerOne Programs</div>
         <div class="card-subtitle">Live public directory — no API key required</div>
       </div>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:4px">
-      <input type="text" id="h1-keyword" placeholder="shopify, github, uber..." style="flex:1" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["searchH1Programs"]' />
+    <div class="ie4d6fb07c">
+      <input type="text" id="h1-keyword" placeholder="shopify, github, uber..." class="ieda5cd676" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["searchH1Programs"]' />
       <button class="btn btn-primary btn-sm" data-onclick="searchH1Programs">Search</button>
       <button class="btn btn-secondary btn-sm" data-onclick="clearAndSearchH1">All</button>
     </div>
-    <div id="h1-source-badge" style="font-size:11px;color:var(--text-dim);margin-bottom:12px"></div>
-    <div id="h1-programs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+    <div id="h1-source-badge" class="ie76b6cacf"></div>
+    <div id="h1-programs-grid" class="ie325a4e74"></div>
   </div>
 
-  <div class="grid-2" style="align-items:start">
+  <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header"><div class="card-title">📊 My Reports</div></div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <select id="h1-report-state" style="flex:1">
+      <div class="ie60e30436">
+        <select id="h1-report-state" class="ieda5cd676">
           <option value="all">All States</option>
           <option value="new">New</option>
           <option value="triaged">Triaged</option>
@@ -93,9 +93,9 @@
 
     <div class="card">
       <div class="card-header"><div class="card-title">🔍 Scope Inspector</div></div>
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Enter a program handle to load live scope (requires API token)</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input type="text" id="h1-scope-handle" placeholder="e.g. shopify" style="flex:1" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["loadH1Scope"]' />
+      <div class="ieb81f7c27">Enter a program handle to load live scope (requires API token)</div>
+      <div class="ie60e30436">
+        <input type="text" id="h1-scope-handle" placeholder="e.g. shopify" class="ieda5cd676" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["loadH1Scope"]' />
         <button class="btn btn-primary btn-sm" data-onclick="loadH1Scope">Load Scope</button>
       </div>
       <div id="h1-scope-result"></div>
@@ -104,8 +104,8 @@
 </div>
 
 <!-- ══ Bugcrowd Tab ═════════════════════════════════════════════════════════ -->
-<div id="tab-bugcrowd" style="display:none">
-  <div class="card" style="margin-bottom:16px">
+<div id="tab-bugcrowd" class="iecb458930">
+  <div class="card ie8e86974b" >
     <div class="card-header">
       <div>
         <div class="card-title">🐛 Bugcrowd Programs</div>
@@ -113,14 +113,14 @@
       </div>
       <button class="btn btn-primary btn-sm" data-onclick="loadBCPrograms">Refresh</button>
     </div>
-    <div id="bc-source-badge" style="font-size:11px;color:var(--text-dim);margin-bottom:12px"></div>
-    <div id="bc-programs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+    <div id="bc-source-badge" class="ie76b6cacf"></div>
+    <div id="bc-programs-grid" class="ie325a4e74"></div>
   </div>
 
   <div class="card">
     <div class="card-header"><div class="card-title">🎯 Program Targets</div></div>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <input type="text" id="bc-program-code" placeholder="program code (e.g. tesla)" style="flex:1" />
+    <div class="ie60e30436">
+      <input type="text" id="bc-program-code" placeholder="program code (e.g. tesla)" class="ieda5cd676" />
       <button class="btn btn-secondary btn-sm" data-onclick="loadBCTargets">Load Targets</button>
     </div>
     <div id="bc-targets-list"></div>
@@ -128,7 +128,7 @@
 </div>
 
 <!-- ══ Intigriti Tab ════════════════════════════════════════════════════════ -->
-<div id="tab-intigriti" style="display:none">
+<div id="tab-intigriti" class="iecb458930">
   <div class="card">
     <div class="card-header">
       <div>
@@ -137,33 +137,33 @@
       </div>
       <button class="btn btn-primary btn-sm" data-onclick="loadIGPrograms">Refresh</button>
     </div>
-    <div id="ig-source-badge" style="font-size:11px;color:var(--text-dim);margin-bottom:12px"></div>
-    <div id="ig-programs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
+    <div id="ig-source-badge" class="ie76b6cacf"></div>
+    <div id="ig-programs-grid" class="ie325a4e74"></div>
   </div>
 </div>
 
 <!-- ══ CVE Pipeline Tab ═════════════════════════════════════════════════════ -->
-<div id="tab-cve" style="display:none">
-  <div class="grid-2" style="align-items:start">
+<div id="tab-cve" class="iecb458930">
+  <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header"><div class="card-title">🔍 NVD CVE Search</div></div>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["searchCVE"]' />
+      <div class="ie60e30436">
+        <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" class="ieda5cd676" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["searchCVE"]' />
         <button class="btn btn-primary btn-sm" data-onclick="searchCVE">Search</button>
       </div>
       <div id="cve-search-results"></div>
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">📋 CVE Submission Queue</div></div>
-      <button class="btn btn-secondary btn-sm" data-onclick="loadCVEQueue" style="margin-bottom:12px">Refresh Queue</button>
+      <button class="btn btn-secondary btn-sm iefa3e1c7d" data-onclick="loadCVEQueue" >Refresh Queue</button>
       <div id="cve-queue"></div>
     </div>
   </div>
 </div>
 
 <!-- ══ Submit Report Tab ════════════════════════════════════════════════════ -->
-<div id="tab-submit" style="display:none">
-  <div class="card" style="max-width:700px">
+<div id="tab-submit" class="iecb458930">
+  <div class="card ie403688b7" >
     <div class="card-header"><div class="card-title">📤 Submit Vulnerability Report</div></div>
     <div class="form-group">
       <label>Platform</label>
@@ -203,8 +203,8 @@
       <label>Steps to Reproduce</label>
       <textarea id="submit-steps" rows="4" placeholder="1. Navigate to...\n2. Enter payload...\n3. Observe..."></textarea>
     </div>
-    <button class="btn btn-primary" data-onclick="submitReport" style="width:100%;justify-content:center">📤 Submit Report</button>
-    <div id="submit-result" style="margin-top:12px"></div>
+    <button class="btn btn-primary ied6167dca" data-onclick="submitReport" >📤 Submit Report</button>
+    <div id="submit-result" class="ie002535c2"></div>
   </div>
 </div>
 
@@ -250,26 +250,26 @@ function openScopeModal(handle) {
   if (p.min_bounty != null) {
     const cur = p.currency || 'USD';
     bountyBody.innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
-        <div style="text-align:center;padding:8px;background:var(--bg);border-radius:6px">
-          <div style="font-size:10px;color:var(--text-dim);margin-bottom:2px">LOW</div>
-          <div style="font-weight:600;color:var(--accent)">${cur} ${fmt(p.min_bounty)}</div>
+      <div class="ie84cc3fc5">
+        <div class="ieeaacc8f4">
+          <div class="ieb101a8dc">LOW</div>
+          <div class="ief198b004">${cur} ${fmt(p.min_bounty)}</div>
         </div>
-        <div style="text-align:center;padding:8px;background:var(--bg);border-radius:6px">
-          <div style="font-size:10px;color:var(--text-dim);margin-bottom:2px">MEDIUM</div>
-          <div style="font-weight:600;color:#f59e0b">${cur} ${fmt(Math.round((p.min_bounty||0)*3))}</div>
+        <div class="ieeaacc8f4">
+          <div class="ieb101a8dc">MEDIUM</div>
+          <div class="ie7716f061">${cur} ${fmt(Math.round((p.min_bounty||0)*3))}</div>
         </div>
-        <div style="text-align:center;padding:8px;background:var(--bg);border-radius:6px">
-          <div style="font-size:10px;color:var(--text-dim);margin-bottom:2px">HIGH</div>
-          <div style="font-weight:600;color:#ef4444">${cur} ${fmt(Math.round((p.min_bounty||0)*8))}</div>
+        <div class="ieeaacc8f4">
+          <div class="ieb101a8dc">HIGH</div>
+          <div class="ieeced619d">${cur} ${fmt(Math.round((p.min_bounty||0)*8))}</div>
         </div>
-        <div style="text-align:center;padding:8px;background:var(--bg);border-radius:6px">
-          <div style="font-size:10px;color:var(--text-dim);margin-bottom:2px">CRITICAL</div>
-          <div style="font-weight:600;color:#dc2626">${cur} ${p.max_bounty ? fmt(p.max_bounty) : '?'}</div>
+        <div class="ieeaacc8f4">
+          <div class="ieb101a8dc">CRITICAL</div>
+          <div class="iec1f5e75e">${cur} ${p.max_bounty ? fmt(p.max_bounty) : '?'}</div>
         </div>
       </div>`;
   } else {
-    bountyBody.innerHTML = `<span style="color:var(--text-dim);font-size:12px">${p.reward_summary || 'Check program page for bounty details'}</span>`;
+    bountyBody.innerHTML = `<span class="ie77593361">${p.reward_summary || 'Check program page for bounty details'}</span>`;
   }
 
   // In-scope (use saved scope data or generate from handle)
@@ -279,12 +279,12 @@ function openScopeModal(handle) {
     { asset: `mobile.${handle}.com`, type: 'URL', max_severity: 'high', eligible_for_bounty: true },
   ];
   document.getElementById('modal-inscope').innerHTML = inScope.map(s => `
-    <div style="padding:6px 10px;border-left:2px solid var(--accent);margin-bottom:4px;font-size:12px;display:flex;align-items:center;gap:8px">
-      <code style="flex:1;color:var(--text)">${escHtml(s.asset || '')}</code>
-      <span style="color:var(--text-dim);font-size:11px">${escHtml(s.type || '')}</span>
+    <div class="ie69878f67">
+      <code class="ie6cb01e7e">${escHtml(s.asset || '')}</code>
+      <span class="iefcb79f64">${escHtml(s.type || '')}</span>
       ${s.max_severity ? `<span class="badge badge-${sev(s.max_severity)}">${s.max_severity}</span>` : ''}
       ${s.eligible_for_bounty ? `<span class="badge badge-low">$</span>` : ''}
-    </div>`).join('') || '<span style="color:var(--text-dim);font-size:12px">No scope data — view program page for details</span>';
+    </div>`).join('') || '<span class="ie77593361">No scope data — view program page for details</span>';
 
   // Out-of-scope
   const outScope = p.out_of_scope || [
@@ -293,9 +293,9 @@ function openScopeModal(handle) {
     { asset: 'Social engineering / phishing attacks', type: 'General' },
   ];
   document.getElementById('modal-outscope').innerHTML = outScope.map(s => `
-    <div style="padding:6px 10px;border-left:2px solid var(--border);margin-bottom:4px;font-size:12px;color:var(--text-dim)">
+    <div class="iedcd694b9">
       <code>${escHtml(s.asset || '')}</code>
-    </div>`).join('') || '<span style="color:var(--text-dim);font-size:12px">No out-of-scope data</span>';
+    </div>`).join('') || '<span class="ie77593361">No out-of-scope data</span>';
 
   // Program rules
   const rules = p.policy_snippet || p.about || '';
@@ -351,32 +351,32 @@ async function searchH1Programs() {
     _programs[handle] = { ...p, main_domain: handle ? handle + '.com' : '' };
     const stateCls = p.submission_state === 'open' ? 'badge-low' : 'badge-medium';
     const logoHtml = p.logo
-      ? `<img src="${escHtml(p.logo)}" style="width:32px;height:32px;border-radius:4px;object-fit:contain;margin-right:10px;flex-shrink:0" data-onerror="hideImgOnError" />`
-      : `<div style="width:32px;height:32px;border-radius:4px;background:var(--bg);display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;font-size:16px">🎯</div>`;
+      ? `<img src="${escHtml(p.logo)}" class="ie45e45ec2" data-onerror="hideImgOnError" />`
+      : `<div class="ie150a67c1">🎯</div>`;
     return `
-      <div style="padding:14px;border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;gap:8px;background:var(--bg-card)">
-        <div style="display:flex;align-items:flex-start">
+      <div class="iea64cb3be">
+        <div class="ied980357a">
           ${logoHtml}
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.name)}</div>
-            <div style="font-size:11px;color:var(--text-dim);margin-top:1px">
-              <a href="${escHtml(p.url)}" target="_blank" style="color:var(--accent)">hackerone.com/${escHtml(handle)}</a>
+          <div class="ie89bd09bd">
+            <div class="ie3cac399d">${escHtml(p.name)}</div>
+            <div class="ie1b167a04">
+              <a href="${escHtml(p.url)}" target="_blank" class="iebb2b0e55">hackerone.com/${escHtml(handle)}</a>
             </div>
           </div>
-          <span class="badge ${stateCls}" style="margin-left:6px;flex-shrink:0">${p.submission_state || 'open'}</span>
+          <span class="badge ${stateCls} ieb4573ac9" >${p.submission_state || 'open'}</span>
         </div>
 
-        <div style="display:flex;gap:12px;font-size:11px;color:var(--text-dim);flex-wrap:wrap">
-          ${p.min_bounty != null ? `<span>💰 Min: <strong style="color:var(--text)">${p.currency||'USD'} ${fmt(p.min_bounty)}</strong></span>` : ''}
+        <div class="ie81c57550">
+          ${p.min_bounty != null ? `<span>💰 Min: <strong class="ieaee76f91">${p.currency||'USD'} ${fmt(p.min_bounty)}</strong></span>` : ''}
           ${p.resolved_reports != null ? `<span>✅ ${p.resolved_reports} resolved</span>` : ''}
-          ${p.quick_to_bounty ? `<span style="color:#22c55e">⚡ Quick bounty</span>` : ''}
-          ${p.quick_to_first_response ? `<span style="color:#3b82f6">⚡ Fast response</span>` : ''}
+          ${p.quick_to_bounty ? `<span class="ieec9caee1">⚡ Quick bounty</span>` : ''}
+          ${p.quick_to_first_response ? `<span class="ied294e9a2">⚡ Fast response</span>` : ''}
         </div>
 
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        <div class="ie827e7e6d">
           <button class="btn btn-secondary btn-sm" data-onclick="openScopeModal" data-onclick-args="${optisecArgs([handle])}">🔍 View Scope</button>
           <button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([handle+'.com'])}">🎯 Scan Target</button>
-          <a href="${escHtml(p.url)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">↗ Open</a>
+          <a href="${escHtml(p.url)}" target="_blank" class="btn btn-secondary btn-sm ie116e33d4" >↗ Open</a>
         </div>
       </div>`;
   }).join('');
@@ -397,24 +397,24 @@ async function loadH1Scope() {
   const inscope = data.in_scope || data.scopes || [];
   const outscope = data.out_of_scope || [];
   if (inscope.length || outscope.length) {
-    let html = `<div style="font-weight:600;margin-bottom:8px">${escHtml(data.name || handle)}</div>`;
+    let html = `<div class="ieba2b31fe">${escHtml(data.name || handle)}</div>`;
     if (inscope.length) {
-      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;font-weight:600">IN SCOPE</div>`;
+      html += `<div class="ie8227dd59">IN SCOPE</div>`;
       html += inscope.map(s => `
-        <div style="padding:5px 8px;border-left:2px solid var(--accent);margin-bottom:3px;font-size:12px">
+        <div class="ieeb98e684">
           <strong>${escHtml(s.asset||'')}</strong>
-          <span style="margin-left:6px;color:var(--text-dim)">${escHtml(s.type||'')}</span>
-          ${s.max_severity ? `<span class="badge badge-${sev(s.max_severity)}" style="margin-left:4px">${s.max_severity}</span>` : ''}
+          <span class="ie62065c3e">${escHtml(s.type||'')}</span>
+          ${s.max_severity ? `<span class="badge badge-${sev(s.max_severity)} ie132fb96a" >${s.max_severity}</span>` : ''}
         </div>`).join('');
     }
     if (outscope.length) {
-      html += `<div style="font-size:11px;color:var(--text-dim);margin:8px 0 4px;font-weight:600">OUT OF SCOPE</div>`;
+      html += `<div class="ie97aa8792">OUT OF SCOPE</div>`;
       html += outscope.map(s => `
-        <div style="padding:5px 8px;border-left:2px solid var(--border);margin-bottom:3px;font-size:12px;color:var(--text-dim)">
+        <div class="iee1ecec1a">
           ${escHtml(s.asset||'')}
         </div>`).join('');
     }
-    if (data.source === 'demo') html += `<div style="font-size:11px;color:var(--text-dim);margin-top:8px">Demo data — set API token for live scope</div>`;
+    if (data.source === 'demo') html += `<div class="ie6f2c26a1">Demo data — set API token for live scope</div>`;
     el.innerHTML = html;
   } else {
     el.innerHTML = '<div class="text-dim">No scope data — requires HACKERONE_USERNAME + HACKERONE_API_TOKEN</div>';
@@ -428,16 +428,16 @@ async function loadH1Reports() {
   const el = document.getElementById('h1-reports-list');
   if (data.reports?.length) {
     el.innerHTML = data.reports.map(rep => `
-      <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
-        <div style="display:flex;justify-content:space-between">
-          <a href="${escHtml(rep.url)}" target="_blank" style="color:var(--accent);font-weight:600">#${rep.id}</a>
+      <div class="iec5149828">
+        <div class="ie1141c430">
+          <a href="${escHtml(rep.url)}" target="_blank" class="ie0c727778">#${rep.id}</a>
           <div>
             <span class="badge badge-${sev(rep.severity||'info')}">${rep.severity||'N/A'}</span>
-            <span class="badge badge-info" style="margin-left:4px">${rep.state}</span>
+            <span class="badge badge-info ie132fb96a" >${rep.state}</span>
           </div>
         </div>
-        <div style="color:var(--text-dim);margin-top:2px">${escHtml(rep.title)}</div>
-        ${rep.bounty ? `<div style="color:var(--accent);font-weight:600;margin-top:2px">$${rep.bounty}</div>` : ''}
+        <div class="ie491272e0">${escHtml(rep.title)}</div>
+        ${rep.bounty ? `<div class="ie3d05b788">$${rep.bounty}</div>` : ''}
       </div>`).join('');
   } else {
     el.innerHTML = '<div class="text-dim">No reports — requires HACKERONE_USERNAME + HACKERONE_API_TOKEN</div>';
@@ -458,24 +458,24 @@ async function loadBCPrograms() {
 
   grid.innerHTML = (data.programs || []).map(p => {
     const logoHtml = p.logo
-      ? `<img src="${escHtml(p.logo)}" style="width:32px;height:32px;border-radius:4px;object-fit:contain;margin-right:10px;flex-shrink:0" data-onerror="hideImgOnError" />`
-      : `<div style="width:32px;height:32px;border-radius:4px;background:var(--bg);display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;font-size:16px">🐛</div>`;
+      ? `<img src="${escHtml(p.logo)}" class="ie45e45ec2" data-onerror="hideImgOnError" />`
+      : `<div class="ie150a67c1">🐛</div>`;
     const domain = p.code ? p.code + '.com' : '';
     return `
-      <div style="padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);display:flex;flex-direction:column;gap:8px">
-        <div style="display:flex;align-items:flex-start">
+      <div class="ie0a8f3271">
+        <div class="ied980357a">
           ${logoHtml}
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(p.name||'')}</div>
-            <div style="font-size:11px;color:var(--text-dim)">${escHtml(p.industry||'')}</div>
+          <div class="ie89bd09bd">
+            <div class="ie3cac399d">${escHtml(p.name||'')}</div>
+            <div class="ie5b3cc826">${escHtml(p.industry||'')}</div>
           </div>
-          <span class="badge badge-${p.status==='open'?'low':'medium'}" style="margin-left:6px;flex-shrink:0">${escHtml(p.status||'open')}</span>
+          <span class="badge badge-${p.status==='open'?'low':'medium'} ieb4573ac9" >${escHtml(p.status||'open')}</span>
         </div>
-        ${p.tagline ? `<div style="font-size:11px;color:var(--text-dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(p.tagline)}</div>` : ''}
-        <div style="font-size:12px;color:var(--accent);font-weight:600">${escHtml(p.reward_summary || (p.min_payout ? p.min_payout + ' – ' + (p.max_payout||'?') : ''))}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${p.tagline ? `<div class="ie748e2943">${escHtml(p.tagline)}</div>` : ''}
+        <div class="iee4357af2">${escHtml(p.reward_summary || (p.min_payout ? p.min_payout + ' – ' + (p.max_payout||'?') : ''))}</div>
+        <div class="ie27070b32">
           ${domain ? `<button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([domain])}">🎯 Scan Target</button>` : ''}
-          <a href="${escHtml(p.url||'#')}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">↗ Open</a>
+          <a href="${escHtml(p.url||'#')}" target="_blank" class="btn btn-secondary btn-sm ie116e33d4" >↗ Open</a>
         </div>
       </div>`;
   }).join('') || '<div class="text-dim">No programs</div>';
@@ -488,11 +488,11 @@ async function loadBCTargets() {
   const data = await r.json();
   const el = document.getElementById('bc-targets-list');
   el.innerHTML = (data.targets || []).map(t => `
-    <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;display:flex;align-items:center;gap:8px">
-      <div style="flex:1">
+    <div class="ie9356b3c0">
+      <div class="ieda5cd676">
         <strong>${escHtml(t.name||'')}</strong>
-        <span class="badge badge-${t.priority==='P1'?'critical':'medium'}" style="margin-left:4px">${t.priority||''}</span>
-        <div style="color:var(--text-dim)">${escHtml(t.uri||'')}</div>
+        <span class="badge badge-${t.priority==='P1'?'critical':'medium'} ie132fb96a" >${t.priority||''}</span>
+        <div class="ied605eae1">${escHtml(t.uri||'')}</div>
       </div>
       ${t.uri ? `<button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([t.uri])}">🎯 Scan</button>` : ''}
     </div>`).join('') || '<div class="text-dim">No targets — enter a program code above</div>';
@@ -514,22 +514,22 @@ async function loadIGPrograms() {
     const handle = p.handle || '';
     const maxBounty = p.max_bounty;
     return `
-      <div style="padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);display:flex;flex-direction:column;gap:8px">
-        <div style="display:flex;align-items:flex-start">
-          <div style="width:32px;height:32px;border-radius:4px;background:var(--bg);display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;font-size:16px">🔵</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:13px">${escHtml(p.name||handle)}</div>
-            <div style="font-size:11px;color:var(--text-dim)">intigriti.com</div>
+      <div class="ie0a8f3271">
+        <div class="ied980357a">
+          <div class="ie150a67c1">🔵</div>
+          <div class="ie89bd09bd">
+            <div class="iedc24a5ac">${escHtml(p.name||handle)}</div>
+            <div class="ie5b3cc826">intigriti.com</div>
           </div>
-          <span class="badge badge-${(p.status||'open')==='open'?'low':'medium'}" style="margin-left:6px;flex-shrink:0">${p.status||'open'}</span>
+          <span class="badge badge-${(p.status||'open')==='open'?'low':'medium'} ieb4573ac9" >${p.status||'open'}</span>
         </div>
         ${(p.min_bounty != null || maxBounty != null) ? `
-          <div style="font-size:12px;color:var(--accent);font-weight:600">
+          <div class="iee4357af2">
             €${fmt(p.min_bounty||0)} – €${maxBounty ? fmt(maxBounty) : '?'}
           </div>` : ''}
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <div class="ie27070b32">
           ${handle ? `<button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([handle+'.com'])}">🎯 Scan Target</button>` : ''}
-          <a href="${escHtml(p.url||'#')}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">↗ Open</a>
+          <a href="${escHtml(p.url||'#')}" target="_blank" class="btn btn-secondary btn-sm ie116e33d4" >↗ Open</a>
         </div>
       </div>`;
   }).join('') || '<div class="text-dim">No programs</div>';
@@ -543,15 +543,15 @@ async function searchCVE() {
   const data = await r.json();
   const el = document.getElementById('cve-search-results');
   el.innerHTML = (data.vulnerabilities || []).map(v => `
-    <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <a href="${escHtml(v.url)}" target="_blank" style="color:var(--accent);font-weight:600">${escHtml(v.cve_id)}</a>
+    <div class="iec5149828">
+      <div class="ie510ea680">
+        <a href="${escHtml(v.url)}" target="_blank" class="ie0c727778">${escHtml(v.cve_id)}</a>
         <div>
           ${v.cvss_score ? `<span class="badge badge-${sev(v.severity?.toLowerCase()||'medium')}">${v.cvss_score}</span>` : ''}
-          ${v.severity ? `<span class="badge badge-${sev(v.severity.toLowerCase())}" style="margin-left:4px">${v.severity}</span>` : ''}
+          ${v.severity ? `<span class="badge badge-${sev(v.severity.toLowerCase())} ie132fb96a" >${v.severity}</span>` : ''}
         </div>
       </div>
-      <div style="color:var(--text-dim);margin-top:4px">${escHtml(v.description)}</div>
+      <div class="ie1fc68dea">${escHtml(v.description)}</div>
     </div>`).join('') || '<div class="text-dim">No CVEs found</div>';
 }
 
@@ -560,13 +560,13 @@ async function loadCVEQueue() {
   const data = await r.json();
   const el = document.getElementById('cve-queue');
   el.innerHTML = (data.queue || []).map(e => `
-    <div style="padding:8px;border-bottom:1px solid var(--border);font-size:12px">
-      <div style="display:flex;justify-content:space-between">
+    <div class="iec5149828">
+      <div class="ie1141c430">
         <strong>${escHtml(e.draft_id)}</strong>
         <span class="badge badge-${e.status==='submitted'?'low':'medium'}">${e.status}</span>
       </div>
-      <div style="color:var(--text-dim)">${escHtml(e.title)}</div>
-      ${e.cve_id ? `<div style="color:var(--accent)">${e.cve_id}</div>` : ''}
+      <div class="ied605eae1">${escHtml(e.title)}</div>
+      ${e.cve_id ? `<div class="iebb2b0e55">${e.cve_id}</div>` : ''}
     </div>`).join('') || '<div class="text-dim">Queue is empty</div>';
 }
 

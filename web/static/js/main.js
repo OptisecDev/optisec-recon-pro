@@ -71,6 +71,35 @@ window.optisecArgs = function (arr) {
   return JSON.stringify(arr).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 };
 
+// ─── Dynamic (data-driven) inline-style values, applied via the CSSOM ──────
+// Some style="" values are computed per-row from data (progress-bar widths,
+// severity/threat-score colors, etc.) rather than a small fixed enum a CSS
+// class could cover statically. CSP's style-src blocks the style="" HTML
+// attribute (however it's set: markup, setAttribute('style', ...), or
+// element.style.cssText = ...) but NOT individual CSSOM longhand property
+// assignment (element.style.setProperty(prop, val)) -- that's a script-src
+// concern, and script-src already carries our nonce. So the markup keeps
+// the exact former style="" value verbatim, just renamed to
+// data-dyn-style="<same declarations>", and optisecApplyDynStyles() parses
+// that string and applies each declaration individually via setProperty(),
+// which the CSP style-src restriction doesn't reach.
+// Call with no argument on DOMContentLoaded to cover server-rendered rows;
+// call with a container element right after any innerHTML assignment that
+// might have introduced new data-dyn-style elements.
+window.optisecApplyDynStyles = function (root) {
+  (root || document).querySelectorAll('[data-dyn-style]').forEach(el => {
+    el.getAttribute('data-dyn-style').split(';').forEach(decl => {
+      const i = decl.indexOf(':');
+      if (i === -1) return;
+      const prop = decl.slice(0, i).trim();
+      const val = decl.slice(i + 1).trim();
+      if (prop && val) el.style.setProperty(prop, val);
+    });
+    el.removeAttribute('data-dyn-style');
+  });
+};
+document.addEventListener('DOMContentLoaded', () => optisecApplyDynStyles());
+
 const API = {
   async post(url, data) {
     const r = await fetch(url, {
@@ -125,8 +154,7 @@ function severityBadge(sev) {
 // Toast notifications
 function toast(msg, type = 'success') {
   const el = document.createElement('div');
-  el.className = `alert alert-${type}`;
-  el.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;min-width:280px;animation:fadeIn 0.2s';
+  el.className = `alert alert-${type} optisec-toast`;
   el.innerHTML = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3500);
@@ -247,14 +275,14 @@ function renderScanResults(results, target) {
   html += `<div class="tab-content" data-tab="ports-tab">`;
   if (portScan) {
     const openPorts = portScan.open_ports || [];
-    html += `<div style="margin-bottom:12px;display:flex;gap:12px;align-items:center">
+    html += `<div class="ie17abef37">
       <span>Scanned: <strong>${portScan.ports_scanned}</strong></span>
-      <span>Open: <strong style="color:var(--accent)">${portScan.open_count}</strong></span>
-      <span>High-Risk: <strong style="color:var(--danger)">${portScan.high_risk_count}</strong></span>
+      <span>Open: <strong class="iebb2b0e55">${portScan.open_count}</strong></span>
+      <span>High-Risk: <strong class="iea7ceb264">${portScan.high_risk_count}</strong></span>
       <span class="badge badge-${portScan.risk_label==='HIGH'?'critical':portScan.risk_label==='MEDIUM'?'high':'low'}">${portScan.risk_label}</span>
     </div>`;
     if (portScan.notes && portScan.notes.length) {
-      portScan.notes.forEach(n => { html += `<div class="alert alert-info" style="font-size:12px;margin-bottom:4px">• ${esc(n)}</div>`; });
+      portScan.notes.forEach(n => { html += `<div class="alert alert-info ie7be82916" >• ${esc(n)}</div>`; });
     }
     html += `<div class="table-wrap"><table><thead><tr><th>Port</th><th>Service</th><th>Risk</th><th>Banner</th></tr></thead><tbody>`;
     openPorts.forEach(p => {
@@ -262,7 +290,7 @@ function renderScanResults(results, target) {
         <td class="mono accent">${esc(String(p.port))}</td>
         <td>${esc(p.service)}</td>
         <td><span class="badge badge-${p.high_risk?'critical':'low'}">${esc(p.risk_label)}</span></td>
-        <td class="mono dim" style="font-size:11px">${esc((p.banner||'').substring(0,60))}</td>
+        <td class="mono dim ie8b685211" >${esc((p.banner||'').substring(0,60))}</td>
       </tr>`;
     });
     html += `</tbody></table></div>`;
@@ -279,9 +307,9 @@ function renderScanResults(results, target) {
   html += `<div class="tab-content" data-tab="ssl-tab">`;
   if (ssl) {
     const badgeClass = ssl.expired ? 'critical' : ssl.expiring_soon ? 'high' : ssl.valid ? 'low' : 'medium';
-    html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
-      <div class="card" style="flex:1;min-width:260px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+    html += `<div class="ie9a903567">
+      <div class="card ie57f68680" >
+        <div class="ieb3c30800">
           <div class="card-title">🔐 Certificate Details</div>
           <span class="badge badge-${badgeClass}">${ssl.expired?'EXPIRED':ssl.expiring_soon?'EXPIRING SOON':ssl.valid?'VALID':'UNKNOWN'}</span>
         </div>
@@ -290,17 +318,17 @@ function renderScanResults(results, target) {
         <div class="info-row"><span class="info-label">TLS Version</span><span>${esc(ssl.tls_version)}</span></div>
         <div class="info-row"><span class="info-label">Cipher</span><span>${esc(ssl.cipher)}</span></div>
         <div class="info-row"><span class="info-label">Key Bits</span><span>${esc(String(ssl.key_bits||''))}</span></div>
-        <div class="info-row"><span class="info-label">Days Remaining</span><span style="color:${ssl.expired?'var(--danger)':ssl.expiring_soon?'orange':'var(--accent)'}">${esc(String(ssl.days_remaining??'—'))}</span></div>
+        <div class="info-row"><span class="info-label">Days Remaining</span><span data-dyn-style="color:${ssl.expired?'var(--danger)':ssl.expiring_soon?'orange':'var(--accent)'}">${esc(String(ssl.days_remaining??'—'))}</span></div>
         <div class="info-row"><span class="info-label">SANs</span><span>${esc(String(ssl.sans?.length||0))}</span></div>
         <div class="info-row"><span class="info-label">Wildcards</span><span>${esc(String(ssl.wildcard_count||0))}</span></div>
       </div>
     </div>`;
     if (ssl.notes && ssl.notes.length) {
-      ssl.notes.forEach(n => { html += `<div class="alert alert-info" style="font-size:12px;margin-bottom:4px">💡 ${esc(n)}</div>`; });
+      ssl.notes.forEach(n => { html += `<div class="alert alert-info ie7be82916" >💡 ${esc(n)}</div>`; });
     }
     if (ssl.sans && ssl.sans.length) {
-      html += `<div class="card" style="margin-top:8px"><div class="card-title" style="margin-bottom:8px">Subject Alternative Names (${ssl.sans.length})</div>
-        <div style="font-family:monospace;font-size:12px;line-height:1.8;column-count:2">${ssl.sans.map(s=>`<div>${esc(s)}</div>`).join('')}</div></div>`;
+      html += `<div class="card ied4316970" ><div class="card-title ied51702bf" >Subject Alternative Names (${ssl.sans.length})</div>
+        <div class="ie7d26ad65">${ssl.sans.map(s=>`<div>${esc(s)}</div>`).join('')}</div></div>`;
     }
   } else {
     html += `<div class="text-dim">SSL scan not run — include "ssl" in scan types</div>`;
@@ -313,12 +341,12 @@ function renderScanResults(results, target) {
     html += `<div class="alert alert-error">Headers scan failed: ${esc(headers.error)}</div>`;
   } else if (headers) {
     const gradeColor = {'A+':'#00d4aa','A':'#00d4aa','B':'#7bc67e','C':'#ffa000','D':'#ff7043','F':'#ff4d4d'}[headers.grade]||'#888';
-    html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-      <div style="font-size:48px;font-weight:900;color:${gradeColor}">${esc(headers.grade)}</div>
+    html += `<div class="ie31ccd6d3">
+      <div data-dyn-style="font-size:48px;font-weight:900;color:${gradeColor}">${esc(headers.grade)}</div>
       <div>
-        <div style="font-size:14px;font-weight:600">Security Score: ${esc(String(headers.security_score))}/100</div>
-        <div style="font-size:12px;color:var(--text-dim)">Headers present: ${esc(String(headers.summary?.present))} / ${esc(String(headers.summary?.total_checked))}</div>
-        <div style="font-size:12px;color:var(--text-dim)">Info exposed: ${esc(String(headers.summary?.info_exposed))} headers</div>
+        <div class="ied8427f2c">Security Score: ${esc(String(headers.security_score))}/100</div>
+        <div class="ieacac8ae4">Headers present: ${esc(String(headers.summary?.present))} / ${esc(String(headers.summary?.total_checked))}</div>
+        <div class="ieacac8ae4">Info exposed: ${esc(String(headers.summary?.info_exposed))} headers</div>
       </div>
     </div>`;
 
@@ -327,21 +355,21 @@ function renderScanResults(results, target) {
     const exposed = headers.exposed_info_headers || {};
 
     if (Object.keys(present).length) {
-      html += `<div class="card" style="margin-bottom:8px"><div class="card-title" style="color:var(--accent);margin-bottom:8px">✅ Present Headers (${Object.keys(present).length})</div>`;
+      html += `<div class="card ied51702bf" ><div class="card-title ie4ccf129e" >✅ Present Headers (${Object.keys(present).length})</div>`;
       Object.entries(present).forEach(([h, m]) => {
-        html += `<div class="info-row"><span class="info-label" style="color:var(--accent)">${esc(h)}</span><span style="font-size:11px;font-family:monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis">${esc(m.value)}</span></div>`;
+        html += `<div class="info-row"><span class="info-label iebb2b0e55" >${esc(h)}</span><span class="ie2d8bac21">${esc(m.value)}</span></div>`;
       });
       html += `</div>`;
     }
 
     if (Object.keys(missing).length) {
-      html += `<div class="card" style="margin-bottom:8px"><div class="card-title" style="color:var(--danger);margin-bottom:8px">❌ Missing Headers (${Object.keys(missing).length})</div>`;
+      html += `<div class="card ied51702bf" ><div class="card-title ie88920653" >❌ Missing Headers (${Object.keys(missing).length})</div>`;
       Object.entries(missing).forEach(([h, m]) => {
         html += `<div class="info-row">
           <span class="info-label">${esc(h)}</span>
-          <div style="text-align:right">
+          <div class="ief6e3d7fe">
             <span class="badge badge-${m.importance==='critical'?'critical':m.importance==='high'?'high':'medium'}">${esc(m.importance)}</span>
-            <div style="font-size:10px;color:var(--text-dim);margin-top:2px">${esc(m.recommendation)}</div>
+            <div class="ie855fc9db">${esc(m.recommendation)}</div>
           </div>
         </div>`;
       });
@@ -349,9 +377,9 @@ function renderScanResults(results, target) {
     }
 
     if (Object.keys(exposed).length) {
-      html += `<div class="card"><div class="card-title" style="color:orange;margin-bottom:8px">⚠️ Information Disclosure</div>`;
+      html += `<div class="card"><div class="card-title ie2ca2fcb7" >⚠️ Information Disclosure</div>`;
       Object.entries(exposed).forEach(([h, m]) => {
-        html += `<div class="info-row"><span class="info-label">${esc(h)}</span><span style="color:orange;font-size:12px">${esc(m.value)}</span></div>`;
+        html += `<div class="info-row"><span class="info-label">${esc(h)}</span><span class="ie6fc38d53">${esc(m.value)}</span></div>`;
       });
       html += `</div>`;
     }
@@ -375,12 +403,12 @@ function renderScanResults(results, target) {
   const social = (osint.social || {}).profiles || {};
   html += `<div class="tab-content" data-tab="osint-tab">`;
   if (emails.length) {
-    html += `<h4 class="card-title" style="margin-bottom:12px">Emails (${emails.length})</h4><div class="table-wrap"><table><tbody>`;
+    html += `<h4 class="card-title iefa3e1c7d" >Emails (${emails.length})</h4><div class="table-wrap"><table><tbody>`;
     emails.forEach(e => { html += `<tr><td class="mono">${esc(e)}</td></tr>`; });
     html += `</tbody></table></div>`;
   }
   if (Object.keys(social).length) {
-    html += `<h4 class="card-title" style="margin:16px 0 12px">Social Profiles</h4><div class="table-wrap"><table><thead><tr><th>Platform</th><th>Handles</th></tr></thead><tbody>`;
+    html += `<h4 class="card-title ie27a94bf3" >Social Profiles</h4><div class="table-wrap"><table><thead><tr><th>Platform</th><th>Handles</th></tr></thead><tbody>`;
     Object.entries(social).forEach(([p, h]) => { html += `<tr><td>${esc(p)}</td><td class="mono">${Array.isArray(h)?h.join(', '):esc(String(h))}</td></tr>`; });
     html += `</tbody></table></div>`;
   }
@@ -389,14 +417,15 @@ function renderScanResults(results, target) {
   }
   html += `</div>`;
 
-  html += `<div style="margin-top:20px;display:flex;gap:10px">
+  html += `<div class="ie18ca596b">
     <button class="btn btn-primary" data-onclick="generateReport" data-onclick-args="${optisecArgs([target])}">📄 Generate PDF Report</button>
     <button class="btn btn-secondary" data-onclick="analyzeWithAI" data-onclick-args="${optisecArgs([target])}">🤖 AI Analysis</button>
   </div>
-  <div id="ai-output" style="margin-top:16px"></div>
-  <div id="report-output" style="margin-top:16px"></div>`;
+  <div id="ai-output" class="ieb0043ef4"></div>
+  <div id="report-output" class="ieb0043ef4"></div>`;
 
   el.innerHTML = html;
+  optisecApplyDynStyles(el);
   initTabs();
 }
 
@@ -443,7 +472,7 @@ window.analyzeWithAI = async function(target) {
     const data = await API.post('/api/ai/analyze', { findings, target, lang: 'ar' });
     if (data.analysis) {
       out.innerHTML = `<div class="card"><div class="card-header"><div class="card-title">🤖 AI Analysis</div></div>
-      <div style="white-space:pre-wrap;font-size:13px;line-height:1.7;color:var(--text)">${esc(data.analysis)}</div></div>`;
+      <div class="ief54b2848">${esc(data.analysis)}</div></div>`;
     } else {
       out.innerHTML = `<div class="alert alert-error">${esc(data.error || 'AI analysis failed')}</div>`;
     }
@@ -551,7 +580,7 @@ window.runOSINT = async function() {
       ['Status', (whois.status || []).slice(0, 3).join(', ')],
     ];
     fields.filter(([, v]) => v).forEach(([k, v]) => {
-      html += `<tr><td style="font-weight:600;width:140px">${k}</td><td class="dim">${esc(v)}</td></tr>`;
+      html += `<tr><td class="ie409f7c5e">${k}</td><td class="dim">${esc(v)}</td></tr>`;
     });
     html += `</tbody></table></div></div>`;
   }

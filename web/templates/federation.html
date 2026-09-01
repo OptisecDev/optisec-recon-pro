@@ -3,7 +3,7 @@
 {% block page_title %}Federated Scanning{% endblock %}
 
 {% block content %}
-<div style="margin-bottom:16px;display:flex;gap:8px">
+<div class="ie54a09571">
   <button class="btn btn-primary" data-onclick="showTab" data-onclick-args='["nodes"]'>🌐 Nodes</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["scan"]'>🔍 Dispatch Scan</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["tasks"]'>📋 Tasks</button>
@@ -14,7 +14,7 @@
 
 <!-- Nodes -->
 <div id="tab-nodes">
-  <div class="grid-2" style="align-items:start">
+  <div class="grid-2 ie2a4dac26" >
     <!-- This Node -->
     <div class="card">
       <div class="card-header">
@@ -22,7 +22,7 @@
         <span class="badge badge-{{ 'low' if this_node else 'medium' }}">{{ 'Configured' if this_node else 'Not Initialized' }}</span>
       </div>
       {% if this_node %}
-      <div style="font-size:12px">
+      <div class="ie6b9c179a">
         <div><strong>Name:</strong> {{ this_node.name }}</div>
         <div><strong>ID:</strong> <code>{{ this_node.id }}</code></div>
         <div><strong>Endpoint:</strong> {{ this_node.endpoint }}</div>
@@ -30,7 +30,7 @@
         <div><strong>Capabilities:</strong> {{ this_node.capabilities|join(', ') }}</div>
       </div>
       {% else %}
-      <div style="color:var(--text-dim);margin-bottom:12px">Node not initialized</div>
+      <div class="ie1b549e01">Node not initialized</div>
       {% if user.role == 'admin' %}
       <button class="btn btn-primary btn-sm" data-onclick="showTab" data-onclick-args='["setup"]'>Initialize Node</button>
       {% endif %}
@@ -41,7 +41,7 @@
     <div class="card">
       <div class="card-header">
         <div class="card-title">🌐 Peer Nodes</div>
-        <div style="display:flex;gap:6px">
+        <div class="ie91294d29">
           <button class="btn btn-secondary btn-sm" data-onclick="pingAll">🏓 Ping All</button>
           {% if user.role == 'admin' %}
           <button class="btn btn-primary btn-sm" data-onclick="showAddNode">+ Add</button>
@@ -51,50 +51,50 @@
 
       {% if nodes %}
       {% for node in nodes %}
-      <div style="padding:10px;border:1px solid {{ '#00ff88' if node.status == 'online' else '#ff3366' if node.status == 'offline' else 'var(--border)' }};border-radius:6px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+      <div data-dyn-style="padding:10px;border:1px solid {{ '#00ff88' if node.status == 'online' else '#ff3366' if node.status == 'offline' else 'var(--border)' }};border-radius:6px;margin-bottom:8px">
+        <div class="ie510ea680">
           <strong>{{ node.name }}</strong>
           <span class="badge badge-{{ 'low' if node.status == 'online' else 'critical' if node.status == 'offline' else 'medium' }}">
             {{ node.status }}
           </span>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+        <div class="ie9287d041">
           {{ node.endpoint }} | {{ node.region }}
           {% if node.last_ping_ms %}| {{ node.last_ping_ms }}ms{% endif %}
         </div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+        <div class="ief4e330e4">
           {% for cap in node.capabilities %}
-          <span class="badge badge-info" style="font-size:9px">{{ cap }}</span>
+          <span class="badge badge-info ied9e14ae8" >{{ cap }}</span>
           {% endfor %}
         </div>
-        <div style="display:flex;gap:6px;margin-top:6px">
+        <div class="iedc943118">
           <button class="btn btn-secondary btn-sm" data-onclick="pingNode" data-onclick-args='{{ [node.id] | tojson }}'>🏓 Ping</button>
           {% if user.role == 'admin' %}
-          <button class="btn btn-secondary btn-sm" style="color:#ff3366" data-onclick="removeNode" data-onclick-args='{{ [node.id] | tojson }}'>✕ Remove</button>
+          <button class="btn btn-secondary btn-sm iee0281c78"  data-onclick="removeNode" data-onclick-args='{{ [node.id] | tojson }}'>✕ Remove</button>
           {% endif %}
         </div>
       </div>
       {% endfor %}
       {% else %}
-      <div style="color:var(--text-dim);text-align:center;padding:20px">No peer nodes registered</div>
+      <div class="ie7e22b429">No peer nodes registered</div>
       {% endif %}
 
       <!-- Add Node Form -->
-      <div id="add-node-form" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+      <div id="add-node-form" class="ie71598e18">
         <div class="form-group"><label>Node Name</label><input type="text" id="node-name" placeholder="datacenter-eu" /></div>
         <div class="form-group"><label>Endpoint URL</label><input type="text" id="node-endpoint" placeholder="https://10.0.1.100:8000" /></div>
         <div class="form-group"><label>API Key</label><input type="password" id="node-apikey" /></div>
         <div class="form-group"><label>Region</label><input type="text" id="node-region" placeholder="eu-west" value="remote" /></div>
         <button class="btn btn-primary btn-sm" data-onclick="addNode">Add Node</button>
-        <div id="add-node-result" style="margin-top:8px"></div>
+        <div id="add-node-result" class="ied4316970"></div>
       </div>
     </div>
   </div>
 </div>
 
 <!-- Dispatch Scan -->
-<div id="tab-scan" style="display:none">
-  <div class="card" style="max-width:600px">
+<div id="tab-scan" class="iecb458930">
+  <div class="card ie3e9d9c4c" >
     <div class="card-header">
       <div class="card-title">🔍 Dispatch Federated Scan</div>
     </div>
@@ -120,10 +120,10 @@
         <option value="round-robin">Round-Robin — distribute scan types evenly</option>
       </select>
     </div>
-    <button class="btn btn-primary" data-onclick="dispatchScan" style="width:100%;justify-content:center">
+    <button class="btn btn-primary ied6167dca" data-onclick="dispatchScan" >
       🚀 Dispatch to Federation
     </button>
-    <div id="dispatch-result" style="margin-top:12px"></div>
+    <div id="dispatch-result" class="ie002535c2"></div>
   </div>
 </div>
 
@@ -137,44 +137,44 @@
     <div id="tasks-list">
       {% if tasks %}
       {% for task in tasks %}
-      <div style="padding:10px;border-bottom:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="ie9702497e">
+        <div class="ie510ea680">
           <div>
-            <code style="color:var(--accent);font-size:11px">{{ task.task_id[:8] }}</code>
-            <strong style="margin-left:8px">{{ task.target }}</strong>
+            <code class="iec22a9680">{{ task.task_id[:8] }}</code>
+            <strong class="iec3f83707">{{ task.target }}</strong>
           </div>
           <span class="badge badge-{{ 'low' if task.status == 'completed' else 'medium' if (task.status == 'running' or task.status.endswith('_stub')) else 'info' }}">
             {{ task.status }}
           </span>
         </div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
+        <div class="ie9287d041">
           Types: {{ task.scan_types|join(', ') }} | Nodes: {{ task.node_count or 0 }} | {{ task.created_at[:10] }}
         </div>
         {% if task.status.endswith('_stub') %}
-        <div style="font-size:11px;color:var(--yellow);margin-top:2px">⚠️ {{ task.note or 'No real scan ran for this task — federation execution is not implemented yet.' }}</div>
+        <div class="ief7abb0f9">⚠️ {{ task.note or 'No real scan ran for this task — federation execution is not implemented yet.' }}</div>
         {% endif %}
         {% if task.status == 'running' %}
-        <button class="btn btn-secondary btn-sm" style="margin-top:4px" data-onclick="collectResults" data-onclick-args='{{ [task.task_id] | tojson }}'>📥 Collect Results</button>
+        <button class="btn btn-secondary btn-sm iea18ac805"  data-onclick="collectResults" data-onclick-args='{{ [task.task_id] | tojson }}'>📥 Collect Results</button>
         {% endif %}
       </div>
       {% endfor %}
       {% else %}
-      <div style="color:var(--text-dim);text-align:center;padding:20px">No tasks yet</div>
+      <div class="ie7e22b429">No tasks yet</div>
       {% endif %}
     </div>
   </div>
 </div>
 
 <!-- Setup -->
-<div id="tab-setup" style="display:none">
+<div id="tab-setup" class="iecb458930">
   {% if user.role == 'admin' %}
-  <div class="card" style="max-width:500px">
+  <div class="card ie5ab11840" >
     <div class="card-header"><div class="card-title">⚙️ Initialize This Node</div></div>
     <div class="form-group"><label>Node Name</label><input type="text" id="init-name" placeholder="OptiSec Primary" value="OptiSec Primary" /></div>
     <div class="form-group"><label>This Node's Endpoint URL</label><input type="text" id="init-endpoint" placeholder="https://your-ip:8000" /></div>
     <div class="form-group"><label>Region</label><input type="text" id="init-region" placeholder="us-east" value="primary" /></div>
-    <button class="btn btn-primary" data-onclick="initNode" style="width:100%;justify-content:center">⚙️ Initialize</button>
-    <div id="init-result" style="margin-top:12px"></div>
+    <button class="btn btn-primary ied6167dca" data-onclick="initNode" >⚙️ Initialize</button>
+    <div id="init-result" class="ie002535c2"></div>
   </div>
   {% else %}
   <div class="alert alert-info">Admin access required</div>
@@ -249,15 +249,16 @@ async function dispatchScan() {
     ? '⚠️ No online peers — scan was NOT executed'
     : '✅ Sent to ' + data.node_count + ' node(s)';
   el.innerHTML = `
-    <div class="card" style="border-color:${notExecuted ? 'var(--yellow)' : 'var(--accent)'}">
-      <div style="color:${notExecuted ? 'var(--yellow)' : 'var(--accent)'};font-weight:600">${headline}</div>
-      <div style="font-size:11px;margin-top:4px"><strong>Task ID:</strong> <code>${escHtml(data.task_id)}</code></div>
-      <div style="font-size:11px"><strong>Target:</strong> ${escHtml(data.target)}</div>
-      <div style="font-size:11px"><strong>Types:</strong> ${escHtml(data.scan_types?.join(', ') || '')}</div>
-      ${data.note ? `<div class="alert ${notExecuted ? 'alert-warning' : 'alert-info'}" style="margin-top:6px;font-size:11px">${escHtml(data.note)}</div>` : ''}
-      ${stubbed ? `<div class="alert alert-warning" style="margin-top:6px;font-size:11px">⚠️ Remote execution is not yet implemented on the receiving node(s) — they acknowledged the task but will not actually scan or produce results.</div>` : ''}
-      ${notExecuted ? '' : `<button class="btn btn-secondary btn-sm" style="margin-top:8px" data-onclick="collectResults" data-onclick-args="${optisecArgs([data.task_id])}">📥 Collect Results</button>`}
+    <div class="card" data-dyn-style="border-color:${notExecuted ? 'var(--yellow)' : 'var(--accent)'}">
+      <div data-dyn-style="color:${notExecuted ? 'var(--yellow)' : 'var(--accent)'};font-weight:600">${headline}</div>
+      <div class="ie733aaf56"><strong>Task ID:</strong> <code>${escHtml(data.task_id)}</code></div>
+      <div class="ie8b685211"><strong>Target:</strong> ${escHtml(data.target)}</div>
+      <div class="ie8b685211"><strong>Types:</strong> ${escHtml(data.scan_types?.join(', ') || '')}</div>
+      ${data.note ? `<div class="alert ${notExecuted ? 'alert-warning' : 'alert-info'} ieaa3293d7" >${escHtml(data.note)}</div>` : ''}
+      ${stubbed ? `<div class="alert alert-warning ieaa3293d7" >⚠️ Remote execution is not yet implemented on the receiving node(s) — they acknowledged the task but will not actually scan or produce results.</div>` : ''}
+      ${notExecuted ? '' : `<button class="btn btn-secondary btn-sm ied4316970"  data-onclick="collectResults" data-onclick-args="${optisecArgs([data.task_id])}">📥 Collect Results</button>`}
     </div>`;
+  optisecApplyDynStyles(el);
 }
 
 async function collectResults(task_id) {

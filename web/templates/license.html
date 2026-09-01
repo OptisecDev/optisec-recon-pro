@@ -51,7 +51,7 @@
 </div>
 
 <!-- ═══ ACTIVATE + DEACTIVATE ═══ -->
-<div class="grid-2" style="margin-bottom:20px">
+<div class="grid-2 ie3019698e" >
 
   <!-- Activate -->
   <div class="card">
@@ -62,7 +62,7 @@
       </div>
     </div>
     {% if flash_msg %}
-    <div class="alert alert-{{ flash_type }}" style="margin-bottom:12px">{{ flash_msg }}</div>
+    <div class="alert alert-{{ flash_type }} iefa3e1c7d" >{{ flash_msg }}</div>
     {% endif %}
     <form method="POST" action="/license/activate" id="activate-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -70,23 +70,23 @@
         <label>مفتاح الترخيص</label>
         <input type="text" name="key" id="license-key-input"
                placeholder="OPS4-PRO-eyJ0aWVyIjoicH..."
-               style="font-family:monospace;letter-spacing:0.5px"
+               class="iee91a54e0"
                value="{{ prefill_key or '' }}"
                required />
-        <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
+        <div class="ief13248b8">
           Format: OPS4-{TIER}-{encoded_payload}.{signature}
         </div>
       </div>
-      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center">
+      <button type="submit" class="btn btn-primary ied6167dca" >
         ✓ تفعيل المفتاح
       </button>
     </form>
     {% if lic.tier != 'free' %}
-    <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+    <div class="iec51e8b1b">
       <form method="POST" action="/license/deactivate"
             data-onsubmit="confirmOrPreventSubmit" data-onsubmit-event data-onsubmit-args='["إلغاء الترخيص وتحويله للنسخة المجانية؟"]'>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button type="submit" class="btn btn-danger btn-sm" style="width:100%;justify-content:center">
+        <button type="submit" class="btn btn-danger btn-sm ied6167dca" >
           ✗ إلغاء الترخيص الحالي
         </button>
       </form>
@@ -133,9 +133,9 @@
         <span class="info-value">{% if lic.max_scans_day == -1 %}غير محدود{% else %}{{ lic.max_scans_day }}{% endif %}</span>
       </div>
       {% if lic.key != 'FREE' %}
-      <div class="info-row" style="align-items:flex-start">
+      <div class="info-row ieb5053b62" >
         <span class="info-label">المفتاح</span>
-        <code style="font-size:10px;color:var(--accent);word-break:break-all;text-align:right;direction:ltr">
+        <code class="ied4a1160c">
           {{ lic.key[:40] }}...
         </code>
       </div>
@@ -157,7 +157,7 @@
     <table class="lic-table">
       <thead>
         <tr>
-          <th style="width:40%">الميزة / Feature</th>
+          <th class="ie51d488e4">الميزة / Feature</th>
           <th class="text-center">
             <span class="lic-badge lic-badge-free">FREE</span>
           </th>
@@ -173,8 +173,8 @@
         {% for feat_id, feat_label in features %}
         <tr class="{% if user_has_feature(user, feat_id) %}lic-row-active{% endif %}">
           <td>
-            <div style="font-size:13px;font-weight:500;color:var(--text)">{{ feat_label }}</div>
-            <div style="font-size:10px;color:var(--text-dim);font-family:monospace">{{ feat_id }}</div>
+            <div class="iee5cd1aa9">{{ feat_label }}</div>
+            <div class="iefaba9118">{{ feat_id }}</div>
           </td>
           <td class="text-center">
             {% if feat_id in free_features %}
@@ -229,8 +229,8 @@
     </div>
     <span class="badge badge-critical">ADMIN ONLY</span>
   </div>
-  <div class="grid-3" style="gap:12px;margin-bottom:16px">
-    <div class="form-group" style="margin:0">
+  <div class="grid-3 ie4e7b9829" >
+    <div class="form-group ie1386d503" >
       <label>النوع / Tier</label>
       <select id="gen-tier">
         <option value="pro">PRO</option>
@@ -238,17 +238,17 @@
         <option value="free">FREE</option>
       </select>
     </div>
-    <div class="form-group" style="margin:0">
+    <div class="form-group ie1386d503" >
       <label>الاسم / Issued To</label>
       <input type="text" id="gen-name" placeholder="Company Name" value="{{ user.username }}" />
     </div>
-    <div class="form-group" style="margin:0">
+    <div class="form-group ie1386d503" >
       <label>البريد / Email</label>
       <input type="text" id="gen-email" placeholder="admin@company.com" value="{{ user.email }}" />
     </div>
   </div>
-  <div class="grid-2" style="gap:12px;margin-bottom:16px">
-    <div class="form-group" style="margin:0">
+  <div class="grid-2 ie4e7b9829" >
+    <div class="form-group ie1386d503" >
       <label>المدة (أيام) / Duration</label>
       <select id="gen-days">
         <option value="30">30 يوم</option>
@@ -258,22 +258,21 @@
         <option value="3650">10 سنوات</option>
       </select>
     </div>
-    <div style="display:flex;align-items:flex-end">
-      <button class="btn btn-primary" style="width:100%;justify-content:center" data-onclick="generateKey">
+    <div class="ie3868b543">
+      <button class="btn btn-primary ied6167dca"  data-onclick="generateKey">
         🔑 توليد مفتاح
       </button>
     </div>
   </div>
-  <div id="gen-result" style="display:none">
+  <div id="gen-result" class="iecb458930">
     <label>المفتاح المُولَّد / Generated Key</label>
-    <div style="display:flex;gap:8px;align-items:center">
+    <div class="iefaaa794c">
       <code id="gen-key-display"
-            style="flex:1;background:var(--bg);padding:12px 16px;border-radius:6px;border:1px solid var(--accent);
-                   font-size:12px;color:var(--accent);word-break:break-all;direction:ltr;display:block"></code>
+            class="ief2c192ae"></code>
       <button class="btn btn-secondary" data-onclick="copyGenKey">📋 نسخ</button>
       <button class="btn btn-primary" data-onclick="fillKey">✓ تفعيل</button>
     </div>
-    <div id="gen-meta" style="margin-top:8px;font-size:12px;color:var(--text-dim)"></div>
+    <div id="gen-meta" class="ie9f8013b1"></div>
   </div>
 </div>
 {% endif %}

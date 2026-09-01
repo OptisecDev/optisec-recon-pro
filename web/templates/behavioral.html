@@ -3,7 +3,7 @@
 {% block page_title %}Behavioral Analysis — UEBA{% endblock %}
 
 {% block content %}
-<div class="grid-2" style="align-items:start">
+<div class="grid-2 ie2a4dac26" >
   <!-- Entity List -->
   <div class="card">
     <div class="card-header">
@@ -13,26 +13,26 @@
 
     {% if entities %}
     {% for ent in entities %}
-    <div style="padding:10px;border:1px solid {{ '#ff3366' if ent.risk_score >= 0.8 else '#ffaa00' if ent.risk_score >= 0.5 else 'var(--border)' }};
+    <div data-dyn-style="padding:10px;border:1px solid {{ '#ff3366' if ent.risk_score >= 0.8 else '#ffaa00' if ent.risk_score >= 0.5 else 'var(--border)' }};
                 border-radius:6px;margin-bottom:8px;cursor:pointer" data-onclick="loadEntity" data-onclick-args='{{ [ent.entity_id] | tojson }}'>
-      <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="ie510ea680">
         <strong>{{ ent.entity_id }}</strong>
         <span class="badge badge-{{ 'critical' if ent.risk_level == 'critical' else 'high' if ent.risk_level == 'high' else 'medium' if ent.risk_level == 'medium' else 'low' }}">
           {{ ent.risk_level }}
         </span>
       </div>
-      <div style="display:flex;gap:12px;font-size:11px;color:var(--text-dim);margin-top:4px">
+      <div class="ie5b791f47">
         <span>Risk: {{ (ent.risk_score * 100)|int }}%</span>
         <span>Events: {{ ent.total_events }}</span>
         <span>Anomalies: {{ ent.anomaly_count }}</span>
       </div>
-      <div style="margin-top:6px;height:4px;background:var(--bg-hover);border-radius:2px;overflow:hidden">
-        <div style="height:100%;width:{{ (ent.risk_score * 100)|int }}%;background:{{ '#ff3366' if ent.risk_score >= 0.8 else '#ffaa00' if ent.risk_score >= 0.5 else '#00ff88' }};border-radius:2px"></div>
+      <div class="iecea67626">
+        <div data-dyn-style="height:100%;width:{{ (ent.risk_score * 100)|int }}%;background:{{ '#ff3366' if ent.risk_score >= 0.8 else '#ffaa00' if ent.risk_score >= 0.5 else '#00ff88' }};border-radius:2px"></div>
       </div>
     </div>
     {% endfor %}
     {% else %}
-    <div style="color:var(--text-dim);text-align:center;padding:30px">
+    <div class="ie5334d083">
       No entity profiles yet. Submit events to build profiles.
     </div>
     {% endif %}
@@ -67,13 +67,13 @@
         <label>Bytes Transferred (optional)</label>
         <input type="number" id="evt-bytes" placeholder="0" />
       </div>
-      <button class="btn btn-primary" data-onclick="recordEvent" style="width:100%;justify-content:center">
+      <button class="btn btn-primary ied6167dca" data-onclick="recordEvent" >
         📝 Record Event
       </button>
-      <div id="evt-result" style="margin-top:12px"></div>
+      <div id="evt-result" class="ie002535c2"></div>
     </div>
 
-    <div id="entity-detail" style="margin-top:16px"></div>
+    <div id="entity-detail" class="ieb0043ef4"></div>
   </div>
 </div>
 {% endblock %}
@@ -95,22 +95,24 @@ async function recordEvent() {
   });
   const data = await r.json();
   const actionColor = {block_and_alert:'#ff3366', require_mfa:'#ffaa00', alert_soc:'#ff6600', monitor:'#00ff88'}[data.action] || 'var(--text)';
-  document.getElementById('evt-result').innerHTML = `
-    <div style="padding:10px;border:1px solid ${actionColor};border-radius:6px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
+  const evtResultEl = document.getElementById('evt-result');
+  evtResultEl.innerHTML = `
+    <div data-dyn-style="padding:10px;border:1px solid ${actionColor};border-radius:6px">
+      <div class="ie510ea680">
         <strong>${escHtml(entity_id)}</strong>
         <span class="badge badge-${data.risk_level === 'critical' ? 'critical' : data.risk_level === 'high' ? 'high' : 'low'}">
           ${data.risk_level || 'normal'}
         </span>
       </div>
-      <div style="font-size:12px;margin-top:6px">Risk Score: <strong style="color:${actionColor}">${((data.risk_score||0)*100).toFixed(1)}%</strong></div>
-      <div style="font-size:12px;color:${actionColor}">Action: ${escHtml(data.action)}</div>
+      <div class="iee396da4e">Risk Score: <strong data-dyn-style="color:${actionColor}">${((data.risk_score||0)*100).toFixed(1)}%</strong></div>
+      <div data-dyn-style="font-size:12px;color:${actionColor}">Action: ${escHtml(data.action)}</div>
       ${data.anomalies?.length ? `
-      <div style="margin-top:8px">
+      <div class="ied4316970">
         ${data.anomalies.map(a => `
-          <div style="font-size:11px;padding:3px 0;color:#ffaa00">⚠️ ${escHtml(a.type)}: ${escHtml(a.detail)}</div>`).join('')}
-      </div>` : '<div style="font-size:11px;color:#00ff88;margin-top:4px">✅ No anomalies detected</div>'}
+          <div class="iea9f03cc2">⚠️ ${escHtml(a.type)}: ${escHtml(a.detail)}</div>`).join('')}
+      </div>` : '<div class="ief1040265">✅ No anomalies detected</div>'}
     </div>`;
+  optisecApplyDynStyles(evtResultEl);
   loadEntity(entity_id);
 }
 
@@ -119,7 +121,8 @@ async function loadEntity(entity_id) {
   if (!r.ok) return;
   const data = await r.json();
   const riskColor = data.risk_score >= 0.8 ? '#ff3366' : data.risk_score >= 0.5 ? '#ffaa00' : '#00ff88';
-  document.getElementById('entity-detail').innerHTML = `
+  const entityDetailEl = document.getElementById('entity-detail');
+  entityDetailEl.innerHTML = `
     <div class="card">
       <div class="card-header">
         <div class="card-title">👤 ${escHtml(entity_id)}</div>
@@ -127,24 +130,25 @@ async function loadEntity(entity_id) {
           ${((data.risk_score||0)*100).toFixed(1)}% risk
         </span>
       </div>
-      <div style="margin-bottom:8px">
-        <div style="height:6px;background:var(--bg-hover);border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${((data.risk_score||0)*100).toFixed(1)}%;background:${riskColor};border-radius:3px"></div>
+      <div class="ied51702bf">
+        <div class="ie1ea1138f">
+          <div data-dyn-style="height:100%;width:${((data.risk_score||0)*100).toFixed(1)}%;background:${riskColor};border-radius:3px"></div>
         </div>
       </div>
-      <div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+      <div class="ief8957c25">
         Total events: ${data.total_events} | Last seen: ${data.last_seen?.slice(0,19) || 'N/A'}
       </div>
       ${data.anomaly_log?.length ? `
       <div>
-        <div style="font-weight:600;margin-bottom:6px">Recent Anomalies</div>
+        <div class="iee199376d">Recent Anomalies</div>
         ${data.anomaly_log.slice(-5).reverse().map(al => `
-          <div style="padding:6px;border-left:2px solid #ffaa00;margin-bottom:4px;font-size:11px">
-            <div style="color:var(--text-dim)">${al.timestamp?.slice(0,19) || ''}</div>
-            ${al.anomalies.map(a => `<div style="color:#ffaa00">• ${escHtml(a.type)}: ${escHtml(a.detail)}</div>`).join('')}
+          <div class="iee6bef5c9">
+            <div class="ied605eae1">${al.timestamp?.slice(0,19) || ''}</div>
+            ${al.anomalies.map(a => `<div class="ie0458e39c">• ${escHtml(a.type)}: ${escHtml(a.detail)}</div>`).join('')}
           </div>`).join('')}
-      </div>` : '<div style="font-size:12px;color:#00ff88">✅ No recent anomalies</div>'}
+      </div>` : '<div class="iee4972cd7">✅ No recent anomalies</div>'}
     </div>`;
+  optisecApplyDynStyles(entityDetailEl);
 }
 
 function escHtml(s) {

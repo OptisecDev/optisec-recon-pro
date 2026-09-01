@@ -21,9 +21,9 @@
                 stroke-dasharray="157" stroke-dashoffset="100"/>
           <defs>
             <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style="stop-color:#00ff88"/>
-              <stop offset="50%" style="stop-color:#ffcc00"/>
-              <stop offset="100%" style="stop-color:#ff4444"/>
+              <stop offset="0%" class="ie48978597"/>
+              <stop offset="50%" class="ie0e815ff2"/>
+              <stop offset="100%" class="ie4d3771cc"/>
             </linearGradient>
           </defs>
           <text x="60" y="58" text-anchor="middle" fill="#e6edf3" font-size="18" font-weight="700" id="gauge-val">—</text>
@@ -95,7 +95,7 @@
   <div class="stat-card-pro teal">
     <div class="stat-icon">🤖</div>
     <div class="stat-body">
-      <div class="stat-value-pro" style="font-size:20px">AI</div>
+      <div class="stat-value-pro iee5e6f834" >AI</div>
       <div class="stat-label-pro">Groq LLaMA</div>
       <div class="stat-sub">Powered</div>
     </div>
@@ -123,10 +123,10 @@
       </div>
     </div>
     <div class="vuln-legend">
-      <div class="legend-item"><span class="leg-dot" style="background:#ff4444"></span> Critical <strong>{{ critical_count }}</strong></div>
-      <div class="legend-item"><span class="leg-dot" style="background:#ff8800"></span> High <strong>{{ high_count }}</strong></div>
-      <div class="legend-item"><span class="leg-dot" style="background:#ffcc00"></span> Medium <strong>{{ medium_count }}</strong></div>
-      <div class="legend-item"><span class="leg-dot" style="background:#58a6ff"></span> Low <strong>{{ low_count }}</strong></div>
+      <div class="legend-item"><span class="leg-dot ie066eff9d" ></span> Critical <strong>{{ critical_count }}</strong></div>
+      <div class="legend-item"><span class="leg-dot ie21a41d20" ></span> High <strong>{{ high_count }}</strong></div>
+      <div class="legend-item"><span class="leg-dot ie6fa98256" ></span> Medium <strong>{{ medium_count }}</strong></div>
+      <div class="legend-item"><span class="leg-dot ie8a7f5bd8" ></span> Low <strong>{{ low_count }}</strong></div>
     </div>
   </div>
 
@@ -163,16 +163,16 @@
       <label class="scan-chip" data-onclick="toggleChip" data-onclick-args='["ssrf"]'><input type="checkbox" value="ssrf" hidden>SSRF</label>
       <label class="scan-chip" data-onclick="toggleChip" data-onclick-args='["lfi"]'><input type="checkbox" value="lfi" hidden>LFI</label>
     </div>
-    <a href="/scan" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" data-onclick="quickScanGo">
+    <a href="/scan" class="btn btn-primary ie9949f913"  data-onclick="quickScanGo">
       ▶ ابدأ الفحص
     </a>
-    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
-      <div class="card-title" style="margin-bottom:8px">💬 أمر عربي</div>
+    <div class="ieb48defe9">
+      <div class="card-title ied51702bf" >💬 أمر عربي</div>
       <input type="text" id="nlp-quick"
         placeholder="افحص tesla.com عن ثغرات XSS"
         data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["parseNLP"]' />
-      <div id="nlp-result" style="margin:8px 0"></div>
-      <button class="btn btn-secondary" data-onclick="parseNLP" style="width:100%;justify-content:center">🤖 تحليل</button>
+      <div id="nlp-result" class="ie770b9dc8"></div>
+      <button class="btn btn-secondary ied6167dca" data-onclick="parseNLP" >🤖 تحليل</button>
     </div>
   </div>
 
@@ -217,7 +217,7 @@
 <div class="dash-row-2">
 
   <!-- Recent Scans -->
-  <div class="card" style="flex:2">
+  <div class="card ie13598fc1" >
     <div class="card-header">
       <div>
         <div class="card-title">🕐 آخر الفحوصات</div>
@@ -238,7 +238,7 @@
         </thead>
         <tbody>
           {% for s in recent_scans %}
-          <tr data-onclick="navigateTo" data-onclick-args='{{ ["/scan/" ~ s.id] | tojson }}' style="cursor:pointer">
+          <tr data-onclick="navigateTo" data-onclick-args='{{ ["/scan/" ~ s.id] | tojson }}' class="ieb202c6d4">
             <td class="mono">{{ s.target_url|truncate(40) }}</td>
             <td>
               <span class="badge badge-{% if s.status == 'done' %}success{% elif s.status == 'failed' %}critical{% elif s.status == 'running' %}high{% else %}info{% endif %}">
@@ -246,14 +246,14 @@
               </span>
             </td>
             <td>
-              <div style="display:flex;align-items:center;gap:8px">
-                <div class="progress-bar" style="display:block;height:6px;width:90px;margin:0;border-radius:3px">
-                  <div class="progress-fill" style="width:{{ s.progress }}%"></div>
+              <div class="ie2a9780cb">
+                <div class="progress-bar ie50b8fb0f" >
+                  <div class="progress-fill" data-dyn-data-dyn-style="width:{{ s.progress }}%"></div>
                 </div>
-                <span class="dim" style="font-size:11px;min-width:28px">{{ s.progress }}%</span>
+                <span class="dim ieeb13dd79" >{{ s.progress }}%</span>
               </div>
             </td>
-            <td class="dim" style="font-size:11px;white-space:nowrap">
+            <td class="dim ie8fec68f7" >
               {{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}
             </td>
           </tr>
@@ -263,15 +263,15 @@
     </div>
     {% else %}
     <div class="empty-state">
-      <div style="font-size:40px;margin-bottom:12px">📡</div>
-      <div style="color:var(--text-dim)">لا توجد فحوصات بعد</div>
-      <a href="/scan" class="btn btn-primary" style="margin-top:16px">ابدأ أول فحص</a>
+      <div class="ie0916c580">📡</div>
+      <div class="ied605eae1">لا توجد فحوصات بعد</div>
+      <a href="/scan" class="btn btn-primary ieb0043ef4" >ابدأ أول فحص</a>
     </div>
     {% endif %}
   </div>
 
   <!-- System Status + Activity -->
-  <div style="flex:1;display:flex;flex-direction:column;gap:16px">
+  <div class="ie6657c7cc">
 
     <!-- System Status -->
     <div class="card">
@@ -488,12 +488,12 @@ async function parseNLP() {
   const data = await API.post('/api/nlp', { text });
   const out = document.getElementById('nlp-result');
   if (data.action && data.action !== 'unknown') {
-    out.innerHTML = `<div class="alert alert-success" style="font-size:12px">
+    out.innerHTML = `<div class="alert alert-success ie6b9c179a" >
       ✓ Action: <strong>${data.action}</strong>${data.target ? ' | Target: <strong>' + data.target + '</strong>' : ''}
     </div>`;
     if (data.target) document.getElementById('quick-target').value = data.target;
   } else {
-    out.innerHTML = `<div class="alert alert-warning" style="font-size:12px">⚠ Could not parse command</div>`;
+    out.innerHTML = `<div class="alert alert-warning ie6b9c179a" >⚠ Could not parse command</div>`;
   }
 }
 

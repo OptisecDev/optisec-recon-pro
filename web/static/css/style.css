@@ -1150,3 +1150,12 @@ textarea { resize: vertical; min-height: 80px; }
   transition: all 0.15s;
 }
 .demo-banner-exit:hover { color: var(--red); text-decoration: none; }
+
+.optisec-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  min-width: 280px;
+  animation: fadeIn 0.2s;
+}

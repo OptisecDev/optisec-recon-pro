@@ -3,7 +3,7 @@
 {% block page_title %}Global Threat Intelligence Feed{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce }}">
 .tf-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
 .ioc-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-secondary);
   border-radius:8px;margin-bottom:6px;border:1px solid var(--border);font-size:11px;transition:border-color 0.15s}
@@ -33,50 +33,50 @@
 </style>
 
 <!-- Global threat level banner -->
-<div style="background:{{ '#FF6B6B18' if feed.global_threat_level == 'CRITICAL' else '#FFA72618' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA18' }};
+<div data-dyn-style="background:{{ '#FF6B6B18' if feed.global_threat_level == 'CRITICAL' else '#FFA72618' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA18' }};
   border:1px solid {{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }};
   border-radius:10px;padding:16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
   <div>
-    <div style="font-size:18px;font-weight:700;color:{{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }}">
+    <div data-dyn-style="font-size:18px;font-weight:700;color:{{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }}">
       GLOBAL THREAT LEVEL: {{ feed.global_threat_level }}
     </div>
-    <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
+    <div class="ieebc423f0">
       {{ feed.total }} active IOCs tracked across {{ stats.feed_sources }} intelligence sources
     </div>
   </div>
-  <div style="text-align:right;font-size:11px;color:var(--text-dim)">
+  <div class="iede66ae74">
     Updated: {{ feed.updated_at[:19] }} UTC<br>
-    <span style="color:#FF6B6B;font-weight:700">{{ feed.stats.critical_iocs }}</span> Critical ·
-    <span style="color:#FFA726;font-weight:700">{{ feed.stats.high_iocs }}</span> High ·
-    <span style="color:#FFCA28;font-weight:700">{{ feed.stats.medium_iocs }}</span> Medium
+    <span class="ie38170337">{{ feed.stats.critical_iocs }}</span> Critical ·
+    <span class="ie3cb878e2">{{ feed.stats.high_iocs }}</span> High ·
+    <span class="ie79c8ad87">{{ feed.stats.medium_iocs }}</span> Medium
   </div>
 </div>
 
 <!-- Stats -->
-<div class="stats-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:24px">
+<div class="stats-grid ie98c9aa3b" >
   <div class="stat-card">
     <div class="stat-value">{{ feed.total }}</div>
     <div class="stat-label">Active IOCs</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#FF6B6B">{{ feed.stats.critical_iocs }}</div>
+    <div class="stat-value iee22d2807" >{{ feed.stats.critical_iocs }}</div>
     <div class="stat-label">Critical</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#00ff88">{{ stats.active_campaigns }}</div>
+    <div class="stat-value ie146bf057" >{{ stats.active_campaigns }}</div>
     <div class="stat-label">Active Campaigns</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#7E57C2">{{ stats.feed_sources }}</div>
+    <div class="stat-value ie29925b1a" >{{ stats.feed_sources }}</div>
     <div class="stat-label">Feed Sources</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#FFA726">{{ threat_map.total_attacks_per_hour | int }}</div>
+    <div class="stat-value ie78539534" >{{ threat_map.total_attacks_per_hour | int }}</div>
     <div class="stat-label">Attacks/Hour</div>
   </div>
 </div>
 
-<div class="tabs" style="margin-bottom:20px">
+<div class="tabs ie3019698e" >
   <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["feed"]'>Live IOC Feed</button>
   <button class="tab-btn" data-onclick="showTab" data-onclick-args='["map"]'>Threat Map</button>
   <button class="tab-btn" data-onclick="showTab" data-onclick-args='["campaigns"]'>Campaigns</button>
@@ -88,11 +88,11 @@
 <!-- LIVE FEED TAB -->
 <div id="tab-feed">
   <div class="tf-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <div class="ie27a7ccf4">
       <h3>Live IOC Stream</h3>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input type="text" class="form-control" style="max-width:200px;font-size:11px" placeholder="Search IOCs..." data-oninput="filterFeedFromInput" id="feed-search">
-        <select class="form-control" style="max-width:130px;font-size:11px" data-onchange="filterFeedTypeFromInput">
+      <div class="iee0e9ec07">
+        <input type="text" class="form-control ie1bac07f7"  placeholder="Search IOCs..." data-oninput="filterFeedFromInput" id="feed-search">
+        <select class="form-control ie9e7d48a6"  data-onchange="filterFeedTypeFromInput">
           <option value="">All Types</option>
           {% for t, c in feed.stats.by_type.items() %}<option value="{{ t }}">{{ t }} ({{ c }})</option>{% endfor %}
         </select>
@@ -102,66 +102,65 @@
     <div id="ioc-feed-list">
       {% for ioc in feed.iocs %}
       <div class="ioc-row" data-type="{{ ioc.type }}" data-value="{{ ioc.value.lower() }}">
-        <div class="ioc-score" style="color:{{ '#FF6B6B' if ioc.threat_score >= 80 else '#FFA726' if ioc.threat_score >= 60 else '#FFCA28' if ioc.threat_score >= 40 else '#66BB6A' }}">
+        <div class="ioc-score" data-dyn-style="color:{{ '#FF6B6B' if ioc.threat_score >= 80 else '#FFA726' if ioc.threat_score >= 60 else '#FFCA28' if ioc.threat_score >= 40 else '#66BB6A' }}">
           {{ ioc.threat_score }}
         </div>
         <div class="score-bar">
-          <div class="score-fill" style="width:{{ ioc.threat_score }}%;background:{{ '#FF6B6B' if ioc.threat_score >= 80 else '#FFA726' if ioc.threat_score >= 60 else '#FFCA28' if ioc.threat_score >= 40 else '#66BB6A' }}"></div>
+          <div class="score-fill" data-dyn-style="width:{{ ioc.threat_score }}%;background:{{ '#FF6B6B' if ioc.threat_score >= 80 else '#FFA726' if ioc.threat_score >= 60 else '#FFCA28' if ioc.threat_score >= 40 else '#66BB6A' }}"></div>
         </div>
-        <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:80px;text-align:center">{{ ioc.type }}</span>
-        <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px" title="{{ ioc.value }}">{{ ioc.value[:60] }}{% if ioc.value|length > 60 %}…{% endif %}</code>
-        <span style="color:#FFA726;font-size:10px;min-width:100px">{{ ioc.malware[:20] }}</span>
-        <span class="tlp-{{ ioc.tlp.lower() }}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700" title="{{ ioc.note if ioc.tlp_source == 'estimated' else '' }}">TLP:{{ ioc.tlp }}{% if ioc.tlp_source == 'estimated' %}<sup style="opacity:0.7">*</sup>{% endif %}</span>
-        <span style="color:var(--text-dim);font-size:9px;min-width:80px">{{ ioc.source }}</span>
-        <span style="color:var(--text-dim);font-size:9px" title="{{ ioc.note if ioc.date_source == 'estimated' else '' }}">{{ ioc.last_seen[:10] }}{% if ioc.date_source == 'estimated' %}<sup style="opacity:0.7">*</sup>{% endif %}</span>
+        <span class="ie3578a396">{{ ioc.type }}</span>
+        <code class="ie61804484" title="{{ ioc.value }}">{{ ioc.value[:60] }}{% if ioc.value|length > 60 %}…{% endif %}</code>
+        <span class="ie3173424d">{{ ioc.malware[:20] }}</span>
+        <span class="tlp-{{ ioc.tlp.lower() }} iee70db8d2"  title="{{ ioc.note if ioc.tlp_source == 'estimated' else '' }}">TLP:{{ ioc.tlp }}{% if ioc.tlp_source == 'estimated' %}<sup class="ie72cd8085">*</sup>{% endif %}</span>
+        <span class="ie9298272b">{{ ioc.source }}</span>
+        <span class="iebbd90081" title="{{ ioc.note if ioc.date_source == 'estimated' else '' }}">{{ ioc.last_seen[:10] }}{% if ioc.date_source == 'estimated' %}<sup class="ie72cd8085">*</sup>{% endif %}</span>
       </div>
       {% endfor %}
       {% if feed.iocs and feed.iocs[0].tlp_source == 'estimated' %}
-      <div style="margin-top:8px;font-size:9px;color:var(--text-dim)">* TLP and dates marked with an asterisk are estimated locally, not from the original indicator source.</div>
+      <div class="iebfdf0207">* TLP and dates marked with an asterisk are estimated locally, not from the original indicator source.</div>
       {% endif %}
     </div>
   </div>
 </div>
 
 <!-- THREAT MAP TAB -->
-<div id="tab-map" style="display:none">
+<div id="tab-map" class="iecb458930">
   <div class="tf-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div class="ie57d669d7">
       <h3>Global Threat Map — Live Attack Origins</h3>
-      <div style="font-size:12px;color:var(--text-dim)">Top origin: <strong style="color:#FF6B6B">{{ threat_map.top_origin }}</strong></div>
+      <div class="ieacac8ae4">Top origin: <strong class="iee22d2807">{{ threat_map.top_origin }}</strong></div>
     </div>
     {% if threat_map.map_jitter %}
-    <div style="margin-bottom:12px;padding:8px 12px;background:rgba(255,167,38,0.1);border:1px solid rgba(255,167,38,0.3);border-radius:6px;font-size:10px;color:var(--text-dim)" title="{{ threat_map.note }}">
-      <span style="color:#FFA726;font-weight:700">ESTIMATED</span> — attacks/hr and active campaigns below are jittered around a static baseline for a live-feel effect, not real-time attack telemetry.
+    <div class="ie36d24c14" title="{{ threat_map.note }}">
+      <span class="ie3cb878e2">ESTIMATED</span> — attacks/hr and active campaigns below are jittered around a static baseline for a live-feel effect, not real-time attack telemetry.
     </div>
     {% endif %}
     <div class="map-container" id="threat-map">
       <!-- World map SVG approximation using dots -->
-      <div style="position:absolute;inset:0;background:linear-gradient(135deg,#0d0d1a 0%,#1a1a2e 100%);
-        display:flex;align-items:center;justify-content:center">
-        <div style="font-size:11px;color:var(--text-dim);opacity:0.3">WORLD MAP</div>
+      <div class="ie1b249090">
+        <div class="iecfee6e90">WORLD MAP</div>
       </div>
       {% for point in threat_map.points %}
       {% set x = ((point.lon + 180) / 360 * 100)|round(1) %}
       {% set y = ((90 - point.lat) / 180 * 100)|round(1) %}
       {% set size = [6, [6, (point.attacks_per_hour / 100)|int]|max]|max %}
-      <div class="map-point" style="left:{{ x }}%;top:{{ y }}%" title="{{ point.country }}: {{ point.attacks_per_hour }} attacks/hr">
-        <div class="map-dot" style="width:{{ [size,20]|min }}px;height:{{ [size,20]|min }}px;
+      <div class="map-point" data-dyn-style="left:{{ x }}%;top:{{ y }}%" title="{{ point.country }}: {{ point.attacks_per_hour }} attacks/hr">
+        <div class="map-dot" data-dyn-style="width:{{ [size,20]|min }}px;height:{{ [size,20]|min }}px;
           background:{{ '#FF6B6B' if point.threat_level == 'critical' else '#FFA726' if point.threat_level == 'high' else '#FFCA28' if point.threat_level == 'medium' else '#66BB6A' }};
           opacity:0.85"></div>
         <div class="map-label">{{ point.code }}</div>
       </div>
       {% endfor %}
     </div>
-    <div style="margin-top:14px;display:flex;gap:16px;flex-wrap:wrap">
-      <span style="font-size:11px;color:var(--text-dim)">Legend:</span>
+    <div class="ie2ec88d80">
+      <span class="ie5b3cc826">Legend:</span>
       {% for level, color in [('Critical','#FF6B6B'),('High','#FFA726'),('Medium','#FFCA28'),('Low','#66BB6A')] %}
-      <span style="display:flex;align-items:center;gap:6px;font-size:11px"><span style="width:10px;height:10px;border-radius:50%;background:{{ color }};display:inline-block"></span>{{ level }}</span>
+      <span class="ie6f65da91"><span data-dyn-style="width:10px;height:10px;border-radius:50%;background:{{ color }};display:inline-block"></span>{{ level }}</span>
       {% endfor %}
     </div>
 
-    <div style="margin-top:20px;overflow-x:auto">
-      <table class="table" style="font-size:11px">
+    <div class="iee1389ab0">
+      <table class="table ie8b685211" >
         <thead><tr><th>Country</th><th>Code</th><th>Attacks/hr</th><th>Threat Level</th><th>Active Campaigns</th></tr></thead>
         <tbody>
           {% set sorted_map_points = threat_map.points|sort(attribute='attacks_per_hour',reverse=True) %}
@@ -169,7 +168,7 @@
           <tr>
             <td>{{ p.country }}</td>
             <td><code>{{ p.code }}</code></td>
-            <td><strong style="color:{{ '#FF6B6B' if p.attacks_per_hour > 500 else '#FFA726' if p.attacks_per_hour > 100 else '#FFCA28' }}">{{ p.attacks_per_hour }}</strong></td>
+            <td><strong data-dyn-style="color:{{ '#FF6B6B' if p.attacks_per_hour > 500 else '#FFA726' if p.attacks_per_hour > 100 else '#FFCA28' }}">{{ p.attacks_per_hour }}</strong></td>
             <td><span class="badge badge-{{ 'critical' if p.threat_level == 'critical' else 'high' if p.threat_level == 'high' else 'medium' if p.threat_level == 'medium' else 'info' }}">{{ p.threat_level }}</span></td>
             <td>{{ p.active_campaigns }}</td>
           </tr>
@@ -181,42 +180,42 @@
 </div>
 
 <!-- CAMPAIGNS TAB -->
-<div id="tab-campaigns" style="display:none">
+<div id="tab-campaigns" class="iecb458930">
   {% for camp in campaigns %}
   <div class="campaign-card camp-{{ camp.status }}">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+    <div class="ie5ad71ab9">
       <div>
-        <div style="font-size:15px;font-weight:700">{{ camp.name }}</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px">
-          {{ camp.id }} · <span style="color:#FFA726">{{ camp.actor }}</span> · Since {{ camp.start_date }}
+        <div class="ie9535b3b9">{{ camp.name }}</div>
+        <div class="ie9287d041">
+          {{ camp.id }} · <span class="ie78539534">{{ camp.actor }}</span> · Since {{ camp.start_date }}
         </div>
       </div>
-      <div style="text-align:right">
+      <div class="ief6e3d7fe">
         <span class="badge badge-{{ 'critical' if camp.status == 'active' else 'medium' }}">{{ camp.status }}</span>
-        <div style="font-size:11px;margin-top:4px;color:{{ '#FF6B6B' if camp.confidence >= 90 else '#FFA726' }}">{{ camp.confidence }}% confidence</div>
+        <div data-dyn-style="font-size:11px;margin-top:4px;color:{{ '#FF6B6B' if camp.confidence >= 90 else '#FFA726' }}">{{ camp.confidence }}% confidence</div>
       </div>
     </div>
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">{{ camp.description }}</p>
-    <div style="display:flex;flex-wrap:wrap;gap:16px;font-size:11px">
+    <p class="ie49bd2a6d">{{ camp.description }}</p>
+    <div class="ie49f9cf0e">
       <div>
-        <div style="color:var(--text-dim);margin-bottom:4px">Target Sectors</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px">
-          {% for s in camp.target_sectors %}<span class="badge badge-info" style="font-size:9px">{{ s }}</span>{% endfor %}
+        <div class="iecaa49e02">Target Sectors</div>
+        <div class="ie5e254dbb">
+          {% for s in camp.target_sectors %}<span class="badge badge-info ied9e14ae8" >{{ s }}</span>{% endfor %}
         </div>
       </div>
       <div>
-        <div style="color:var(--text-dim);margin-bottom:4px">MITRE Techniques</div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px">
-          {% for t in camp.techniques %}<code style="font-size:9px;background:rgba(255,107,107,0.1);border:1px solid rgba(255,107,107,0.3);padding:2px 5px;border-radius:3px">{{ t }}</code>{% endfor %}
+        <div class="iecaa49e02">MITRE Techniques</div>
+        <div class="ie5e254dbb">
+          {% for t in camp.techniques %}<code class="iecb66e7fe">{{ t }}</code>{% endfor %}
         </div>
       </div>
       <div>
-        <div style="color:var(--text-dim);margin-bottom:4px">IOC Count</div>
-        <div style="font-size:14px;font-weight:700;color:#FFA726">{{ camp.ioc_count }}</div>
+        <div class="iecaa49e02">IOC Count</div>
+        <div class="ie5efb0cab">{{ camp.ioc_count }}</div>
       </div>
       <div>
-        <div style="color:var(--text-dim);margin-bottom:4px">Countries Targeted</div>
-        <div>{% for c in camp.countries_targeted %}<code style="font-size:10px;margin-right:4px">{{ c }}</code>{% endfor %}</div>
+        <div class="iecaa49e02">Countries Targeted</div>
+        <div>{% for c in camp.countries_targeted %}<code class="ie265c146b">{{ c }}</code>{% endfor %}</div>
       </div>
     </div>
   </div>
@@ -224,58 +223,58 @@
 </div>
 
 <!-- FEED SOURCES TAB -->
-<div id="tab-sources" style="display:none">
+<div id="tab-sources" class="iecb458930">
   <div class="tf-card">
-    <h3 style="margin-bottom:16px">Intelligence Feed Sources</h3>
+    <h3 class="ie8e86974b">Intelligence Feed Sources</h3>
     {% for src in feed.feed_sources %}
     <div class="feed-source">
-      <div style="min-width:140px;font-weight:600">{{ src.name }}</div>
-      <span class="badge badge-{{ 'info' if src.type == 'open' else 'medium' if src.type == 'community' else 'high' if src.type == 'government' else 'critical' }}" style="font-size:9px">{{ src.type }}</span>
-      <div style="flex:1">
-        <div style="font-size:9px;color:var(--text-dim);margin-bottom:3px">Reliability: {{ (src.reliability * 100)|int }}%</div>
-        <div class="source-rel"><div class="source-rel-fill" style="width:{{ (src.reliability * 100)|int }}%"></div></div>
+      <div class="ie306ee34c">{{ src.name }}</div>
+      <span class="badge badge-{{ 'info' if src.type == 'open' else 'medium' if src.type == 'community' else 'high' if src.type == 'government' else 'critical' }} ied9e14ae8" >{{ src.type }}</span>
+      <div class="ieda5cd676">
+        <div class="ie395bd0fb">Reliability: {{ (src.reliability * 100)|int }}%</div>
+        <div class="source-rel"><div class="source-rel-fill" data-dyn-style="width:{{ (src.reliability * 100)|int }}%"></div></div>
       </div>
-      <code style="font-size:9px;color:var(--text-dim)">{{ src.id }}</code>
+      <code class="iee974f2d0">{{ src.id }}</code>
     </div>
     {% endfor %}
-    <div style="margin-top:16px;padding:12px;background:var(--bg-secondary);border-radius:8px;font-size:11px;color:var(--text-dim)">
-      <strong style="color:var(--text)">By IOC Source:</strong><br>
+    <div class="iec7e9351f">
+      <strong class="ieaee76f91">By IOC Source:</strong><br>
       {% for src, count in feed.stats.by_source.items() %}
-        <span style="margin-right:12px">{{ src }}: <strong>{{ count }}</strong></span>
+        <span class="ie00c0df93">{{ src }}: <strong>{{ count }}</strong></span>
       {% endfor %}
     </div>
   </div>
 </div>
 
 <!-- SUBMIT IOC TAB -->
-<div id="tab-submit" style="display:none">
+<div id="tab-submit" class="iecb458930">
   <div class="grid grid-2">
     <div class="submit-panel">
-      <h3 style="color:var(--accent);margin-bottom:16px">Submit IOC to Global Feed</h3>
-      <div style="display:flex;flex-direction:column;gap:12px">
+      <h3 class="ieb3c688e0">Submit IOC to Global Feed</h3>
+      <div class="iebbc0178b">
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">IOC Type</label>
-          <select id="sub-type" class="form-control" style="margin-top:4px;font-size:12px">
+          <label class="ie5b3cc826">IOC Type</label>
+          <select id="sub-type" class="form-control ie4c704819" >
             {% for t in ['ip','domain','url','hash_md5','hash_sha256','email','cve','malware_family','certificate_sha1','bitcoin_address'] %}
             <option value="{{ t }}">{{ t }}</option>{% endfor %}
           </select>
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">IOC Value</label>
-          <input type="text" id="sub-value" class="form-control" placeholder="Enter the indicator value" style="margin-top:4px;font-size:12px">
+          <label class="ie5b3cc826">IOC Value</label>
+          <input type="text" id="sub-value" class="form-control ie4c704819" placeholder="Enter the indicator value" >
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">Associated Malware / Threat Actor</label>
-          <input type="text" id="sub-malware" class="form-control" placeholder="e.g. Emotet, APT28, LockBit" style="margin-top:4px;font-size:12px">
+          <label class="ie5b3cc826">Associated Malware / Threat Actor</label>
+          <input type="text" id="sub-malware" class="form-control ie4c704819" placeholder="e.g. Emotet, APT28, LockBit" >
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">Confidence (0-100)</label>
-          <input type="range" id="sub-conf" min="0" max="100" value="75" data-oninput="updateConfDisplay" style="width:100%;margin-top:4px">
-          <span id="conf-val" style="font-size:11px;color:var(--accent)">75%</span>
+          <label class="ie5b3cc826">Confidence (0-100)</label>
+          <input type="range" id="sub-conf" min="0" max="100" value="75" data-oninput="updateConfDisplay" class="ie1f83fe05">
+          <span id="conf-val" class="iefa5a3750">75%</span>
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">TLP Classification</label>
-          <select id="sub-tlp" class="form-control" style="margin-top:4px;font-size:12px">
+          <label class="ie5b3cc826">TLP Classification</label>
+          <select id="sub-tlp" class="form-control ie4c704819" >
             <option value="WHITE">TLP:WHITE — Unrestricted</option>
             <option value="GREEN">TLP:GREEN — Community</option>
             <option value="AMBER" selected>TLP:AMBER — Limited distribution</option>
@@ -284,26 +283,26 @@
         </div>
         <button class="btn btn-primary" data-onclick="submitIOC">Share to Global Feed</button>
       </div>
-      <div id="submit-result" style="margin-top:14px"></div>
+      <div id="submit-result" class="ie553a645f"></div>
     </div>
 
     <div class="submit-panel">
-      <h3 style="color:var(--accent);margin-bottom:16px">IOC Correlation Engine</h3>
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Paste multiple IOCs (one per line) to correlate against known campaigns and TTPs.</p>
-      <textarea id="correlate-input" class="form-control" rows="8" style="font-size:12px;font-family:monospace;resize:vertical" placeholder="ip:185.234.216.45&#10;domain:evil-c2.ru&#10;hash_md5:d41d8cd98f00b204e9800998ecf8427e&#10;cve:CVE-2021-44228"></textarea>
-      <button class="btn btn-primary" style="margin-top:12px;width:100%" data-onclick="correlateIOCs">Correlate IOCs</button>
-      <div id="correlate-result" style="margin-top:14px"></div>
+      <h3 class="ieb3c688e0">IOC Correlation Engine</h3>
+      <p class="ief8957c25">Paste multiple IOCs (one per line) to correlate against known campaigns and TTPs.</p>
+      <textarea id="correlate-input" class="form-control iee15dd117" rows="8"  placeholder="ip:185.234.216.45&#10;domain:evil-c2.ru&#10;hash_md5:d41d8cd98f00b204e9800998ecf8427e&#10;cve:CVE-2021-44228"></textarea>
+      <button class="btn btn-primary ief322cfc1"  data-onclick="correlateIOCs">Correlate IOCs</button>
+      <div id="correlate-result" class="ie553a645f"></div>
     </div>
   </div>
 </div>
 
 <!-- THREAT SHARING TAB -->
-<div id="tab-sharing" style="display:none">
-  <div class="tf-card" style="margin-bottom:16px;border-color:#FFA726">
-    <div style="display:flex;gap:10px;align-items:flex-start">
-      <span style="font-size:20px">⚠️</span>
-      <div style="font-size:12px;color:var(--text-dim);line-height:1.6">
-        <strong style="color:#FFA726">تنبيه أمني / Security Notice:</strong>
+<div id="tab-sharing" class="iecb458930">
+  <div class="tf-card iedbfdd5b9" >
+    <div class="ieadafa060">
+      <span class="iee5e6f834">⚠️</span>
+      <div class="ie8ae12a7c">
+        <strong class="ie78539534">تنبيه أمني / Security Notice:</strong>
         هذه الميزة تتعامل مع بيانات قد تُشارك مع طرف خارجي (مجتمع AlienVault OTX). لا تتم أي مشاركة تلقائياً — كل عملية مشاركة
         تتطلب موافقة يدوية صريحة، ولا تُشارَك سوى مؤشرات تقنية بحتة (IP / نطاق / hash / CVE / URL) — لا تُشارك أبداً بيانات شخصية
         (PII) أو معلومات تخص عملاءك أو نتائج فحوصاتك.<br>
@@ -314,28 +313,28 @@
     </div>
   </div>
 
-  <div id="sharing-status-banner" class="tf-card" style="margin-bottom:16px"></div>
+  <div id="sharing-status-banner" class="tf-card ie8e86974b" ></div>
 
-  <div class="grid grid-2" style="margin-bottom:16px">
+  <div class="grid grid-2 ie8e86974b" >
     <div class="tf-card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="ie546e10f1">
         <h3>IOCs مؤهلة للمشاركة · Local Candidates</h3>
         <button class="btn btn-secondary btn-sm" data-onclick="loadLocalIocs">Refresh</button>
       </div>
-      <div id="local-iocs-list" style="font-size:11px;color:var(--text-dim)">Loading…</div>
+      <div id="local-iocs-list" class="ie5b3cc826">Loading…</div>
     </div>
     <div class="tf-card">
-      <h3 style="margin-bottom:12px">Export · تصدير</h3>
-      <p style="font-size:11px;color:var(--text-dim);margin-bottom:12px">
+      <h3 class="iefa3e1c7d">Export · تصدير</h3>
+      <p class="ie76b6cacf">
         Download all local IOCs (honeypot + dark web + CISA KEV) — read-only, nothing is sent anywhere.
       </p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <div class="ie4ce13a4e">
         <a class="btn btn-secondary btn-sm" href="/api/threat-feed/export?format=json">JSON</a>
         <a class="btn btn-secondary btn-sm" href="/api/threat-feed/export?format=csv">CSV</a>
         <a class="btn btn-secondary btn-sm" href="/api/threat-feed/export?format=stix">STIX 2.1</a>
       </div>
-      <h3 style="margin-bottom:12px">سجل المشاركة · Share History</h3>
-      <div id="share-history-list" style="font-size:11px;color:var(--text-dim)">Loading…</div>
+      <h3 class="iefa3e1c7d">سجل المشاركة · Share History</h3>
+      <div id="share-history-list" class="ie5b3cc826">Loading…</div>
     </div>
   </div>
 
@@ -358,11 +357,12 @@ async function loadSharingStatus() {
   const data = await resp.json();
   const el = document.getElementById('sharing-status-banner');
   el.style.borderColor = data.enabled ? '#00ff88' : '#8b949e';
-  el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
-    <div><strong style="color:${data.enabled ? '#00ff88' : '#8b949e'}">${data.enabled ? '✓ مفعّلة / Enabled' : '✕ معطّلة / Disabled'}</strong>
+  el.innerHTML = `<div class="ie76122bf0">
+    <div><strong data-dyn-style="color:${data.enabled ? '#00ff88' : '#8b949e'}">${data.enabled ? '✓ مفعّلة / Enabled' : '✕ معطّلة / Disabled'}</strong>
       — ${data.message_ar}</div>
-    <div style="color:var(--text-dim)">OTX: ${data.otx_configured ? 'configured' : 'not configured'}</div>
+    <div class="ied605eae1">OTX: ${data.otx_configured ? 'configured' : 'not configured'}</div>
   </div>`;
+  optisecApplyDynStyles(el);
 }
 
 async function loadLocalIocs() {
@@ -372,13 +372,13 @@ async function loadLocalIocs() {
   if (!data.iocs.length) { el.innerHTML = 'لا توجد مؤشرات محلية بعد. / No local IOCs yet.'; return; }
   el.innerHTML = data.iocs.map(ioc => `
     <div class="ioc-row">
-      <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:70px;text-align:center">${ioc.type}</span>
-      <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${ioc.value}">${ioc.value}</code>
-      <span style="color:var(--text-dim);font-size:9px;min-width:90px">${ioc.source_module}</span>
-      <span style="color:#FFA726;font-size:9px;min-width:60px">${ioc.severity||''}</span>
+      <span class="iee4c5ea65">${ioc.type}</span>
+      <code class="ieda163dc1" title="${ioc.value}">${ioc.value}</code>
+      <span class="ie074bd2cc">${ioc.source_module}</span>
+      <span class="ie71d85aaa">${ioc.severity||''}</span>
       ${ioc.already_shared
-        ? '<span style="font-size:9px;color:#00ff88">✓ shared</span>'
-        : `<button class="btn btn-primary btn-sm" onclick='shareIoc(${JSON.stringify(ioc)})'>مشاركة</button>`}
+        ? '<span class="ie0c72d844">✓ shared</span>'
+        : `<button class="btn btn-primary btn-sm" data-onclick="shareIoc" data-onclick-args="${optisecArgs([ioc])}">مشاركة</button>`}
     </div>`).join('');
 }
 
@@ -390,10 +390,12 @@ async function shareIoc(ioc) {
   });
   const data = await resp.json();
   const ok = data.status === 'success';
-  document.getElementById('share-result').innerHTML = `<div class="tf-card" style="border-color:${ok?'#00ff88':'#FF6B6B'};margin-top:12px">
-    <div style="color:${ok?'#00ff88':'#FF6B6B'};font-weight:700;font-size:12px">${ok?'✓':'✕'} ${data.message_ar}</div>
-    <div style="color:var(--text-dim);font-size:11px;margin-top:4px">${data.message_en||''}</div>
+  const shareResultEl = document.getElementById('share-result');
+  shareResultEl.innerHTML = `<div class="tf-card" data-dyn-style="border-color:${ok?'#00ff88':'#FF6B6B'};margin-top:12px">
+    <div data-dyn-style="color:${ok?'#00ff88':'#FF6B6B'};font-weight:700;font-size:12px">${ok?'✓':'✕'} ${data.message_ar}</div>
+    <div class="iedf7f0ac0">${data.message_en||''}</div>
   </div>`;
+  optisecApplyDynStyles(shareResultEl);
   loadLocalIocs();
   loadShareHistory();
 }
@@ -405,10 +407,11 @@ async function loadShareHistory() {
   if (!data.shares.length) { el.innerHTML = 'لا يوجد سجل مشاركة بعد. / No share history yet.'; return; }
   const statusColor = s => s==='success'?'#00ff88':s==='disabled'?'#8b949e':'#FF6B6B';
   el.innerHTML = data.shares.map(s => `
-    <div style="padding:6px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;gap:8px">
-      <code style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.ioc_type}:${s.ioc_value}</code>
-      <span style="color:${statusColor(s.status)};font-size:10px;font-weight:700">${s.status}</span>
+    <div class="ie75c631ee">
+      <code class="ie98fbf8e3">${s.ioc_type}:${s.ioc_value}</code>
+      <span data-dyn-style="color:${statusColor(s.status)};font-size:10px;font-weight:700">${s.status}</span>
     </div>`).join('');
+  optisecApplyDynStyles(el);
 }
 
 function filterFeedFromInput() {
@@ -440,16 +443,18 @@ async function refreshFeed() {
   const resp = await fetch('/threat-feed/api/feed?limit=30');
   const data = await resp.json();
   const scoreColors = s => s>=80?'#FF6B6B':s>=60?'#FFA726':s>=40?'#FFCA28':'#66BB6A';
-  document.getElementById('ioc-feed-list').innerHTML = data.iocs.map(ioc => `
+  const iocFeedListEl = document.getElementById('ioc-feed-list');
+  iocFeedListEl.innerHTML = data.iocs.map(ioc => `
     <div class="ioc-row" data-type="${ioc.type}" data-value="${ioc.value.toLowerCase()}">
-      <div class="ioc-score" style="color:${scoreColors(ioc.threat_score)}">${ioc.threat_score}</div>
-      <div class="score-bar"><div class="score-fill" style="width:${ioc.threat_score}%;background:${scoreColors(ioc.threat_score)}"></div></div>
-      <span style="background:rgba(0,212,170,0.1);border:1px solid rgba(0,212,170,0.3);border-radius:4px;padding:2px 6px;font-size:9px;min-width:80px;text-align:center">${ioc.type}</span>
-      <code style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px">${ioc.value.slice(0,60)}${ioc.value.length>60?'…':''}</code>
-      <span style="color:#FFA726;font-size:10px;min-width:100px">${(ioc.malware||'').slice(0,20)}</span>
-      <span class="tlp-${(ioc.tlp||'white').toLowerCase()}" style="font-size:8px;padding:2px 5px;border-radius:4px;font-weight:700" title="${ioc.tlp_source==='estimated'?(ioc.note||'Estimated locally'):''}">TLP:${ioc.tlp||'WHITE'}${ioc.tlp_source==='estimated'?'<sup style="opacity:0.7">*</sup>':''}</span>
-      <span style="color:var(--text-dim);font-size:9px;min-width:80px">${ioc.source||''}</span>
+      <div class="ioc-score" data-dyn-style="color:${scoreColors(ioc.threat_score)}">${ioc.threat_score}</div>
+      <div class="score-bar"><div class="score-fill" data-dyn-style="width:${ioc.threat_score}%;background:${scoreColors(ioc.threat_score)}"></div></div>
+      <span class="ie3578a396">${ioc.type}</span>
+      <code class="ie61804484">${ioc.value.slice(0,60)}${ioc.value.length>60?'…':''}</code>
+      <span class="ie3173424d">${(ioc.malware||'').slice(0,20)}</span>
+      <span class="tlp-${(ioc.tlp||'white').toLowerCase()} iee70db8d2"  title="${ioc.tlp_source==='estimated'?(ioc.note||'Estimated locally'):''}">TLP:${ioc.tlp||'WHITE'}${ioc.tlp_source==='estimated'?'<sup class="ie72cd8085">*</sup>':''}</span>
+      <span class="ie9298272b">${ioc.source||''}</span>
     </div>`).join('');
+  optisecApplyDynStyles(iocFeedListEl);
 }
 
 async function submitIOC() {
@@ -465,9 +470,9 @@ async function submitIOC() {
     })
   });
   const data = await resp.json();
-  document.getElementById('submit-result').innerHTML = `<div style="background:#00ff8818;border:1px solid #00ff88;border-radius:8px;padding:12px;font-size:12px">
-    <div style="color:#00ff88;font-weight:700">✓ IOC shared to global feed</div>
-    <div style="color:var(--text-dim);margin-top:4px">ID: ${data.id} · Score: ${data.threat_score}/100</div>
+  document.getElementById('submit-result').innerHTML = `<div class="ie7a51143e">
+    <div class="ieab099171">✓ IOC shared to global feed</div>
+    <div class="ie1fc68dea">ID: ${data.id} · Score: ${data.threat_score}/100</div>
   </div>`;
   document.getElementById('sub-value').value = '';
 }
@@ -485,20 +490,20 @@ async function correlateIOCs() {
   });
   const data = await resp.json();
   const el = document.getElementById('correlate-result');
-  el.innerHTML = `<div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
-    <div style="font-size:13px;font-weight:700;margin-bottom:10px">Correlation Results</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div style="background:var(--bg-card);border-radius:6px;padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#FF6B6B">${data.campaign_matches?.length||0}</div>
-        <div style="font-size:10px;color:var(--text-dim)">Campaign Matches</div>
+  el.innerHTML = `<div class="ie7650fe81">
+    <div class="ie492d0a4e">Correlation Results</div>
+    <div class="ie199c6711">
+      <div class="ie8b421434">
+        <div class="ie40a22946">${data.campaign_matches?.length||0}</div>
+        <div class="ie3122d8b0">Campaign Matches</div>
       </div>
-      <div style="background:var(--bg-card);border-radius:6px;padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#FFA726">${Math.round(data.attribution_confidence||0)}%</div>
-        <div style="font-size:10px;color:var(--text-dim)">Attribution Confidence</div>
+      <div class="ie8b421434">
+        <div class="ie6f3d53fc">${Math.round(data.attribution_confidence||0)}%</div>
+        <div class="ie3122d8b0">Attribution Confidence</div>
       </div>
     </div>
-    ${data.campaign_matches?.length ? data.campaign_matches.map(m=>`<div style="background:var(--bg-card);border-radius:6px;padding:8px;margin-bottom:6px;font-size:11px"><strong>${m.campaign}</strong> — <span style="color:#FFA726">${m.actor}</span> (${m.confidence}%)</div>`).join('') : '<div style="font-size:11px;color:var(--text-dim)">No campaign matches found.</div>'}
-    ${data.pattern_analysis?.likely_ttps?.length ? `<div style="margin-top:10px"><div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--accent)">Likely TTPs:</div>${data.pattern_analysis.likely_ttps.map(t=>`<div style="font-size:10px;padding:3px 0;border-bottom:1px solid var(--border)">${t}</div>`).join('')}</div>` : ''}
+    ${data.campaign_matches?.length ? data.campaign_matches.map(m=>`<div class="ie97d94fe4"><strong>${m.campaign}</strong> — <span class="ie78539534">${m.actor}</span> (${m.confidence}%)</div>`).join('') : '<div class="ie5b3cc826">No campaign matches found.</div>'}
+    ${data.pattern_analysis?.likely_ttps?.length ? `<div class="ie5371db16"><div class="ie4fd68982">Likely TTPs:</div>${data.pattern_analysis.likely_ttps.map(t=>`<div class="ie31f9f0ad">${t}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 </script>

@@ -352,7 +352,7 @@ async def custom_swagger(request: Request):
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{APP_NAME} — API Docs</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
-  <style>
+  <style nonce="{request.state.csp_nonce}">
     :root {{
       --accent: #00ff88;
       --bg: #0d1117;
@@ -431,6 +431,7 @@ async def custom_swagger(request: Request):
     .swagger-ui .microlight {{ background: var(--bg) !important; color: var(--text) !important; border-radius: 6px !important; }}
     .swagger-ui .highlight-code {{ background: var(--bg) !important; }}
     .swagger-ui .arrow {{ filter: invert(0.6); }}
+    .auth-hint-code {{ color: #00ff88; }}
   </style>
 </head>
 <body>
@@ -457,7 +458,7 @@ window.onload = () => {{
       if (auth) {{
         const hint = document.createElement('div');
         hint.style = 'color:#8b949e;font-size:12px;margin-top:8px;padding:8px 12px;background:#1c2333;border-radius:6px';
-        hint.innerHTML = '💡 Use <code style="color:#00ff88">POST /api/auth/login</code> to get your token, then click Authorize above.';
+        hint.innerHTML = '💡 Use <code class="auth-hint-code">POST /api/auth/login</code> to get your token, then click Authorize above.';
         auth.appendChild(hint);
       }}
     }},
@@ -469,13 +470,13 @@ window.onload = () => {{
 
 
 @app.get("/redoc", include_in_schema=False)
-async def custom_redoc():
+async def custom_redoc(request: Request):
     return HTMLResponse(f"""<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <title>{APP_NAME} — API Reference</title>
-  <style>body{{margin:0;background:#0d1117}}</style>
+  <style nonce="{request.state.csp_nonce}">body{{margin:0;background:#0d1117}}</style>
 </head>
 <body>
   <redoc spec-url='/openapi.json'
@@ -536,12 +537,40 @@ app.include_router(license_routes.page_router)
 #     <script src="https://cdn.jsdelivr.net/...">  tags don't need it at all
 #     — host-source expressions in script-src are matched independently of
 #     any nonce-source also present in the same directive.
-#   - style-src KEEPS 'unsafe-inline': inline style="" attributes and <style>
-#     blocks are pervasive across every template (dynamic per-row colors,
-#     computed widths, etc.) — a nonce would only cover <style> tag content,
-#     not the attribute form, and a CSS-class extraction of every inline
-#     style="" is a real, separate, much larger visual refactor with no
-#     addEventListener-shaped equivalent. Tracked separately.
+#   - style-src has NO 'unsafe-inline' either now. 1470 static style="" values
+#     (1021 distinct) were mechanically extracted into web/static/css/
+#     inline-extracted.css: each unique value became a class named
+#     ie<md5(value)[:8]>, with !important on every declaration to exactly
+#     reproduce inline style's override precedence (a class alone has lower
+#     specificity than the style attribute it replaced, so without
+#     !important some element could start rendering differently if an
+#     earlier stylesheet rule happened to target it too). The 96 genuinely
+#     dynamic ones (per-row colors/widths computed from data, not a small
+#     fixed enum a static class could cover) keep their exact former value,
+#     just renamed to data-dyn-style="<same declarations>" — inert text to
+#     both the HTML parser and CSP, since only the literal style="" HTML
+#     attribute is restricted. main.js's optisecApplyDynStyles() parses that
+#     string and applies each declaration via element.style.setProperty(),
+#     which — unlike element.style.cssText or setAttribute('style', ...),
+#     both of which reduce to the same restricted style attribute — is a
+#     script-src concern, not style-src, so it's unaffected by dropping
+#     unsafe-inline here. Every .cssText assignment in main.js and every
+#     template was hunted down and converted the same way (individual
+#     setProperty calls, or a plain CSS class for the ones that turned out
+#     to be static all along). <style> tag content across all 12 templates
+#     that had one, plus /docs and /redoc's own inline <style> blocks, carry
+#     the same per-request nonce as <script> — a style-src nonce-source and
+#     a script-src nonce-source are independent, so this is the identical
+#     mechanism, just declared in the other directive.
+#     Verified with a static Jinja-render + headless-Chromium harness (this
+#     environment has no interactive browser and the dev server points at
+#     the live Neon production DB via .env, so an in-app browser check
+#     wasn't possible): every one of the 32 templates loads with the real
+#     CSP header and reports zero violations to the browser's own console;
+#     a scripted end-to-end run of firewall.html's inspectRequest() (mocked
+#     fetch, real code path) leaves zero data-dyn-style attributes behind
+#     and produces the exact expected computed border/text colors, also
+#     with zero violations.
 #   - 'unsafe-eval' is NOT included — grepped for eval(/new Function(/string-arg
 #     setTimeout(, none found in any template or main.js.
 #   - img-src/font-src allow data: only (favicon, WireGuard QR PNG, swagger-ui's
@@ -555,7 +584,7 @@ def _build_csp(nonce: str) -> str:
     return (
         "default-src 'none'; "
         f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        f"style-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
         "img-src 'self' data:; "
         "font-src 'self' data:; "
         "connect-src 'self' https://cdn.jsdelivr.net; "

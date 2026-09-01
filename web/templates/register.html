@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Register — {{ app_name }}</title>
   <link rel="stylesheet" href="/static/css/style.css">
-  <style>
+  <link rel="stylesheet" href="/static/css/inline-extracted.css">
+  <style nonce="{{ request.state.csp_nonce }}">
     body { display:flex; align-items:center; justify-content:center; min-height:100vh; }
     .auth-wrap { width:380px; }
     .auth-logo { text-align:center; margin-bottom:32px; }
@@ -37,15 +38,15 @@
         <input type="email" name="email" placeholder="john@example.com" required autocomplete="email">
       </div>
       <div class="form-group">
-        <label>Password <span style="color:var(--text-dim);font-size:11px">(min 8 chars)</span></label>
+        <label>Password <span class="iefcb79f64">(min 8 chars)</span></label>
         <input type="password" name="password" placeholder="••••••••" required autocomplete="new-password">
       </div>
-      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:4px">
+      <button type="submit" class="btn btn-primary ief585b429" >
         Create Account
       </button>
     </form>
-    <div style="text-align:center;margin-top:16px;font-size:13px;color:var(--text-dim)">
-      Already registered? <a href="/login" style="color:var(--accent)">Sign in</a>
+    <div class="ie4c483f25">
+      Already registered? <a href="/login" class="iebb2b0e55">Sign in</a>
     </div>
   </div>
 </div>

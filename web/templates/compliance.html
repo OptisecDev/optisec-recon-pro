@@ -3,7 +3,7 @@
 {% block page_title %}Compliance Checker{% endblock %}
 
 {% block content %}
-<div class="grid-2" style="align-items:start">
+<div class="grid-2 ie2a4dac26" >
   <!-- Framework Selector -->
   <div class="card">
     <div class="card-header">
@@ -22,20 +22,20 @@
       <label>Framework</label>
       <select id="comp-framework" data-onchange="loadControls">
         {% for key, fw in frameworks.items() %}
-        <option value="{{ key }}" style="color:{{ fw.color }}">{{ fw.name }} ({{ fw.control_count }} controls)</option>
+        <option value="{{ key }}" data-dyn-style="color:{{ fw.color }}">{{ fw.name }} ({{ fw.control_count }} controls)</option>
         {% endfor %}
       </select>
     </div>
 
-    <div style="display:flex;gap:8px;margin-bottom:12px">
+    <div class="ie60e30436">
       <button class="btn btn-secondary btn-sm" data-onclick="autoProbe">🔍 Auto-Probe Target</button>
       <button class="btn btn-secondary btn-sm" data-onclick="setAll" data-onclick-args='["yes"]'>✅ All Compliant</button>
       <button class="btn btn-secondary btn-sm" data-onclick="setAll" data-onclick-args='["no"]'>❌ All Non-Compliant</button>
     </div>
 
-    <div id="controls-checklist" style="max-height:400px;overflow-y:auto"></div>
+    <div id="controls-checklist" class="ie3cce3a25"></div>
 
-    <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" data-onclick="runAssessment">
+    <button class="btn btn-primary ie9949f913"  data-onclick="runAssessment">
       📊 Run Assessment
     </button>
   </div>
@@ -47,15 +47,15 @@
   </div>
 </div>
 
-<div class="card" style="margin-top:16px">
+<div class="card ieb0043ef4" >
   <div class="card-header"><div class="card-title">📚 Framework Overview</div></div>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+  <div class="ieb6cf4042">
     {% for key, fw in frameworks.items() %}
-    <div style="padding:14px;border:1px solid var(--border);border-radius:8px;border-left:3px solid {{ fw.color }};cursor:pointer"
+    <div data-dyn-style="padding:14px;border:1px solid var(--border);border-radius:8px;border-left:3px solid {{ fw.color }};cursor:pointer"
          data-onclick="selectComplianceFramework" data-onclick-args='{{ [key] | tojson }}'>
-      <div style="font-weight:700;color:{{ fw.color }}">{{ fw.short }}</div>
-      <div style="font-size:12px;color:var(--text-dim);margin-top:4px">{{ fw.name }}</div>
-      <div style="font-size:11px;margin-top:6px">{{ fw.control_count }} controls</div>
+      <div data-dyn-style="font-weight:700;color:{{ fw.color }}">{{ fw.short }}</div>
+      <div class="ieebc423f0">{{ fw.name }}</div>
+      <div class="ie65d63e14">{{ fw.control_count }} controls</div>
     </div>
     {% endfor %}
   </div>
@@ -86,13 +86,13 @@ function renderChecklist(controls) {
     let domainHeader = '';
     if (c.domain !== lastDomain) {
       lastDomain = c.domain;
-      domainHeader = `<div style="font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;margin:10px 0 4px;padding-top:8px;border-top:1px solid var(--border)">${escHtml(c.domain)}</div>`;
+      domainHeader = `<div class="ief8b50ecd">${escHtml(c.domain)}</div>`;
     }
     return `${domainHeader}
-      <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
-        <code style="font-size:10px;color:var(--accent);min-width:70px">${c.id}</code>
-        <span style="flex:1;font-size:12px">${escHtml(c.control)}</span>
-        <select name="${c.check}" style="font-size:11px;padding:2px 6px;background:var(--bg-card);border:1px solid var(--border);color:var(--text);border-radius:4px">
+      <div class="iee60fdf41">
+        <code class="ied2ef9b77">${c.id}</code>
+        <span class="ieed18b643">${escHtml(c.control)}</span>
+        <select name="${c.check}" class="ie5c270840">
           <option value="unknown">?</option>
           <option value="yes">✅ Yes</option>
           <option value="no">❌ No</option>
@@ -120,11 +120,12 @@ async function autoProbe() {
     <div class="card">
       <div class="card-header"><div class="card-title">🔍 Auto-Probe Results</div></div>
       ${Object.entries(data).map(([k,v]) => `
-        <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">
-          <span style="color:var(--text-dim)">${escHtml(k)}</span>
-          <span style="color:${v===true?'var(--accent)':v===false?'#ff3366':'var(--text)'}">${JSON.stringify(v)}</span>
+        <div class="ieab115f95">
+          <span class="ied605eae1">${escHtml(k)}</span>
+          <span data-dyn-style="color:${v===true?'var(--accent)':v===false?'#ff3366':'var(--text)'}">${JSON.stringify(v)}</span>
         </div>`).join('')}
     </div>`;
+  optisecApplyDynStyles(el);
 }
 
 async function runAssessment() {
@@ -153,19 +154,19 @@ async function runAssessment() {
           <div class="card-title">📊 ${escHtml(data.framework_name)} Assessment</div>
           <div class="card-subtitle">${escHtml(target || 'General Assessment')}</div>
         </div>
-        <div style="text-align:center">
-          <div style="font-size:48px;font-weight:900;color:${gradeColor}">${data.grade}</div>
-          <div style="font-size:13px;color:var(--text-dim)">${data.score}% compliant</div>
+        <div class="ie13076d95">
+          <div data-dyn-style="font-size:48px;font-weight:900;color:${gradeColor}">${data.grade}</div>
+          <div class="ie6c218480">${data.score}% compliant</div>
         </div>
       </div>
 
-      <div class="stats-grid" style="margin-bottom:16px">
+      <div class="stats-grid ie8e86974b" >
         <div class="stat-card">
-          <div class="stat-value" style="color:#00ff88">${data.passed}</div>
+          <div class="stat-value ie146bf057" >${data.passed}</div>
           <div class="stat-label">Compliant</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" style="color:#ff3366">${data.failed}</div>
+          <div class="stat-value iee0281c78" >${data.failed}</div>
           <div class="stat-label">Non-Compliant</div>
         </div>
         <div class="stat-card">
@@ -173,32 +174,33 @@ async function runAssessment() {
           <div class="stat-label">N/A</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" style="color:${data.risk_level==='low'?'#00ff88':data.risk_level==='medium'?'#ffaa00':'#ff3366'}">${data.risk_level?.toUpperCase()}</div>
+          <div class="stat-value" data-dyn-style="color:${data.risk_level==='low'?'#00ff88':data.risk_level==='medium'?'#ffaa00':'#ff3366'}">${data.risk_level?.toUpperCase()}</div>
           <div class="stat-label">Risk Level</div>
         </div>
       </div>
 
       ${data.recommendations?.length ? `
-      <div style="margin-bottom:12px">
-        <div style="font-weight:600;margin-bottom:8px;color:var(--accent)">⚠️ Top Recommendations</div>
+      <div class="iefa3e1c7d">
+        <div class="ieea67e572">⚠️ Top Recommendations</div>
         ${data.recommendations.map(r => `
-          <div style="padding:6px 10px;border-left:2px solid #ff6600;margin-bottom:4px;font-size:12px">
+          <div class="ie31571b58">
             <strong>${r.control_id}</strong> — ${escHtml(r.action)}
           </div>`).join('')}
       </div>` : ''}
 
       <div>
-        <div style="font-weight:600;margin-bottom:8px">Controls Detail</div>
+        <div class="ieba2b31fe">Controls Detail</div>
         ${data.controls?.map(c => `
-          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:11px">
-            <span style="color:${c.status==='compliant'?'#00ff88':c.status==='non_compliant'?'#ff3366':'var(--text-dim)'}">
+          <div class="ie0b736ac9">
+            <span data-dyn-style="color:${c.status==='compliant'?'#00ff88':c.status==='non_compliant'?'#ff3366':'var(--text-dim)'}">
               ${c.status==='compliant'?'✅':c.status==='non_compliant'?'❌':'—'}
             </span>
-            <code style="color:var(--accent);min-width:65px">${c.id}</code>
-            <span style="flex:1;color:var(--text-dim)">${escHtml(c.control)}</span>
+            <code class="ieb3abc31f">${c.id}</code>
+            <span class="ie1fd586ba">${escHtml(c.control)}</span>
           </div>`).join('') || ''}
       </div>
     </div>`;
+  optisecApplyDynStyles(el);
 }
 
 function escHtml(s) {

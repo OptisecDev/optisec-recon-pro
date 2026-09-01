@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/inline-extracted.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
 </head>
 <body>
@@ -15,7 +16,7 @@
 <nav class="sidebar">
   <div class="sidebar-logo">
     <h1>🛡️ OPTISEC</h1>
-    <div class="version" style="color:#00ff88;font-weight:700">v4.0 SINGULARITY</div>
+    <div class="version ieab099171" >v4.0 SINGULARITY</div>
     <a href="/license" class="lic-sidebar-badge lic-tier-{{ lic.tier }}" title="License: {{ lic.tier_label }}">
       {{ lic.tier_label }}
       {% if lic.tier != 'free' and lic.days_left < 30 %}
@@ -82,7 +83,7 @@
       {% if not user_has_feature(user, 'ai_red_team') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
 
-    <div class="nav-section" style="color:#FF6B6B;font-weight:700">SINGULARITY v4.0</div>
+    <div class="nav-section ie38170337" >SINGULARITY v4.0</div>
     <a href="/attack-navigator" class="nav-item {% if active == 'attack_navigator' %}active{% endif %}">
       <span class="icon">🎯</span><span>ATT&CK Navigator</span>
       {% if not user_has_feature(user, 'attack_navigator') %}<span class="nav-lock">🔒</span>{% endif %}
@@ -155,13 +156,13 @@
 
   <div class="sidebar-footer">
     {% if user %}
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
-      <span style="color:var(--accent);font-size:10px">●</span>
-      <span style="font-size:12px;font-weight:600">{{ user.username }}</span>
-      <span class="badge badge-{% if user.role == 'admin' %}critical{% elif user.role == 'analyst' %}high{% else %}info{% endif %}"
-            style="font-size:9px;padding:1px 5px">{{ user.role }}</span>
+    <div class="ie4fb09d02">
+      <span class="ied080a09e">●</span>
+      <span class="ie0645bdb7">{{ user.username }}</span>
+      <span class="badge badge-{% if user.role == 'admin' %}critical{% elif user.role == 'analyst' %}high{% else %}info{% endif %} ie242ef4eb"
+            >{{ user.role }}</span>
     </div>
-    <a href="/logout" class="btn btn-secondary btn-sm" style="width:100%;justify-content:center">Logout</a>
+    <a href="/logout" class="btn btn-secondary btn-sm ied6167dca" >Logout</a>
     {% endif %}
   </div>
 </nav>
@@ -185,15 +186,15 @@
         {{ lic.tier_label }}
         {% if lic.tier != 'free' %}· {{ lic.days_left }}d{% endif %}
       </a>
-      <div class="nlp-bar" style="min-width:300px;margin:0">
-        <span style="color:var(--accent);font-size:16px">💬</span>
+      <div class="nlp-bar iebd1d1e9d" >
+        <span class="ie6f1201e8">💬</span>
         <input id="nlp-input" type="text"
           placeholder="افحص example.com عن ثغرات XSS | Scan target for XSS"
           data-onkeydown="runNLPCommand" data-onkeydown-event />
         <button class="btn btn-primary btn-sm" data-onclick="runNLPCommand">Go</button>
       </div>
       {% if user %}
-      <div style="font-size:11px;color:var(--text-dim);margin-left:8px;white-space:nowrap">
+      <div class="ie7b25bad1">
         {{ user.email }}
       </div>
       {% endif %}

@@ -3,7 +3,7 @@
 {% block page_title %}CVE Submission Pipeline{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce }}">
 .cve-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
 .cve-item{padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg-secondary)}
 .cve-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
@@ -12,11 +12,11 @@
 </style>
 
 <!-- MANDATORY DISCLAIMER — drafting assistant only, never auto-submits -->
-<div class="cve-card" style="margin-bottom:20px;border-color:#FFA726">
-  <div style="display:flex;gap:10px;align-items:flex-start">
-    <span style="font-size:20px">⚠️</span>
-    <div style="font-size:12px;color:var(--text-dim);line-height:1.7">
-      <strong style="color:#FFA726">تنبيه هام / Important Notice:</strong>
+<div class="cve-card ie609ddc9e" >
+  <div class="ieadafa060">
+    <span class="iee5e6f834">⚠️</span>
+    <div class="ied2e52711">
+      <strong class="ie78539534">تنبيه هام / Important Notice:</strong>
       هذه أداة مساعدة لصياغة التقرير فقط — <strong>التقديم الفعلي لـ MITRE يتطلب مراجعة بشرية وحساب CNA معتمد</strong>.
       لا يقوم هذا النظام أبداً بإرسال أي تقرير تلقائياً إلى أي جهة خارجية؛ كل ما يوفره هو توليد مسودة محلية يمكن
       مراجعتها وتعديلها، ثم تصديرها بصيغة CVE JSON 5.0 القياسية لتقديمها يدوياً عبر حساب CNA معتمد.<br>
@@ -27,13 +27,13 @@
   </div>
 </div>
 
-<div class="grid-2" style="align-items:start">
+<div class="grid-2 ie2a4dac26" >
   <div class="cve-card">
     <div class="card-header">
       <div class="card-title">🔍 NVD CVE Search · بحث NVD</div>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" />
+    <div class="ie60e30436">
+      <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" class="ieda5cd676" />
       <button class="btn btn-primary btn-sm" data-onclick="searchCVE">Search</button>
     </div>
     <div id="cve-search-results"></div>
@@ -43,21 +43,21 @@
     <div class="card-header">
       <div class="card-title">🧬 توليد مسودة من نتيجة فحص · Generate Draft from Scan Finding</div>
     </div>
-    <p style="font-size:12px;color:var(--text-dim);margin-bottom:10px">
+    <p class="ie49bd2a6d">
       اختر ثغرة مكتشفة من فحوصاتك السابقة لتوليد مسودة تقرير تلقائياً. / Pick a finding from a previous scan to
       auto-generate a draft.
     </p>
-    <div style="display:flex;gap:8px">
-      <select id="finding-select" style="flex:1">
+    <div class="ie9c68691e">
+      <select id="finding-select" class="ieda5cd676">
         <option value="">Loading findings…</option>
       </select>
       <button class="btn btn-primary btn-sm" data-onclick="draftFromFinding">Generate</button>
     </div>
-    <div id="finding-draft-result" style="margin-top:12px"></div>
+    <div id="finding-draft-result" class="ie002535c2"></div>
   </div>
 </div>
 
-<div class="grid-2" style="align-items:start;margin-top:16px">
+<div class="grid-2 iedf2ee216" >
   <div class="cve-card">
     <div class="card-header">
       <div class="card-title">📝 مسودة يدوية · Manual Draft</div>
@@ -103,15 +103,15 @@
       <label>PoC / Reference URL (optional)</label>
       <input type="text" id="submit-poc" placeholder="https://github.com/..." />
     </div>
-    <button class="btn btn-primary" data-onclick="draftCVE" style="width:100%;justify-content:center">
+    <button class="btn btn-primary ied6167dca" data-onclick="draftCVE" >
       📝 Save Draft · حفظ المسودة
     </button>
-    <div id="draft-result" style="margin-top:12px"></div>
+    <div id="draft-result" class="ie002535c2"></div>
   </div>
 
   <div class="cve-card">
     <div class="card-header"><div class="card-title">📋 المسودات · CVE Drafts</div></div>
-    <button class="btn btn-secondary btn-sm" data-onclick="loadCVEDrafts" style="margin-bottom:12px">Refresh</button>
+    <button class="btn btn-secondary btn-sm iefa3e1c7d" data-onclick="loadCVEDrafts" >Refresh</button>
     <div id="cve-drafts"></div>
   </div>
 </div>
@@ -128,9 +128,9 @@ async function searchCVE() {
   const el = document.getElementById('cve-search-results');
   el.innerHTML = (d.vulnerabilities || []).map(v => `
     <div class="cve-item">
-      <a href="${v.url}" target="_blank" style="color:var(--accent);font-weight:600">${v.cve_id}</a>
-      <span class="cve-badge draft" style="margin-left:8px">${v.severity || 'N/A'}</span>
-      <div style="margin-top:4px;font-size:13px;color:var(--text-dim)">${v.description || ''}</div>
+      <a href="${v.url}" target="_blank" class="ie0c727778">${v.cve_id}</a>
+      <span class="cve-badge draft iec3f83707" >${v.severity || 'N/A'}</span>
+      <div class="ie4a544f3a">${v.description || ''}</div>
     </div>`).join('') || '<div class="text-dim">No CVEs found · لا توجد نتائج</div>';
 }
 
@@ -150,7 +150,7 @@ async function loadFindingsSelect() {
 async function draftFromFinding() {
   const findingId = document.getElementById('finding-select').value;
   const el = document.getElementById('finding-draft-result');
-  if (!findingId) { el.innerHTML = '<div style="color:var(--danger)">اختر ثغرة أولاً / Select a finding first.</div>'; return; }
+  if (!findingId) { el.innerHTML = '<div class="iea7ceb264">اختر ثغرة أولاً / Select a finding first.</div>'; return; }
   const r = await fetch('/api/cve/draft', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -158,10 +158,10 @@ async function draftFromFinding() {
   });
   const d = await r.json();
   if (r.ok) {
-    el.innerHTML = `<div style="color:var(--success)">تم إنشاء المسودة ${d.draft_ref} / Draft ${d.draft_ref} created.</div>`;
+    el.innerHTML = `<div class="ie6e17958f">تم إنشاء المسودة ${d.draft_ref} / Draft ${d.draft_ref} created.</div>`;
     loadCVEDrafts();
   } else {
-    el.innerHTML = `<div style="color:var(--danger)">${d.detail || 'Failed to generate draft.'}</div>`;
+    el.innerHTML = `<div class="iea7ceb264">${d.detail || 'Failed to generate draft.'}</div>`;
   }
 }
 
@@ -171,13 +171,13 @@ async function loadCVEDrafts() {
   const el = document.getElementById('cve-drafts');
   el.innerHTML = (d.drafts || []).map(e => `
     <div class="cve-item">
-      <div style="font-weight:600">${e.title || 'Untitled'}</div>
-      <div style="color:var(--accent);font-size:12px">${e.draft_ref}</div>
-      <div style="font-size:12px;color:var(--text-dim);margin-top:4px">
+      <div class="iee634e6da">${e.title || 'Untitled'}</div>
+      <div class="ie3b33f2da">${e.draft_ref}</div>
+      <div class="ieebc423f0">
         <span class="cve-badge ${e.status}">${e.status}</span>
         ${e.severity ? ` · ${e.severity}` : ''} ${e.product ? ` · ${e.product}` : ''}
       </div>
-      <a class="btn btn-secondary btn-sm" style="margin-top:8px" href="/api/cve/drafts/${e.id}/export">
+      <a class="btn btn-secondary btn-sm ied4316970"  href="/api/cve/drafts/${e.id}/export">
         ⬇ Export CVE JSON 5.0 · تصدير
       </a>
     </div>`).join('') || '<div class="text-dim">لا توجد مسودات بعد / Queue is empty</div>';
@@ -198,7 +198,7 @@ async function draftCVE() {
     references: poc ? [poc] : undefined,
   };
   if (!payload.title || !payload.description) {
-    document.getElementById('draft-result').innerHTML = '<div style="color:var(--danger)">العنوان والوصف مطلوبان / Title and description are required.</div>';
+    document.getElementById('draft-result').innerHTML = '<div class="iea7ceb264">العنوان والوصف مطلوبان / Title and description are required.</div>';
     return;
   }
   const r = await fetch('/api/cve/draft', {
@@ -209,10 +209,10 @@ async function draftCVE() {
   const d = await r.json();
   const el = document.getElementById('draft-result');
   if (r.ok) {
-    el.innerHTML = `<div style="color:var(--success)">تم حفظ المسودة ${d.draft_ref} / Draft saved (${d.draft_ref}).</div>`;
+    el.innerHTML = `<div class="ie6e17958f">تم حفظ المسودة ${d.draft_ref} / Draft saved (${d.draft_ref}).</div>`;
     loadCVEDrafts();
   } else {
-    el.innerHTML = `<div style="color:var(--danger)">${d.detail || 'Failed to save draft.'}</div>`;
+    el.innerHTML = `<div class="iea7ceb264">${d.detail || 'Failed to save draft.'}</div>`;
   }
 }
 

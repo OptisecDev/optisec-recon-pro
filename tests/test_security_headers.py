@@ -3,9 +3,11 @@ Tests for web.app.security_headers_middleware, added after an OWASP ZAP
 baseline DAST pass against the live deployment flagged several standard
 security response headers as missing (X-Content-Type-Options,
 X-Frame-Options/anti-clickjacking, Strict-Transport-Security,
-Permissions-Policy), plus the Content-Security-Policy header (script-src
-nonce-based, no unsafe-inline; style-src still unsafe-inline -- see the
-comment above _build_csp in web/app.py for why).
+Permissions-Policy), plus the Content-Security-Policy header. Both
+script-src and style-src are nonce-based with no unsafe-inline -- see the
+comment above _build_csp in web/app.py for how 1470 static style=""
+attributes were extracted into CSS classes and the 96 dynamic ones now go
+through element.style.setProperty() instead.
 
 COOP/COEP/CORP are still deliberately out of scope -- not asserted here.
 
@@ -92,14 +94,16 @@ def test_script_src_has_no_unsafe_inline(client):
     assert "'nonce-" in script_src
 
 
-def test_style_src_still_has_unsafe_inline(client):
-    # Inline style="" attributes and <style> blocks are pervasive across
-    # every template -- removing this needs a separate CSS-class extraction
-    # refactor, not covered by the addEventListener work.
+def test_style_src_has_no_unsafe_inline(client):
+    # Static style="" attributes were mechanically extracted into CSS
+    # classes (web/static/css/inline-extracted.css); dynamic ones go through
+    # element.style.setProperty() (a script-src concern, not style-src);
+    # <style> tag content carries the same per-request nonce as <script>.
     resp = client.get("/login")
     csp = resp.headers["Content-Security-Policy"]
     style_src = [d for d in csp.split("; ") if d.startswith("style-src")][0]
-    assert "'unsafe-inline'" in style_src
+    assert "'unsafe-inline'" not in style_src
+    assert "'nonce-" in style_src
 
 
 def test_csp_nonce_is_random_per_request(client):
@@ -119,6 +123,15 @@ def test_csp_nonce_matches_the_rendered_page(client):
     assert f'nonce="{csp_nonce}"' in resp.text
 
 
+def test_style_nonce_matches_the_rendered_page(client):
+    # /login has its own inline <style> block (auth page layout) -- same
+    # nonce value as the script-src one, since it's one request-scoped
+    # secrets.token_urlsafe() shared by both directives.
+    resp = client.get("/login")
+    csp_nonce = resp.headers["Content-Security-Policy"].split("'nonce-")[1].split("'")[0]
+    assert f'<style nonce="{csp_nonce}">' in resp.text
+
+
 def test_csp_set_on_every_response_not_just_templated_pages(client):
     # /docs and /redoc build raw HTMLResponse strings, not TemplateResponse —
     # confirm the middleware still covers them.
@@ -134,6 +147,16 @@ def test_docs_inline_script_nonce_matches_csp_header(client):
     resp = client.get("/docs")
     csp_nonce = resp.headers["Content-Security-Policy"].split("'nonce-")[1].split("'")[0]
     assert f'nonce="{csp_nonce}"' in resp.text
+
+
+def test_docs_and_redoc_inline_style_nonce_matches_csp_header(client):
+    # Same raw-HTMLResponse path as the test above, but for the <style>
+    # blocks (/docs has a large one with swagger-ui overrides; /redoc has a
+    # one-liner) -- neither goes through Jinja either.
+    for path in ("/docs", "/redoc"):
+        resp = client.get(path)
+        csp_nonce = resp.headers["Content-Security-Policy"].split("'nonce-")[1].split("'")[0]
+        assert f'<style nonce="{csp_nonce}">' in resp.text
 
 
 def test_permissions_policy_set(client):

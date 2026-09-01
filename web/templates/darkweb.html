@@ -3,7 +3,7 @@
 {% block page_title %}Dark Web Intelligence{% endblock %}
 
 {% block content %}
-<style>
+<style nonce="{{ request.state.csp_nonce }}">
 .dw-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
 .dw-section{margin-bottom:24px}
 .breach-item{background:var(--bg-secondary);border-left:3px solid #FF6B6B;border-radius:0 8px 8px 0;
@@ -54,28 +54,28 @@
 {% endmacro %}
 
 <!-- Stats row -->
-<div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
+<div class="stats-grid ieb10bfd06" >
   <div class="stat-card">
-    <div class="stat-value" style="color:#FF6B6B">{{ breach_intel.total_known_breaches }}</div>
+    <div class="stat-value iee22d2807" >{{ breach_intel.total_known_breaches }}</div>
     <div class="stat-label">Known Breaches</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#FFA726;font-size:20px">
+    <div class="stat-value ie518cbede" >
       {{ "{:,.0f}".format(breach_intel.total_records_in_db / 1e9) }}B+
     </div>
     <div class="stat-label">Records Exposed</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#00ff88">{{ tor_monitor.services_monitored }}</div>
+    <div class="stat-value ie146bf057" >{{ tor_monitor.services_monitored }}</div>
     <div class="stat-label">Tor Services Monitored</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value" style="color:#7E57C2">{{ keywords|length }}</div>
+    <div class="stat-value ie29925b1a" >{{ keywords|length }}</div>
     <div class="stat-label">Keyword Alerts</div>
   </div>
 </div>
 
-<div class="tabs" style="margin-bottom:20px">
+<div class="tabs ie3019698e" >
   <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["breach"]'>⚠️ Breach Detection</button>
   <button class="tab-btn" data-onclick="showTab" data-onclick-args='["paste"]'>Paste Monitor</button>
   <button class="tab-btn" data-onclick="showTab" data-onclick-args='["tor"]'>⚠️ Tor Intelligence</button>
@@ -89,28 +89,28 @@
   {{ sim_banner() }}
   <div class="grid grid-2">
     <div class="dw-card">
-      <h3 style="color:#FF6B6B;margin-bottom:16px">Domain Breach Check</h3>
-      <div style="display:flex;gap:8px;margin-bottom:16px">
-        <input type="text" id="domain-input" class="form-control" placeholder="e.g. example.com" style="flex:1">
+      <h3 class="ief9398a66">Domain Breach Check</h3>
+      <div class="ie70795348">
+        <input type="text" id="domain-input" class="form-control ieda5cd676" placeholder="e.g. example.com" >
         <button class="btn btn-primary" data-onclick="checkDomain">Check</button>
       </div>
       <div id="domain-result"></div>
     </div>
 
     <div class="dw-card">
-      <h3 style="color:#FF6B6B;margin-bottom:16px">Email Breach Check</h3>
-      <div style="display:flex;gap:8px;margin-bottom:16px">
-        <input type="email" id="email-input" class="form-control" placeholder="user@example.com" style="flex:1">
+      <h3 class="ief9398a66">Email Breach Check</h3>
+      <div class="ie70795348">
+        <input type="email" id="email-input" class="form-control ieda5cd676" placeholder="user@example.com" >
         <button class="btn btn-primary" data-onclick="checkEmail">Check</button>
       </div>
       <div id="email-result"></div>
     </div>
   </div>
 
-  <div class="dw-card" style="margin-top:20px">
-    <h3 style="margin-bottom:16px">Top Breach Database</h3>
-    <div style="overflow-x:auto">
-      <table class="table" style="font-size:12px">
+  <div class="dw-card ie3ae1f62a" >
+    <h3 class="ie8e86974b">Top Breach Database</h3>
+    <div class="iedf74e8d8">
+      <table class="table ie6b9c179a" >
         <thead><tr><th>Source</th><th>Date</th><th>Records</th><th>Data Types</th><th>Severity</th></tr></thead>
         <tbody>
           {% for b in breach_intel.breach_database[:12] %}
@@ -130,81 +130,80 @@
 </div>
 
 <!-- PASTE MONITOR TAB -->
-<div id="tab-paste" style="display:none">
+<div id="tab-paste" class="iecb458930">
   <div class="grid grid-2">
     <div class="dw-card">
-      <h3 style="color:#FFA726;margin-bottom:12px">Paste Content Scanner</h3>
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Paste content from Pastebin, GitHub Gist, or dark web paste sites to detect sensitive data patterns.</p>
-      <textarea id="paste-content" class="form-control" rows="8" style="font-size:12px;font-family:monospace;resize:vertical" placeholder="Paste content here to scan for: credentials, API keys, credit cards, PII, malware C2 URLs..."></textarea>
-      <button class="btn btn-primary" style="margin-top:12px;width:100%" data-onclick="scanPaste">Scan for Sensitive Data</button>
+      <h3 class="ie29ff9661">Paste Content Scanner</h3>
+      <p class="ief8957c25">Paste content from Pastebin, GitHub Gist, or dark web paste sites to detect sensitive data patterns.</p>
+      <textarea id="paste-content" class="form-control iee15dd117" rows="8"  placeholder="Paste content here to scan for: credentials, API keys, credit cards, PII, malware C2 URLs..."></textarea>
+      <button class="btn btn-primary ief322cfc1"  data-onclick="scanPaste">Scan for Sensitive Data</button>
     </div>
     <div class="dw-card">
-      <h3 style="color:#FFA726;margin-bottom:12px">Scan Results</h3>
+      <h3 class="ie29ff9661">Scan Results</h3>
       <div id="paste-results">
-        <div style="text-align:center;padding:40px;color:var(--text-dim)">
-          <div style="font-size:32px;margin-bottom:8px">🔍</div>
-          <div style="font-size:13px">Submit content to scan</div>
+        <div class="ie570955b5">
+          <div class="ieab372897">🔍</div>
+          <div class="ie3044b600">Submit content to scan</div>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="dw-card" style="margin-top:20px">
-    <h3 style="margin-bottom:12px">Detectable Pattern Types ({{ 15 }} categories)</h3>
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
+  <div class="dw-card ie3ae1f62a" >
+    <h3 class="iefa3e1c7d">Detectable Pattern Types ({{ 15 }} categories)</h3>
+    <div class="ie180d237c">
       {% set patterns = ["Email/Password Combo","Credit Card Data","API Keys / Tokens","AWS Keys","Private Keys",
         "Social Security Numbers","Phone Numbers","Bitcoin Addresses","IP Addresses (bulk)","SQL Dump",
         "JWT Tokens","GitHub PAT","Slack Token","Stripe Key","Malware C2 URLs"] %}
       {% for p in patterns %}
-      <span style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:6px;padding:4px 10px;font-size:10px">{{ p }}</span>
+      <span class="ieceee6ffd">{{ p }}</span>
       {% endfor %}
     </div>
   </div>
 </div>
 
 <!-- TOR INTELLIGENCE TAB -->
-<div id="tab-tor" style="display:none">
+<div id="tab-tor" class="iecb458930">
   {{ sim_banner() }}
   <div class="grid grid-2">
     <div class="dw-card">
-      <h3 style="color:#7E57C2;margin-bottom:16px">Monitored Tor Services</h3>
+      <h3 class="ie7bf4abaa">Monitored Tor Services</h3>
       {% for svc in tor_monitor.services %}
       <div class="tor-service">
         <div class="status-dot status-{{ svc.status }}"></div>
-        <div style="flex:1">
-          <div style="font-size:13px;font-weight:600">{{ svc.name }}</div>
-          <div style="font-size:10px;color:var(--text-dim);font-family:monospace">{{ svc.onion[:40] }}…</div>
+        <div class="ieda5cd676">
+          <div class="iee4e660df">{{ svc.name }}</div>
+          <div class="iefaba9118">{{ svc.onion[:40] }}…</div>
         </div>
-        <div style="text-align:right">
+        <div class="ief6e3d7fe">
           <span class="badge badge-{{ 'info' if svc.status == 'online' else 'medium' }}">{{ svc.status }}</span>
-          <div style="font-size:10px;color:var(--text-dim);margin-top:2px">
+          <div class="ie855fc9db">
             {% if svc.response_time_ms %}{{ svc.response_time_ms }}ms{% else %}N/A{% endif %}
           </div>
         </div>
-        <div style="text-align:right;min-width:60px">
-          <div style="font-size:11px;font-weight:700;color:{{ '#FF6B6B' if svc.threat_score > 70 else '#FFA726' if svc.threat_score > 40 else '#66BB6A' }}">
+        <div class="iea94d207d">
+          <div data-dyn-style="font-size:11px;font-weight:700;color:{{ '#FF6B6B' if svc.threat_score > 70 else '#FFA726' if svc.threat_score > 40 else '#66BB6A' }}">
             {{ svc.threat_score }}/100
           </div>
-          <div style="font-size:9px;color:var(--text-dim)">threat</div>
+          <div class="iee974f2d0">threat</div>
         </div>
       </div>
       {% endfor %}
     </div>
 
     <div class="dw-card">
-      <h3 style="color:#7E57C2;margin-bottom:16px">Dark Web Marketplaces</h3>
+      <h3 class="ie7bf4abaa">Dark Web Marketplaces</h3>
       {% for mkt in tor_monitor.marketplaces %}
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;
-        background:var(--bg-secondary);border-radius:8px;margin-bottom:6px">
+      <div class="ie68d431fe">
         <div>
-          <div style="font-size:12px;font-weight:600">{{ mkt.name }}</div>
-          <div style="font-size:10px;color:var(--text-dim)">{{ mkt.year }}</div>
+          <div class="ie0645bdb7">{{ mkt.name }}</div>
+          <div class="ie3122d8b0">{{ mkt.year }}</div>
         </div>
         <span class="badge badge-{{ 'critical' if mkt.status == 'active' else 'info' if mkt.status == 'seized' else 'high' }}">
           {{ mkt.status }}
         </span>
         {% if mkt.seized_by %}
-        <div style="font-size:10px;color:var(--text-dim)">{{ mkt.seized_by }}</div>
+        <div class="ie3122d8b0">{{ mkt.seized_by }}</div>
         {% endif %}
       </div>
       {% endfor %}
@@ -213,18 +212,18 @@
 </div>
 
 <!-- KEYWORD ALERTS TAB -->
-<div id="tab-keywords" style="display:none">
+<div id="tab-keywords" class="iecb458930">
   <div class="grid grid-2">
     <div class="dw-card">
-      <h3 style="color:#26C6DA;margin-bottom:16px">Add Keyword Monitor</h3>
-      <div style="display:flex;flex-direction:column;gap:10px">
+      <h3 class="ie14ddda13">Add Keyword Monitor</h3>
+      <div class="ie459fe4b3">
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">Keyword / Phrase</label>
-          <input type="text" id="kw-keyword" class="form-control" placeholder="e.g. company name, domain, executive name" style="margin-top:4px">
+          <label class="ie5b3cc826">Keyword / Phrase</label>
+          <input type="text" id="kw-keyword" class="form-control iea18ac805" placeholder="e.g. company name, domain, executive name" >
         </div>
         <div>
-          <label style="font-size:11px;color:var(--text-dim)">Category</label>
-          <select id="kw-category" class="form-control" style="margin-top:4px">
+          <label class="ie5b3cc826">Category</label>
+          <select id="kw-category" class="form-control iea18ac805" >
             <option value="brand">Brand / Company</option>
             <option value="credentials">Credentials</option>
             <option value="executive">Executive / VIP</option>
@@ -236,28 +235,28 @@
         <button class="btn btn-primary" data-onclick="addKeyword">Add to Monitoring</button>
       </div>
 
-      <div style="margin-top:20px">
-        <h4 style="font-size:13px;margin-bottom:10px">Active Monitors</h4>
+      <div class="ie3ae1f62a">
+        <h4 class="ie40ce17d8">Active Monitors</h4>
         <div id="kw-list">
           {% if keywords %}
             {% for kw in keywords %}
-            <div class="keyword-tag" style="margin-bottom:6px;display:flex;width:100%;justify-content:space-between">
+            <div class="keyword-tag ieb25a0649" >
               <span>{{ kw.keyword }}</span>
-              <span class="badge badge-info" style="font-size:9px">{{ kw.category }}</span>
+              <span class="badge badge-info ied9e14ae8" >{{ kw.category }}</span>
             </div>
             {% endfor %}
           {% else %}
-            <p style="color:var(--text-dim);font-size:12px">No keywords monitored yet.</p>
+            <p class="ie77593361">No keywords monitored yet.</p>
           {% endif %}
         </div>
       </div>
     </div>
 
     <div class="dw-card">
-      <h3 style="color:#26C6DA;margin-bottom:16px">Generate Threat Report</h3>
+      <h3 class="ie14ddda13">Generate Threat Report</h3>
       {{ sim_banner() }}
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Generate a comprehensive dark web threat report for a domain including breach exposure, keyword hits, and ransomware mention risk.</p>
-      <div style="display:flex;gap:8px;margin-bottom:16px">
+      <p class="ief8957c25">Generate a comprehensive dark web threat report for a domain including breach exposure, keyword hits, and ransomware mention risk.</p>
+      <div class="ie70795348">
         <input type="text" id="report-domain" class="form-control" placeholder="target-domain.com">
         <button class="btn btn-primary" data-onclick="generateReport">Generate</button>
       </div>
@@ -267,23 +266,23 @@
 </div>
 
 <!-- RANSOMWARE GROUPS TAB -->
-<div id="tab-ransomware" style="display:none">
+<div id="tab-ransomware" class="iecb458930">
   {{ sim_banner() }}
   <div class="grid grid-3">
     {% for rw in tor_monitor.ransomware_groups %}
     <div class="dw-card rw-group {{ 'rw-active' if rw.active else 'rw-inactive' }}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-        <div style="font-size:15px;font-weight:700">{{ rw.name }}</div>
+      <div class="ie5ad71ab9">
+        <div class="ie9535b3b9">{{ rw.name }}</div>
         <span class="badge badge-{{ 'critical' if rw.active else 'info' }}">{{ 'ACTIVE' if rw.active else 'INACTIVE' }}</span>
       </div>
-      <div class="stat-grid-2" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+      <div class="stat-grid-2 ie26743cf7" >
         <div>
-          <div style="font-size:20px;font-weight:700;color:#FF6B6B">{{ rw.victims_2024 }}</div>
-          <div style="font-size:10px;color:var(--text-dim)">Victims 2024</div>
+          <div class="ie40a22946">{{ rw.victims_2024 }}</div>
+          <div class="ie3122d8b0">Victims 2024</div>
         </div>
         <div>
-          <div style="font-size:20px;font-weight:700;color:#FFA726">{{ rw.avg_ransom_btc }}₿</div>
-          <div style="font-size:10px;color:var(--text-dim)">Avg Ransom</div>
+          <div class="ie6f3d53fc">{{ rw.avg_ransom_btc }}₿</div>
+          <div class="ie3122d8b0">Avg Ransom</div>
         </div>
       </div>
     </div>
@@ -292,64 +291,64 @@
 </div>
 
 <!-- CONTINUOUS MONITORING TAB -->
-<div id="tab-monitor" style="display:none">
-  <div style="margin-bottom:16px">
+<div id="tab-monitor" class="iecb458930">
+  <div class="ie8e86974b">
     <span class="live-badge"><span class="dot"></span>Live data · بيانات حية</span>
   </div>
   <div class="grid grid-2">
     <div class="dw-card">
-      <h3 style="color:#00D4AA;margin-bottom:16px">Add Target to Monitoring · إضافة هدف للمراقبة</h3>
-      <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">
+      <h3 class="ie490b37ce">Add Target to Monitoring · إضافة هدف للمراقبة</h3>
+      <p class="ief8957c25">
         Continuously watch a domain or email against HIBP, IntelligenceX, BreachDirectory, Leak-Lookup,
         psbdmp, GitHub, OTX and LeakCheck — new leaks are alerted with a timestamp, never re-alerted twice.
       </p>
-      <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input type="text" id="monitor-target" class="form-control" placeholder="example.com or user@example.com" style="flex:1">
+      <div class="ie60e30436">
+        <input type="text" id="monitor-target" class="form-control ieda5cd676" placeholder="example.com or user@example.com" >
         <button class="btn btn-primary" data-onclick="addMonitorTarget">Add · إضافة</button>
       </div>
       <div id="monitor-add-result"></div>
 
-      <h4 style="font-size:13px;margin:20px 0 10px">Monitored Targets · الأهداف المراقبة</h4>
+      <h4 class="ie3e43b3af">Monitored Targets · الأهداف المراقبة</h4>
       <div id="monitor-list">
         {% if monitors %}
           {% for m in monitors %}
-          <div class="rw-group" id="monitor-row-{{ m.id }}" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+          <div class="rw-group ieb2b7072b" id="monitor-row-{{ m.id }}" >
             <div>
-              <div style="font-size:13px;font-weight:600">{{ m.label or m.target }}</div>
-              <div style="font-size:10px;color:var(--text-dim)">
+              <div class="iee4e660df">{{ m.label or m.target }}</div>
+              <div class="ie3122d8b0">
                 {{ m.target }} · {{ m.target_type }} ·
                 {% if m.last_checked_at %}آخر فحص: {{ m.last_checked_at.strftime('%Y-%m-%d %H:%M') }}{% else %}لم يُفحص بعد{% endif %}
               </div>
             </div>
-            <div style="display:flex;gap:6px;flex-shrink:0">
-              <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" data-onclick="checkMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>فحص الآن</button>
-              <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" data-onclick="deleteMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>حذف</button>
+            <div class="ie52e6662a">
+              <button class="btn btn-secondary ie2867d55a"  data-onclick="checkMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>فحص الآن</button>
+              <button class="btn btn-danger ie2867d55a"  data-onclick="deleteMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>حذف</button>
             </div>
           </div>
           {% endfor %}
         {% else %}
-          <p style="color:var(--text-dim);font-size:12px">لا توجد أهداف مراقبة بعد. أضف نطاقاً أو بريداً إلكترونياً أعلاه.</p>
+          <p class="ie77593361">لا توجد أهداف مراقبة بعد. أضف نطاقاً أو بريداً إلكترونياً أعلاه.</p>
         {% endif %}
       </div>
     </div>
 
     <div class="dw-card">
-      <h3 style="color:#00D4AA;margin-bottom:16px">Recent Alerts · التنبيهات الأخيرة</h3>
+      <h3 class="ie490b37ce">Recent Alerts · التنبيهات الأخيرة</h3>
       <div id="monitor-alerts">
         {% if recent_alerts %}
           {% for alert, monitor in recent_alerts %}
           <div class="breach-item {{ 'critical' if alert.severity in ('critical','high') else alert.severity }}">
-            <div style="display:flex;justify-content:space-between">
-              <span style="font-size:12px;font-weight:700">{{ alert.title }}</span>
+            <div class="ie1141c430">
+              <span class="iedff98dc3">{{ alert.title }}</span>
               <span class="risk-badge risk-{{ alert.severity }}">{{ alert.severity }}</span>
             </div>
-            <div style="font-size:10px;color:var(--text-dim);margin-top:4px">
+            <div class="ied28d0fca">
               {{ monitor.target }} · {{ alert.discovered_at.strftime('%Y-%m-%d %H:%M') if alert.discovered_at else '' }}
             </div>
           </div>
           {% endfor %}
         {% else %}
-          <p style="color:var(--text-dim);font-size:12px">لا توجد تنبيهات بعد. اضغط "فحص الآن" على أحد الأهداف المراقبة.</p>
+          <p class="ie77593361">لا توجد تنبيهات بعد. اضغط "فحص الآن" على أحد الأهداف المراقبة.</p>
         {% endif %}
       </div>
     </div>
@@ -375,15 +374,16 @@ async function checkDomain() {
   btn.textContent = 'Check'; btn.disabled = false;
   const el = document.getElementById('domain-result');
   const riskColors = {critical:'#FF6B6B',high:'#FFA726',medium:'#FFCA28',low:'#66BB6A'};
-  el.innerHTML = `<div style="background:${riskColors[data.risk_level]}18;border:1px solid ${riskColors[data.risk_level]};border-radius:8px;padding:14px;margin-bottom:12px">
-    <div style="font-size:14px;font-weight:700;color:${riskColors[data.risk_level]}">${data.risk_level.toUpperCase()} RISK — ${data.breaches_found} breach(es) found</div>
-    <div style="font-size:11px;color:var(--text-dim);margin-top:4px">${domain} · Checked ${new Date().toLocaleString()}</div>
+  el.innerHTML = `<div data-dyn-style="background:${riskColors[data.risk_level]}18;border:1px solid ${riskColors[data.risk_level]};border-radius:8px;padding:14px;margin-bottom:12px">
+    <div data-dyn-style="font-size:14px;font-weight:700;color:${riskColors[data.risk_level]}">${data.risk_level.toUpperCase()} RISK — ${data.breaches_found} breach(es) found</div>
+    <div class="ief13248b8">${domain} · Checked ${new Date().toLocaleString()}</div>
   </div>` +
   (data.results.length ? data.results.map(r => `<div class="breach-item ${r.severity}">
-    <div style="font-size:12px;font-weight:700">${r.source}</div>
-    <div style="font-size:11px;color:var(--text-dim);margin-top:2px">${r.breach_date} · ${Number(r.records_exposed).toLocaleString()} records</div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Data: ${r.data_types.join(', ')}</div>
-  </div>`).join('') : '<p style="color:#66BB6A;font-size:12px">No known breaches found in database.</p>');
+    <div class="iedff98dc3">${r.source}</div>
+    <div class="ie9287d041">${r.breach_date} · ${Number(r.records_exposed).toLocaleString()} records</div>
+    <div class="ied28d0fca">Data: ${r.data_types.join(', ')}</div>
+  </div>`).join('') : '<p class="iec7c7193c">No known breaches found in database.</p>');
+  optisecApplyDynStyles(el);
 }
 
 async function checkEmail() {
@@ -394,12 +394,13 @@ async function checkEmail() {
   const data = await resp.json();
   btn.textContent = 'Check'; btn.disabled = false;
   const el = document.getElementById('email-result');
-  el.innerHTML = `<div style="background:${data.pwned?'#FF6B6B18':'#66BB6A18'};border:1px solid ${data.pwned?'#FF6B6B':'#66BB6A'};border-radius:8px;padding:14px;margin-bottom:12px">
-    <div style="font-size:14px;font-weight:700;color:${data.pwned?'#FF6B6B':'#66BB6A'}">${data.pwned ? '⚠ PWNED — Found in '+data.breaches.length+' breach(es)' : '✓ Not found in breach database'}</div>
-    ${data.high_risk ? '<div style="font-size:11px;color:#FF6B6B;margin-top:4px">Password exposed — change immediately</div>' : ''}
+  el.innerHTML = `<div data-dyn-style="background:${data.pwned?'#FF6B6B18':'#66BB6A18'};border:1px solid ${data.pwned?'#FF6B6B':'#66BB6A'};border-radius:8px;padding:14px;margin-bottom:12px">
+    <div data-dyn-style="font-size:14px;font-weight:700;color:${data.pwned?'#FF6B6B':'#66BB6A'}">${data.pwned ? '⚠ PWNED — Found in '+data.breaches.length+' breach(es)' : '✓ Not found in breach database'}</div>
+    ${data.high_risk ? '<div class="ie74374e0c">Password exposed — change immediately</div>' : ''}
   </div>` +
-  data.breaches.map(b => `<div class="breach-item"><div style="font-size:12px;font-weight:700">${b.breach_name}</div><div style="font-size:11px;color:var(--text-dim)">${b.breach_date} · ${b.data_types.join(', ')}</div>${b.password_exposed?'<div style="font-size:10px;color:#FF6B6B;margin-top:3px">⚠ Password exposed</div>':''}</div>`).join('') +
-  (data.recommendations?.length ? `<div style="margin-top:12px"><div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--accent)">Recommendations:</div>${data.recommendations.map(r=>`<div style="font-size:11px;color:var(--text-dim);padding:4px 0;border-bottom:1px solid var(--border)">• ${r}</div>`).join('')}</div>` : '');
+  data.breaches.map(b => `<div class="breach-item"><div class="iedff98dc3">${b.breach_name}</div><div class="ie5b3cc826">${b.breach_date} · ${b.data_types.join(', ')}</div>${b.password_exposed?'<div class="ie48dde251">⚠ Password exposed</div>':''}</div>`).join('') +
+  (data.recommendations?.length ? `<div class="ie002535c2"><div class="ie4fd68982">Recommendations:</div>${data.recommendations.map(r=>`<div class="ie6d41d9a5">• ${r}</div>`).join('')}</div>` : '');
+  optisecApplyDynStyles(el);
 }
 
 async function scanPaste() {
@@ -411,18 +412,19 @@ async function scanPaste() {
   btn.textContent = 'Scan for Sensitive Data'; btn.disabled = false;
   const el = document.getElementById('paste-results');
   const riskColors = {critical:'#FF6B6B',high:'#FFA726',medium:'#FFCA28',low:'#66BB6A',clean:'#42A5F5'};
-  el.innerHTML = `<div style="background:${riskColors[data.overall_risk]||'#42A5F5'}18;border:1px solid ${riskColors[data.overall_risk]||'#42A5F5'};border-radius:8px;padding:12px;margin-bottom:14px">
-    <div style="font-size:14px;font-weight:700;color:${riskColors[data.overall_risk]||'#42A5F5'}">${data.overall_risk.toUpperCase()} — ${data.total_findings} pattern(s) found</div>
-    <div style="font-size:10px;color:var(--text-dim)">${data.content_length.toLocaleString()} characters analyzed</div>
+  el.innerHTML = `<div data-dyn-style="background:${riskColors[data.overall_risk]||'#42A5F5'}18;border:1px solid ${riskColors[data.overall_risk]||'#42A5F5'};border-radius:8px;padding:12px;margin-bottom:14px">
+    <div data-dyn-style="font-size:14px;font-weight:700;color:${riskColors[data.overall_risk]||'#42A5F5'}">${data.overall_risk.toUpperCase()} — ${data.total_findings} pattern(s) found</div>
+    <div class="ie3122d8b0">${data.content_length.toLocaleString()} characters analyzed</div>
   </div>` +
   (data.findings.length ? data.findings.map(f => `<div class="paste-finding paste-${f.risk}">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:12px;font-weight:700">${f.type}</div>
+    <div class="ie510ea680">
+      <div class="iedff98dc3">${f.type}</div>
       <span class="risk-badge risk-${f.risk}">${f.risk}</span>
     </div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:4px">${f.match_count} match(es) · Category: ${f.category}</div>
-    <div style="font-size:10px;font-family:monospace;background:var(--bg-card);padding:4px 6px;border-radius:4px;margin-top:6px;color:#FFA726">${f.sample}</div>
-  </div>`).join('') : '<div style="color:#66BB6A;font-size:12px;padding:12px">No sensitive patterns detected.</div>');
+    <div class="ied28d0fca">${f.match_count} match(es) · Category: ${f.category}</div>
+    <div class="ie9ab332aa">${f.sample}</div>
+  </div>`).join('') : '<div class="ie988a2425">No sensitive patterns detected.</div>');
+  optisecApplyDynStyles(el);
 }
 
 async function addKeyword() {
@@ -433,9 +435,8 @@ async function addKeyword() {
   document.getElementById('kw-keyword').value = '';
   const list = document.getElementById('kw-list');
   const el = document.createElement('div');
-  el.className = 'keyword-tag';
-  el.style.cssText = 'margin-bottom:6px;display:flex;width:100%;justify-content:space-between';
-  el.innerHTML = `<span>${keyword}</span><span class="badge badge-info" style="font-size:9px">${category}</span>`;
+  el.className = 'keyword-tag ieb25a0649';
+  el.innerHTML = `<span>${keyword}</span><span class="badge badge-info ied9e14ae8" >${category}</span>`;
   list.prepend(el);
 }
 
@@ -448,33 +449,34 @@ async function generateReport() {
   btn.textContent = 'Generate'; btn.disabled = false;
   const riskColors = {critical:'#FF6B6B',high:'#FFA726',medium:'#FFCA28',low:'#66BB6A'};
   const el = document.getElementById('report-result');
-  el.innerHTML = `<div style="background:var(--bg-secondary);border-radius:8px;padding:14px">
-    <div style="font-size:14px;font-weight:700;color:${riskColors[data.overall_risk]||'#888'};margin-bottom:10px">${domain} — ${(data.overall_risk||'').toUpperCase()} RISK</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-      <div style="background:var(--bg-card);border-radius:6px;padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#FF6B6B">${data.dark_web_presence_score}</div>
-        <div style="font-size:10px;color:var(--text-dim)">DW Presence Score</div>
+  el.innerHTML = `<div class="ie7650fe81">
+    <div data-dyn-style="font-size:14px;font-weight:700;color:${riskColors[data.overall_risk]||'#888'};margin-bottom:10px">${domain} — ${(data.overall_risk||'').toUpperCase()} RISK</div>
+    <div class="ie199c6711">
+      <div class="ie8b421434">
+        <div class="ie40a22946">${data.dark_web_presence_score}</div>
+        <div class="ie3122d8b0">DW Presence Score</div>
       </div>
-      <div style="background:var(--bg-card);border-radius:6px;padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:700;color:#FFA726">${data.keyword_monitoring_hits?.length || 0}</div>
-        <div style="font-size:10px;color:var(--text-dim)">Keyword Hits</div>
+      <div class="ie8b421434">
+        <div class="ie6f3d53fc">${data.keyword_monitoring_hits?.length || 0}</div>
+        <div class="ie3122d8b0">Keyword Hits</div>
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;font-weight:700">Recommendations:</div>
-    ${(data.recommendations||[]).map(r=>`<div style="font-size:11px;padding:4px 0;border-bottom:1px solid var(--border);color:var(--text-dim)">• ${r}</div>`).join('')}
+    <div class="ie177f8ebb">Recommendations:</div>
+    ${(data.recommendations||[]).map(r=>`<div class="ief16eb2d3">• ${r}</div>`).join('')}
   </div>`;
+  optisecApplyDynStyles(el);
 }
 
 function monitorRowHtml(m) {
   const lastChecked = m.last_checked_at ? new Date(m.last_checked_at).toLocaleString() : 'لم يُفحص بعد';
-  return `<div class="rw-group" id="monitor-row-${m.id}" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+  return `<div class="rw-group ieb2b7072b" id="monitor-row-${m.id}" >
     <div>
-      <div style="font-size:13px;font-weight:600">${m.label || m.target}</div>
-      <div style="font-size:10px;color:var(--text-dim)">${m.target} · ${m.target_type} · آخر فحص: ${lastChecked}</div>
+      <div class="iee4e660df">${m.label || m.target}</div>
+      <div class="ie3122d8b0">${m.target} · ${m.target_type} · آخر فحص: ${lastChecked}</div>
     </div>
-    <div style="display:flex;gap:6px;flex-shrink:0">
-      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" data-onclick="checkMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">فحص الآن</button>
-      <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" data-onclick="deleteMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">حذف</button>
+    <div class="ie52e6662a">
+      <button class="btn btn-secondary ie2867d55a"  data-onclick="checkMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">فحص الآن</button>
+      <button class="btn btn-danger ie2867d55a"  data-onclick="deleteMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">حذف</button>
     </div>
   </div>`;
 }
@@ -482,12 +484,12 @@ function monitorRowHtml(m) {
 function alertItemHtml(a, target) {
   const sev = ['critical','high'].includes(a.severity) ? 'critical' : a.severity;
   return `<div class="breach-item ${sev}">
-    <div style="display:flex;justify-content:space-between">
-      <span style="font-size:12px;font-weight:700">${a.title}</span>
+    <div class="ie1141c430">
+      <span class="iedff98dc3">${a.title}</span>
       <span class="risk-badge risk-${a.severity}">${a.severity}</span>
     </div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:4px">${target || ''} · ${a.discovered_at ? new Date(a.discovered_at).toLocaleString() : ''}</div>
-    <div style="font-size:10px;color:var(--text-dim);margin-top:2px">${a.source_ar || ''} · ${a.severity_ar || ''}</div>
+    <div class="ied28d0fca">${target || ''} · ${a.discovered_at ? new Date(a.discovered_at).toLocaleString() : ''}</div>
+    <div class="ie855fc9db">${a.source_ar || ''} · ${a.severity_ar || ''}</div>
   </div>`;
 }
 
@@ -500,7 +502,7 @@ async function addMonitorTarget() {
   btn.textContent = 'Add · إضافة'; btn.disabled = false;
   const resultEl = document.getElementById('monitor-add-result');
   if (!resp.ok) {
-    resultEl.innerHTML = `<p style="color:#FF6B6B;font-size:12px">${data.detail || 'تعذّرت الإضافة'}</p>`;
+    resultEl.innerHTML = `<p class="iec574e2a0">${data.detail || 'تعذّرت الإضافة'}</p>`;
     return;
   }
   resultEl.innerHTML = '';

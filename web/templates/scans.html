@@ -26,10 +26,10 @@
       <tbody>
         {% for s in scans %}
         <tr>
-          <td class="mono dim" style="font-size:10px;max-width:120px;overflow:hidden;text-overflow:ellipsis">
+          <td class="mono dim ie574c4ba2" >
             {{ s.id }}
           </td>
-          <td class="mono" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">
+          <td class="mono ie18efb818" >
             {{ s.target_url }}
           </td>
           <td>
@@ -37,12 +37,12 @@
               {{ s.status }}
             </span>
           </td>
-          <td style="min-width:100px">
-            <div style="display:flex;align-items:center;gap:6px">
-              <div class="progress-bar" style="display:block;height:5px;flex:1;margin:0">
-                <div class="progress-fill" style="width:{{ s.progress }}%"></div>
+          <td class="ie0b554244">
+            <div class="iec59ad06b">
+              <div class="progress-bar ie909cc1c6" >
+                <div class="progress-fill" data-dyn-data-dyn-style="width:{{ s.progress }}%"></div>
               </div>
-              <span style="font-size:11px;color:var(--text-dim);white-space:nowrap">{{ s.progress }}%</span>
+              <span class="ief8e9df00">{{ s.progress }}%</span>
             </div>
           </td>
           <td>
@@ -53,10 +53,10 @@
             <span class="dim">—</span>
             {% endif %}
           </td>
-          <td class="dim" style="font-size:11px;white-space:nowrap">
+          <td class="dim ie8fec68f7" >
             {{ s.created_at.strftime('%Y-%m-%d %H:%M') if s.created_at else '—' }}
           </td>
-          <td class="dim" style="font-size:11px;white-space:nowrap">
+          <td class="dim ie8fec68f7" >
             {{ s.completed_at.strftime('%Y-%m-%d %H:%M') if s.completed_at else '—' }}
           </td>
         </tr>
@@ -65,7 +65,7 @@
     </table>
   </div>
   {% else %}
-  <div class="alert alert-info">No scans yet. Start a scan from the <a href="/scan" style="color:var(--accent)">Scan</a> page.</div>
+  <div class="alert alert-info">No scans yet. Start a scan from the <a href="/scan" class="iebb2b0e55">Scan</a> page.</div>
   {% endif %}
 </div>
 {% endblock %}

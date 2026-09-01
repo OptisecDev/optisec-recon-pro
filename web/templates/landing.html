@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OPTISEC Recon Pro — منصة أمن المعلومات الاحترافية</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
-  <style>
+  <link rel="stylesheet" href="/static/css/inline-extracted.css">
+  <style nonce="{{ request.state.csp_nonce }}">
     :root {
       --accent: #00ff88;
       --accent2: #00cc6a;
@@ -327,17 +328,17 @@
     <div class="stat-lbl">مجموعة API</div>
   </div>
   <div class="stat-item">
-    <div class="stat-num" style="font-size:20px">AR/EN</div>
+    <div class="stat-num iee5e6f834" >AR/EN</div>
     <div class="stat-lbl">دعم عربي كامل</div>
   </div>
 </div>
 
 <!-- DASHBOARD PREVIEW -->
-<div class="section" style="padding-top:80px;padding-bottom:0">
-  <div style="text-align:center">
+<div class="section iee6fcb7ae" >
+  <div class="ie13076d95">
     <div class="section-badge">🖥️ لقطة شاشة حية</div>
-    <h2 class="section-title" style="text-align:center">واجهة احترافية وسهلة الاستخدام</h2>
-    <p class="section-sub" style="margin:0 auto">Dashboard ذكي مع إحصائيات حية، رسوم بيانية، وتحكم كامل بكل أدوات الأمن من مكان واحد.</p>
+    <h2 class="section-title ie13076d95" >واجهة احترافية وسهلة الاستخدام</h2>
+    <p class="section-sub ief47a4b0c" >Dashboard ذكي مع إحصائيات حية، رسوم بيانية، وتحكم كامل بكل أدوات الأمن من مكان واحد.</p>
   </div>
   <div class="preview-wrap">
     <div class="preview-glow"></div>
@@ -364,25 +365,25 @@
           </div>
           <div class="mock-main">
             <div class="mock-stats">
-              <div class="mock-stat"><div class="mock-stat-val" style="color:#00ff88">12</div><div class="mock-stat-lbl">Targets</div></div>
-              <div class="mock-stat"><div class="mock-stat-val" style="color:#58a6ff">47</div><div class="mock-stat-lbl">Scans</div></div>
-              <div class="mock-stat"><div class="mock-stat-val" style="color:#ff8800">183</div><div class="mock-stat-lbl">Findings</div></div>
-              <div class="mock-stat"><div class="mock-stat-val" style="color:#ff4444">8</div><div class="mock-stat-lbl">Critical</div></div>
+              <div class="mock-stat"><div class="mock-stat-val ie146bf057" >12</div><div class="mock-stat-lbl">Targets</div></div>
+              <div class="mock-stat"><div class="mock-stat-val ie85e4e68a" >47</div><div class="mock-stat-lbl">Scans</div></div>
+              <div class="mock-stat"><div class="mock-stat-val ie040f94f7" >183</div><div class="mock-stat-lbl">Findings</div></div>
+              <div class="mock-stat"><div class="mock-stat-val ie6b6037b9" >8</div><div class="mock-stat-lbl">Critical</div></div>
             </div>
             <div class="mock-row">
               <div class="mock-card">
                 <div class="mock-card-title">Vulnerability Breakdown</div>
-                <div class="mock-bar"><div class="mock-bar-fill" style="width:20%;background:#ff4444"></div></div>
-                <div class="mock-bar"><div class="mock-bar-fill" style="width:45%;background:#ff8800"></div></div>
-                <div class="mock-bar"><div class="mock-bar-fill" style="width:60%;background:#ffcc00"></div></div>
-                <div class="mock-bar"><div class="mock-bar-fill" style="width:80%;background:#58a6ff"></div></div>
+                <div class="mock-bar"><div class="mock-bar-fill iead424967" ></div></div>
+                <div class="mock-bar"><div class="mock-bar-fill ie89a7eb59" ></div></div>
+                <div class="mock-bar"><div class="mock-bar-fill iedf7a0900" ></div></div>
+                <div class="mock-bar"><div class="mock-bar-fill ie2a8d5576" ></div></div>
               </div>
               <div class="mock-card">
                 <div class="mock-card-title">Recent Scans</div>
-                <div class="mock-table-row"><span style="color:#8b949e;flex:1">tesla.com</span><span class="mock-badge mock-badge-g">done</span></div>
-                <div class="mock-table-row"><span style="color:#8b949e;flex:1">google.com</span><span class="mock-badge mock-badge-o">running</span></div>
-                <div class="mock-table-row"><span style="color:#8b949e;flex:1">apple.com</span><span class="mock-badge mock-badge-g">done</span></div>
-                <div class="mock-table-row"><span style="color:#8b949e;flex:1">amazon.com</span><span class="mock-badge mock-badge-r">failed</span></div>
+                <div class="mock-table-row"><span class="ie63ef97ae">tesla.com</span><span class="mock-badge mock-badge-g">done</span></div>
+                <div class="mock-table-row"><span class="ie63ef97ae">google.com</span><span class="mock-badge mock-badge-o">running</span></div>
+                <div class="mock-table-row"><span class="ie63ef97ae">apple.com</span><span class="mock-badge mock-badge-g">done</span></div>
+                <div class="mock-table-row"><span class="ie63ef97ae">amazon.com</span><span class="mock-badge mock-badge-r">failed</span></div>
               </div>
             </div>
           </div>
@@ -413,22 +414,22 @@
       ('📄', 'PDF Reports', 'توليد تقارير PDF احترافية مع ملخص تنفيذي وتوصيات تفصيلية.', '#00ff88', 'CORE'),
     ] %}
     {% for icon, title, desc, color, badge in features %}
-    <div class="feature-card" style="--card-color:{{ color }}">
+    <div class="feature-card" data-dyn-style="--card-color:{{ color }}">
       <div class="feature-icon">{{ icon }}</div>
       <div class="feature-title">{{ title }}</div>
       <div class="feature-desc">{{ desc }}</div>
-      <span class="feature-badge" style="background:{{ color }}20;color:{{ color }};border:1px solid {{ color }}40">{{ badge }}</span>
+      <span class="feature-badge" data-dyn-style="background:{{ color }}20;color:{{ color }};border:1px solid {{ color }}40">{{ badge }}</span>
     </div>
     {% endfor %}
   </div>
 </div>
 
 <!-- HOW IT WORKS -->
-<div style="background:var(--card);border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:80px 40px">
-  <div style="max-width:1100px;margin:0 auto">
-    <div style="text-align:center;margin-bottom:0">
+<div class="ie1798eaa4">
+  <div class="ie89a869f3">
+    <div class="ieb3f85d6d">
       <div class="section-badge">🗺️ كيف يعمل</div>
-      <h2 class="section-title" style="text-align:center">ابدأ في 4 خطوات</h2>
+      <h2 class="section-title ie13076d95" >ابدأ في 4 خطوات</h2>
     </div>
     <div class="steps">
       <div class="step">
@@ -457,10 +458,10 @@
 
 <!-- PRICING -->
 <div class="section">
-  <div style="text-align:center">
+  <div class="ie13076d95">
     <div class="section-badge">💳 الأسعار</div>
-    <h2 class="section-title" style="text-align:center">اختر الخطة المناسبة</h2>
-    <p class="section-sub" style="margin:0 auto">ابدأ مجاناً — أو ارقِّ إلى PRO بدفعة واحدة عند الحاجة.</p>
+    <h2 class="section-title ie13076d95" >اختر الخطة المناسبة</h2>
+    <p class="section-sub ief47a4b0c" >ابدأ مجاناً — أو ارقِّ إلى PRO بدفعة واحدة عند الحاجة.</p>
   </div>
   <div class="pricing-grid">
     <!-- FREE -->
@@ -477,13 +478,13 @@
         <li class="locked">ذكاء اصطناعي</li>
         <li class="locked">Bug Bounty</li>
       </ul>
-      <a href="/register" class="pricing-cta pricing-cta-outline" style="display:block;text-align:center;text-decoration:none">ابدأ مجاناً</a>
+      <a href="/register" class="pricing-cta pricing-cta-outline ie420fe5de" >ابدأ مجاناً</a>
     </div>
     <!-- PRO -->
     <div class="pricing-card featured">
       <div class="pricing-featured-badge">⭐ الأكثر شعبية</div>
-      <div class="pricing-tier" style="color:var(--accent)">PRO</div>
-      <div class="pricing-price" style="color:var(--accent)">$399 <span>دفعة واحدة</span></div>
+      <div class="pricing-tier iebb2b0e55" >PRO</div>
+      <div class="pricing-price iebb2b0e55" >$399 <span>دفعة واحدة</span></div>
       <div class="pricing-desc">لمحترفي الأمن وفرق Bug Bounty — ترخيص مدى الحياة، بدون اشتراك.</div>
       <ul class="pricing-features">
         <li>جميع وحدات الفحص الـ 13</li>
@@ -495,11 +496,11 @@
         <li>API Access كامل</li>
         <li>مفتاح ترخيص لمرة واحدة</li>
       </ul>
-      <a href="/redeem" class="pricing-cta pricing-cta-primary" style="display:block;text-align:center;text-decoration:none">احصل على PRO</a>
+      <a href="/redeem" class="pricing-cta pricing-cta-primary ie420fe5de" >احصل على PRO</a>
     </div>
     <!-- ENTERPRISE -->
     <div class="pricing-card">
-      <div class="pricing-tier" style="color:var(--purple)">ENTERPRISE</div>
+      <div class="pricing-tier iebf0bc367" >ENTERPRISE</div>
       <div class="pricing-price">تواصل <span>معنا</span></div>
       <div class="pricing-desc">للشركات والفرق الأمنية الكبيرة.</div>
       <ul class="pricing-features">
@@ -511,17 +512,17 @@
         <li>Federation متعدد الخوادم</li>
         <li>دعم مخصص 24/7</li>
       </ul>
-      <a href="mailto:ahssanali84.syber@gmail.com" class="pricing-cta pricing-cta-outline" style="display:block;text-align:center;text-decoration:none">تواصل معنا</a>
+      <a href="mailto:ahssanali84.syber@gmail.com" class="pricing-cta pricing-cta-outline ie420fe5de" >تواصل معنا</a>
     </div>
   </div>
 </div>
 
 <!-- CTA SECTION -->
 <div class="cta-section">
-  <div style="position:relative">
+  <div class="iec451fdb0">
     <h2 class="cta-title">جاهز لاكتشاف الثغرات؟</h2>
     <p class="cta-sub">جرّب المنصة مباشرةً — لا تسجيل مطلوب للديمو</p>
-    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <div class="iee43ae893">
       <a href="/demo" class="btn-hero-primary">⚡ ادخل الديمو الآن</a>
       <a href="/register" class="btn-hero-secondary">🚀 أنشئ حسابك</a>
     </div>
@@ -530,17 +531,17 @@
 
 <!-- FOOTER -->
 <footer>
-  <div style="margin-bottom:12px">
-    <span style="font-size:18px;font-weight:800;color:var(--accent)">🛡️ OPTISEC</span>
-    <span style="color:var(--dim);font-size:12px;margin-right:8px">v4.0 SINGULARITY</span>
+  <div class="iefa3e1c7d">
+    <span class="ief846ab42">🛡️ OPTISEC</span>
+    <span class="ie97fa7d84">v4.0 SINGULARITY</span>
   </div>
-  <div style="margin-bottom:8px;display:flex;gap:20px;justify-content:center">
+  <div class="ie382a9529">
     <a href="/docs">API Docs</a>
     <a href="/login">تسجيل الدخول</a>
     <a href="/register">إنشاء حساب</a>
     <a href="mailto:ahssanali84.syber@gmail.com">التواصل</a>
   </div>
-  <div style="color:var(--dim);font-size:12px">
+  <div class="ie0adba271">
     © 2026 OPTISEC Recon Pro — جميع الحقوق محفوظة
   </div>
 </footer>
