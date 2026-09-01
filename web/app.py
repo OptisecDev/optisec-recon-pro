@@ -579,7 +579,8 @@ app.include_router(license_routes.page_router)
 #     redoc's own internal chunk loading; every fetch() in main.js is a
 #     relative same-origin path, and scan.html's WebSocket is built from
 #     location.host, both covered by 'self'.
-# COOP/COEP/CORP are still NOT set — separate from CSP, tracked separately.
+# COOP/COEP/CORP are set in security_headers_middleware below, separate from
+# CSP.
 #
 # /redoc-specific additions (found broken — "Something went wrong..." — while
 # testing the SRI/pin change below, pre-existing since the CSP was first added
@@ -640,6 +641,26 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Permissions-Policy"] = (
         "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
     )
+    # ZAP DAST flagged the absence of these three isolation headers on every
+    # response. COOP/CORP are unconditional -- no cross-origin popups are
+    # opened (grepped every window.open()/target=_blank: the one window.open
+    # is same-origin, the one cross-origin link already carries
+    # rel="noopener") and nothing else on this origin needs to be embedded
+    # elsewhere. COEP is deliberately `credentialless`, not `require-corp`:
+    # require-corp blocks any cross-origin resource lacking its own
+    # Cross-Origin-Resource-Policy header, and cdn.redoc.ly's logo (loaded by
+    # /redoc) has no such header (verified live -- ERR_BLOCKED_BY_RESPONSE
+    # under require-corp), while everything on cdn.jsdelivr.net already sends
+    # `Cross-Origin-Resource-Policy: cross-origin` so it's unaffected either
+    # way. credentialless allows both without that header, only stripping
+    # credentials from the cross-origin request -- none of jsdelivr's or
+    # cdn.redoc.ly's static assets need credentials. Verified with a real
+    # headless-Chromium load (playwright) under each mode: require-corp
+    # broke the redoc logo load, credentialless loaded everything with 0
+    # console errors.
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
     if IS_PRODUCTION:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
