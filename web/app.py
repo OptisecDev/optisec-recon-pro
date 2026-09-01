@@ -2025,9 +2025,13 @@ async def create_report(
     scan_data: dict = {}
     scan_obj: Optional[Scan] = None
     if scan_id:
-        scan_obj = (await db.execute(select(Scan).where(Scan.id == scan_id))).scalar_one_or_none()
-        if scan_obj:
-            scan_data = scan_obj.results or {}
+        scan_query = select(Scan).where(Scan.id == scan_id)
+        if user.role != "admin":
+            scan_query = scan_query.where(Scan.user_id == user.id)
+        scan_obj = (await db.execute(scan_query)).scalar_one_or_none()
+        if not scan_obj:
+            raise HTTPException(404, "Scan not found")
+        scan_data = scan_obj.results or {}
 
     try:
         path = generate_report(
@@ -2052,7 +2056,17 @@ async def create_report(
 
 
 @app.get("/reports/download/{filename}")
-async def download_report(filename: str, user: User = Depends(web_user)):
+async def download_report(
+    filename: str,
+    user: User = Depends(web_user),
+    db: AsyncSession = Depends(get_db),
+):
+    report_query = select(Report).where(Report.filename == filename)
+    if user.role != "admin":
+        report_query = report_query.where(Report.user_id == user.id)
+    rpt = (await db.execute(report_query)).scalar_one_or_none()
+    if not rpt:
+        raise HTTPException(404, "Report not found")
     path = REPORTS_DIR / filename
     if not path.exists():
         raise HTTPException(404, "Report not found")
