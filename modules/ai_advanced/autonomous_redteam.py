@@ -241,6 +241,7 @@ async def start_autonomous_simulation(
     attack_types: List[str],
     stealth_level: str = "medium",
     auto_exploit: bool = False,
+    user_id: Optional[int] = None,
 ) -> dict:
     """Start a multi-stage autonomous attack simulation session."""
     session_id = f"ART-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{hashlib.md5(target.encode()).hexdigest()[:6].upper()}"
@@ -250,6 +251,7 @@ async def start_autonomous_simulation(
     session = {
         "id": session_id,
         "target": target,
+        "user_id": user_id,
         "attack_types": attack_types,
         "stealth_level": stealth_level,
         "auto_exploit": auto_exploit,

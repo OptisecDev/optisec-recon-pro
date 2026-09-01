@@ -39,9 +39,10 @@ async def art_home(request: Request, user: User = Depends(_user), db: AsyncSessi
     targets = (await db.execute(
         select(Target).where(Target.user_id == user.id).order_by(Target.created_at.desc())
     )).scalars().all()
+    own_sessions = [s for s in list_sessions() if _owns_session(s, user)]
     return templates.TemplateResponse(request, "autonomous_redteam.html", {
         "app_name": APP_NAME, "user": user, "active": "autonomous_rt",
-        "sessions": list_sessions()[:10],
+        "sessions": own_sessions[:10],
         "payload_library": get_payload_library(),
         "attack_phases": ATTACK_PHASES,
         "targets": targets,
@@ -63,15 +64,21 @@ async def start_simulation(request: Request, user: User = Depends(_user), db: As
         attack_types=data.get("attack_types", ["web"]),
         stealth_level=data.get("stealth_level", "medium"),
         auto_exploit=data.get("auto_exploit", False),
+        user_id=user.id,
     )
     return session
+
+
+def _owns_session(session: dict, user: User) -> bool:
+    return user.role == "admin" or session.get("user_id") == user.id
 
 
 @router.get("/api/sessions")
 async def list_sessions(user: User = Depends(_user)):
     require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import list_sessions
-    return {"sessions": list_sessions()}
+    sessions = [s for s in list_sessions() if _owns_session(s, user)]
+    return {"sessions": sessions}
 
 
 @router.get("/api/sessions/{session_id}")
@@ -79,7 +86,7 @@ async def get_session(session_id: str, user: User = Depends(_user)):
     require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import get_session
     session = get_session(session_id)
-    if not session:
+    if not session or not _owns_session(session, user):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Session not found")
     return session
@@ -104,7 +111,7 @@ async def generate_report(session_id: str, user: User = Depends(_user)):
     require_feature_or_402("autonomous_redteam", user)
     from modules.ai_advanced.autonomous_redteam import get_session, generate_pentest_report
     session = get_session(session_id)
-    if not session:
+    if not session or not _owns_session(session, user):
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="Session not found")
     return generate_pentest_report(session)
