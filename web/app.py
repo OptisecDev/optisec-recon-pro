@@ -351,7 +351,7 @@ async def custom_swagger(request: Request):
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{APP_NAME} — API Docs</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui.css" integrity="sha384-fgyWYkUAamzuI8mJFu/xpRP0JWCJRwkwUwsYDoOYVHUJ8NQE5cENn8ib3ppwFFSX" crossorigin="anonymous">
   <style nonce="{request.state.csp_nonce}">
     :root {{
       --accent: #00ff88;
@@ -436,7 +436,7 @@ async def custom_swagger(request: Request):
 </head>
 <body>
 <div id="swagger-ui"></div>
-<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.14/swagger-ui-bundle.js" integrity="sha384-Dt83RhU85ZmX7werw9uTFCzmauXUoSyx3pdzTQMABtsnFmooJy4Vz9/ACh7n5m1A" crossorigin="anonymous"></script>
 <script nonce="{request.state.csp_nonce}">
 window.onload = () => {{
   SwaggerUIBundle({{
@@ -482,7 +482,7 @@ async def custom_redoc(request: Request):
   <redoc spec-url='/openapi.json' nonce="{request.state.csp_nonce}"
     theme='{{"colors":{{"primary":{{"main":"#00ff88"}}}},"rightPanel":{{"backgroundColor":"#161b22"}},"sidebar":{{"backgroundColor":"#161b22"}}}}'
   ></redoc>
-  <script src="https://cdn.jsdelivr.net/npm/redoc@latest/bundles/redoc.standalone.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/redoc@2.5.3/bundles/redoc.standalone.js" integrity="sha384-xiEssMQFSpSfLbzRZCGfxxIM5QDb2DTrU6vyoZdp2sV1L6pmOMy6MpTtUoLbpC96" crossorigin="anonymous"></script>
 </body>
 </html>""")
 
