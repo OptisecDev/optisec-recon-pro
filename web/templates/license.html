@@ -84,7 +84,7 @@
     {% if lic.tier != 'free' %}
     <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
       <form method="POST" action="/license/deactivate"
-            onsubmit="return confirm('إلغاء الترخيص وتحويله للنسخة المجانية؟')">
+            data-onsubmit="confirmOrPreventSubmit" data-onsubmit-event data-onsubmit-args='["إلغاء الترخيص وتحويله للنسخة المجانية؟"]'>
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit" class="btn btn-danger btn-sm" style="width:100%;justify-content:center">
           ✗ إلغاء الترخيص الحالي
@@ -259,7 +259,7 @@
       </select>
     </div>
     <div style="display:flex;align-items:flex-end">
-      <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="generateKey()">
+      <button class="btn btn-primary" style="width:100%;justify-content:center" data-onclick="generateKey">
         🔑 توليد مفتاح
       </button>
     </div>
@@ -270,8 +270,8 @@
       <code id="gen-key-display"
             style="flex:1;background:var(--bg);padding:12px 16px;border-radius:6px;border:1px solid var(--accent);
                    font-size:12px;color:var(--accent);word-break:break-all;direction:ltr;display:block"></code>
-      <button class="btn btn-secondary" onclick="copyGenKey()">📋 نسخ</button>
-      <button class="btn btn-primary" onclick="fillKey()">✓ تفعيل</button>
+      <button class="btn btn-secondary" data-onclick="copyGenKey">📋 نسخ</button>
+      <button class="btn btn-primary" data-onclick="fillKey">✓ تفعيل</button>
     </div>
     <div id="gen-meta" style="margin-top:8px;font-size:12px;color:var(--text-dim)"></div>
   </div>
@@ -281,7 +281,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 {% if user.role == 'admin' %}
 async function generateKey() {
   const tier  = document.getElementById('gen-tier').value;

@@ -3,6 +3,7 @@ import os
 import glob
 import asyncio
 import logging
+import secrets
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -435,7 +436,7 @@ async def custom_swagger(request: Request):
 <body>
 <div id="swagger-ui"></div>
 <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
-<script>
+<script nonce="{request.state.csp_nonce}">
 window.onload = () => {{
   SwaggerUIBundle({{
     url: '/openapi.json',
@@ -517,14 +518,30 @@ app.include_router(license_routes.page_router)
 # guessed:
 #   - cdn.jsdelivr.net is the ONLY third-party origin loaded anywhere (chart.js,
 #     swagger-ui-dist, redoc) — grepped every src=/href= for a non-relative URL.
-#   - 'unsafe-inline' is required for script-src and style-src: 261 inline
-#     on{click,change,keydown,...}= handlers across 28 templates, plus inline
-#     <style> blocks and style="" attributes throughout, and /docs's inline
-#     SwaggerUIBundle(...) init script. Removing these needs a real
-#     addEventListener refactor across the whole frontend — out of scope here,
-#     tracked separately. Nonces don't help with the on*= attribute form, only
-#     with <script> tag content, so they wouldn't remove the need for
-#     'unsafe-inline' anyway without that refactor.
+#   - script-src has NO 'unsafe-inline'. The 261 inline on{click,change,...}=
+#     attributes were replaced with an addEventListener-based dispatcher (see
+#     web/static/js/main.js's optisecDispatch + the data-on*/-args/-event
+#     attributes it reads) across all 26 templates that had any. The 27
+#     templates' own inline <script>...</script> blocks (function definitions,
+#     page init code) — a CSP concern independent of the on*= attributes,
+#     since 'unsafe-inline' also gates inline <script> tag CONTENT, not just
+#     attributes — instead carry a per-request nonce: this middleware puts a
+#     fresh secrets.token_urlsafe(16) on request.state.csp_nonce before
+#     call_next(), Starlette's TemplateResponse auto-exposes `request` to
+#     every template (context.setdefault("request", request)), so each
+#     template's <script> tag reads nonce="{{ request.state.csp_nonce }}",
+#     and custom_swagger()'s /docs route (the one raw-HTMLResponse page with
+#     its own inline script) reads the same value directly off request.state.
+#     A fresh nonce per request means it can't be guessed/replayed, and CDN
+#     <script src="https://cdn.jsdelivr.net/...">  tags don't need it at all
+#     — host-source expressions in script-src are matched independently of
+#     any nonce-source also present in the same directive.
+#   - style-src KEEPS 'unsafe-inline': inline style="" attributes and <style>
+#     blocks are pervasive across every template (dynamic per-row colors,
+#     computed widths, etc.) — a nonce would only cover <style> tag content,
+#     not the attribute form, and a CSS-class extraction of every inline
+#     style="" is a real, separate, much larger visual refactor with no
+#     addEventListener-shaped equivalent. Tracked separately.
 #   - 'unsafe-eval' is NOT included — grepped for eval(/new Function(/string-arg
 #     setTimeout(, none found in any template or main.js.
 #   - img-src/font-src allow data: only (favicon, WireGuard QR PNG, swagger-ui's
@@ -534,27 +551,29 @@ app.include_router(license_routes.page_router)
 #     relative same-origin path, and scan.html's WebSocket is built from
 #     location.host, both covered by 'self'.
 # COOP/COEP/CORP are still NOT set — separate from CSP, tracked separately.
-_CSP = (
-    "default-src 'none'; "
-    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
-    "img-src 'self' data:; "
-    "font-src 'self' data:; "
-    "connect-src 'self' https://cdn.jsdelivr.net; "
-    "frame-src 'none'; "
-    "frame-ancestors 'none'; "
-    "object-src 'none'; "
-    "base-uri 'self'; "
-    "form-action 'self'"
-)
+def _build_csp(nonce: str) -> str:
+    return (
+        "default-src 'none'; "
+        f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+        "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+        "img-src 'self' data:; "
+        "font-src 'self' data:; "
+        "connect-src 'self' https://cdn.jsdelivr.net; "
+        "frame-src 'none'; "
+        "frame-ancestors 'none'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
+    )
 
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):
+    request.state.csp_nonce = secrets.token_urlsafe(16)
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Content-Security-Policy"] = _CSP
+    response.headers["Content-Security-Policy"] = _build_csp(request.state.csp_nonce)
     response.headers["Permissions-Policy"] = (
         "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
     )

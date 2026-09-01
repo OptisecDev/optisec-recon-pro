@@ -112,7 +112,7 @@
       <option value="LOW">Low</option>
     </select>
     <input id="filter-ip" placeholder="Source IP">
-    <button class="btn btn-secondary btn-sm" onclick="reloadEvents()">Filter · تصفية</button>
+    <button class="btn btn-secondary btn-sm" data-onclick="reloadEvents">Filter · تصفية</button>
   </div>
   <div class="table-wrap">
     <table>
@@ -139,7 +139,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 const HEATMAP = {{ stats.heatmap_7d | tojson }};
 const WEEKDAY_LABELS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 

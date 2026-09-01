@@ -61,22 +61,22 @@
 </div>
 
 <div class="tabs" style="margin-bottom:20px">
-  <button class="tab-btn active" onclick="showTab('matrix')">Matrix View</button>
-  <button class="tab-btn" onclick="showTab('apt')">APT Profiles</button>
-  <button class="tab-btn" onclick="showTab('ioc')">IOC Detection</button>
-  <button class="tab-btn" onclick="showTab('detections')">Live Detections</button>
+  <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["matrix"]'>Matrix View</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["apt"]'>APT Profiles</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["ioc"]'>IOC Detection</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["detections"]'>Live Detections</button>
 </div>
 
 <!-- MATRIX TAB -->
 <div id="tab-matrix">
   <div class="nav-controls">
     <span style="font-size:12px;color:var(--text-dim)">Filter severity:</span>
-    <button class="filter-btn active" onclick="filterSev('all')">All</button>
-    <button class="filter-btn" onclick="filterSev('critical')" style="color:#FF6B6B">Critical</button>
-    <button class="filter-btn" onclick="filterSev('high')" style="color:#FFA726">High</button>
-    <button class="filter-btn" onclick="filterSev('medium')" style="color:#FFCA28">Medium</button>
-    <input type="text" class="form-control" style="max-width:200px;font-size:12px" placeholder="Search technique..." oninput="searchMatrix(this.value)">
-    <button class="btn btn-secondary btn-sm" onclick="loadDetections()">Refresh Detections</button>
+    <button class="filter-btn active" data-onclick="filterSev" data-onclick-args='["all"]'>All</button>
+    <button class="filter-btn" data-onclick="filterSev" data-onclick-args='["critical"]' style="color:#FF6B6B">Critical</button>
+    <button class="filter-btn" data-onclick="filterSev" data-onclick-args='["high"]' style="color:#FFA726">High</button>
+    <button class="filter-btn" data-onclick="filterSev" data-onclick-args='["medium"]' style="color:#FFCA28">Medium</button>
+    <input type="text" class="form-control" style="max-width:200px;font-size:12px" placeholder="Search technique..." data-oninput="searchMatrixFromInput">
+    <button class="btn btn-secondary btn-sm" data-onclick="loadDetections">Refresh Detections</button>
   </div>
 
   <div class="matrix-wrap">
@@ -101,7 +101,7 @@
             <div class="tech-item{% if tech.sub %} sub{% endif %}"
                  data-id="{{ tech.id }}" data-sev="{{ tech.severity }}"
                  data-tactic="{{ tac.id }}"
-                 onclick="showTechDetail('{{ tech.id }}','{{ tech.name }}','{{ tech.severity }}','{{ tac.name }}','{{ tac.color }}')"
+                 data-onclick="showTechDetail" data-onclick-args='{{ [tech.id, tech.name, tech.severity, tac.name, tac.color] | tojson }}'
                  title="{{ tech.id }}: {{ tech.name }}">
               <span class="sev-{{ tech.severity }}">{% if tech.sub %}↳ {% endif %}{{ tech.id }}</span>
               <div style="font-size:8px;color:var(--text-dim);margin-top:1px;line-height:1.2">{{ tech.name[:28] }}{% if tech.name|length > 28 %}…{% endif %}</div>
@@ -119,7 +119,7 @@
 <div id="tab-apt" style="display:none">
   <div class="grid grid-3">
     {% for apt in apt_groups %}
-    <div class="apt-card" onclick="showAptDetail('{{ apt.id }}')">
+    <div class="apt-card" data-onclick="showAptDetail" data-onclick-args='{{ [apt.id] | tojson }}'>
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
         <div>
           <div style="font-size:15px;font-weight:700;color:var(--text)">{{ apt.name }}</div>
@@ -159,8 +159,8 @@
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn btn-secondary btn-sm" onclick="addIocRow()">+ Add IOC</button>
-        <button class="btn btn-primary" onclick="detectIOCs()">Map to ATT&CK</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="addIocRow">+ Add IOC</button>
+        <button class="btn btn-primary" data-onclick="detectIOCs">Map to ATT&CK</button>
       </div>
       <div id="ioc-results" style="margin-top:16px"></div>
     </div>
@@ -188,7 +188,7 @@
           <label style="font-size:11px;color:var(--text-dim)">Details</label>
           <input type="text" id="det-details" class="form-control" placeholder="Brief description..." style="font-size:12px;margin-top:4px">
         </div>
-        <button class="btn btn-primary" onclick="addDetection()">Record Detection</button>
+        <button class="btn btn-primary" data-onclick="addDetection">Record Detection</button>
       </div>
     </div>
   </div>
@@ -198,7 +198,7 @@
 <div id="tab-detections" style="display:none">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
     <h3 style="color:var(--accent)">Live Detection Log</h3>
-    <button class="btn btn-secondary btn-sm" onclick="loadDetections()">Refresh</button>
+    <button class="btn btn-secondary btn-sm" data-onclick="loadDetections">Refresh</button>
   </div>
   <div id="detections-container">
     <div style="text-align:center;padding:40px;color:var(--text-dim)">Loading detections...</div>
@@ -218,17 +218,17 @@
         <div id="modal-tname" style="font-size:18px;font-weight:700"></div>
         <div id="modal-tactic" style="font-size:12px;color:var(--text-dim);margin-top:4px"></div>
       </div>
-      <button onclick="closeModal()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">×</button>
+      <button data-onclick="closeModal" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">×</button>
     </div>
     <div id="modal-sev" style="margin-bottom:12px"></div>
     <div style="margin-bottom:16px">
-      <button class="btn btn-primary btn-sm" onclick="recordFromModal()">Record Detection</button>
-      <button class="btn btn-secondary btn-sm" style="margin-left:8px" onclick="highlightOnMatrix()">Highlight on Matrix</button>
+      <button class="btn btn-primary btn-sm" data-onclick="recordFromModal">Record Detection</button>
+      <button class="btn btn-secondary btn-sm" style="margin-left:8px" data-onclick="highlightOnMatrix">Highlight on Matrix</button>
     </div>
   </div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 let currentModalTech = {};
 
 function showTab(tab) {
@@ -247,6 +247,10 @@ function filterSev(sev) {
   document.querySelectorAll('.tech-item').forEach(el => {
     el.style.display = (sev === 'all' || el.dataset.sev === sev) ? '' : 'none';
   });
+}
+
+function searchMatrixFromInput() {
+  searchMatrix(this.value);
 }
 
 function searchMatrix(q) {
@@ -297,7 +301,7 @@ function addIocRow() {
   row.className = 'ioc-row';
   row.style.cssText = 'display:flex;gap:8px;margin-bottom:8px';
   const types = {{ ioc_types | tojson }};
-  row.innerHTML = `<select class="form-control" style="flex:0 0 130px;font-size:11px" name="ioc_type">${types.slice(0,15).map(t=>`<option value="${t}">${t}</option>`).join('')}</select><input type="text" class="form-control" name="ioc_value" placeholder="IOC value..." style="font-size:12px"><button onclick="this.parentElement.remove()" style="background:none;border:none;color:#FF6B6B;font-size:16px;cursor:pointer">×</button>`;
+  row.innerHTML = `<select class="form-control" style="flex:0 0 130px;font-size:11px" name="ioc_type">${types.slice(0,15).map(t=>`<option value="${t}">${t}</option>`).join('')}</select><input type="text" class="form-control" name="ioc_value" placeholder="IOC value..." style="font-size:12px"><button data-onclick="removeParentEl" style="background:none;border:none;color:#FF6B6B;font-size:16px;cursor:pointer">×</button>`;
   document.getElementById('ioc-rows').appendChild(row);
 }
 

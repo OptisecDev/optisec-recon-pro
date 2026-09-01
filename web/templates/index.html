@@ -42,7 +42,7 @@
 <!-- ═══ STATS ROW ═══ -->
 <div class="stats-grid-pro">
 
-  <div class="stat-card-pro green" onclick="location.href='/targets'">
+  <div class="stat-card-pro green" data-onclick="navigateTo" data-onclick-args='["/targets"]'>
     <div class="stat-icon">🎯</div>
     <div class="stat-body">
       <div class="stat-value-pro" data-count="{{ target_count }}">0</div>
@@ -52,7 +52,7 @@
     <div class="stat-arrow">→</div>
   </div>
 
-  <div class="stat-card-pro blue" onclick="location.href='/scans'">
+  <div class="stat-card-pro blue" data-onclick="navigateTo" data-onclick-args='["/scans"]'>
     <div class="stat-icon">📡</div>
     <div class="stat-body">
       <div class="stat-value-pro" data-count="{{ scan_count }}">0</div>
@@ -62,7 +62,7 @@
     <div class="stat-arrow">→</div>
   </div>
 
-  <div class="stat-card-pro orange" onclick="location.href='/scans'">
+  <div class="stat-card-pro orange" data-onclick="navigateTo" data-onclick-args='["/scans"]'>
     <div class="stat-icon">🔍</div>
     <div class="stat-body">
       <div class="stat-value-pro" data-count="{{ finding_count }}">0</div>
@@ -72,7 +72,7 @@
     <div class="stat-arrow">→</div>
   </div>
 
-  <div class="stat-card-pro red" onclick="location.href='/scans'">
+  <div class="stat-card-pro red" data-onclick="navigateTo" data-onclick-args='["/scans"]'>
     <div class="stat-icon">🚨</div>
     <div class="stat-body">
       <div class="stat-value-pro" data-count="{{ critical_count }}">0</div>
@@ -82,7 +82,7 @@
     <div class="stat-arrow">→</div>
   </div>
 
-  <div class="stat-card-pro purple" onclick="location.href='/reports'">
+  <div class="stat-card-pro purple" data-onclick="navigateTo" data-onclick-args='["/reports"]'>
     <div class="stat-icon">📄</div>
     <div class="stat-body">
       <div class="stat-value-pro" data-count="{{ report_count }}">0</div>
@@ -156,23 +156,23 @@
       <input type="text" id="quick-target" placeholder="example.com" />
     </div>
     <div class="scan-types-mini">
-      <label class="scan-chip active" onclick="toggleChip(this,'xss')"><input type="checkbox" value="xss" checked hidden>XSS</label>
-      <label class="scan-chip active" onclick="toggleChip(this,'sqli')"><input type="checkbox" value="sqli" checked hidden>SQLi</label>
-      <label class="scan-chip" onclick="toggleChip(this,'subdomain')"><input type="checkbox" value="subdomain" hidden>Subs</label>
-      <label class="scan-chip" onclick="toggleChip(this,'nmap')"><input type="checkbox" value="nmap" hidden>Ports</label>
-      <label class="scan-chip" onclick="toggleChip(this,'ssrf')"><input type="checkbox" value="ssrf" hidden>SSRF</label>
-      <label class="scan-chip" onclick="toggleChip(this,'lfi')"><input type="checkbox" value="lfi" hidden>LFI</label>
+      <label class="scan-chip active" data-onclick="toggleChip" data-onclick-args='["xss"]'><input type="checkbox" value="xss" checked hidden>XSS</label>
+      <label class="scan-chip active" data-onclick="toggleChip" data-onclick-args='["sqli"]'><input type="checkbox" value="sqli" checked hidden>SQLi</label>
+      <label class="scan-chip" data-onclick="toggleChip" data-onclick-args='["subdomain"]'><input type="checkbox" value="subdomain" hidden>Subs</label>
+      <label class="scan-chip" data-onclick="toggleChip" data-onclick-args='["nmap"]'><input type="checkbox" value="nmap" hidden>Ports</label>
+      <label class="scan-chip" data-onclick="toggleChip" data-onclick-args='["ssrf"]'><input type="checkbox" value="ssrf" hidden>SSRF</label>
+      <label class="scan-chip" data-onclick="toggleChip" data-onclick-args='["lfi"]'><input type="checkbox" value="lfi" hidden>LFI</label>
     </div>
-    <a href="/scan" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" onclick="quickScanGo(event)">
+    <a href="/scan" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:12px" data-onclick="quickScanGo">
       ▶ ابدأ الفحص
     </a>
     <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
       <div class="card-title" style="margin-bottom:8px">💬 أمر عربي</div>
       <input type="text" id="nlp-quick"
         placeholder="افحص tesla.com عن ثغرات XSS"
-        onkeydown="if(event.key==='Enter')parseNLP()" />
+        data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["parseNLP"]' />
       <div id="nlp-result" style="margin:8px 0"></div>
-      <button class="btn btn-secondary" onclick="parseNLP()" style="width:100%;justify-content:center">🤖 تحليل</button>
+      <button class="btn btn-secondary" data-onclick="parseNLP" style="width:100%;justify-content:center">🤖 تحليل</button>
     </div>
   </div>
 
@@ -238,7 +238,7 @@
         </thead>
         <tbody>
           {% for s in recent_scans %}
-          <tr onclick="location.href='/scan/{{ s.id }}'" style="cursor:pointer">
+          <tr data-onclick="navigateTo" data-onclick-args='{{ ["/scan/" ~ s.id] | tojson }}' style="cursor:pointer">
             <td class="mono">{{ s.target_url|truncate(40) }}</td>
             <td>
               <span class="badge badge-{% if s.status == 'done' %}success{% elif s.status == 'failed' %}critical{% elif s.status == 'running' %}high{% else %}info{% endif %}">
@@ -323,7 +323,7 @@
 
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // ── Clock ──────────────────────────────────────────────────────────
 function updateClock() {
   const now = new Date();
@@ -469,8 +469,8 @@ document.querySelectorAll('[data-count]').forEach(el => {
 })();
 
 // ── Quick Scan ─────────────────────────────────────────────────────
-function toggleChip(el, type) {
-  el.classList.toggle('active');
+function toggleChip(type) {
+  this.classList.toggle('active');
 }
 
 function quickScanGo(e) {

@@ -21,7 +21,7 @@
       {% if targets %}
       <div class="form-group">
         <label>Or select saved target</label>
-        <select id="target-select" onchange="document.getElementById('scan-target').value=this.value">
+        <select id="target-select" data-onchange="copyToScanTarget">
           <option value="">— Select saved target —</option>
           {% for t in targets %}
           <option value="{{ t.url }}" data-id="{{ t.id }}">{{ t.name or t.url }}</option>
@@ -56,8 +56,8 @@
           {% endfor %}
         </div>
         <div style="margin-top:8px;display:flex;gap:8px">
-          <button class="btn btn-secondary btn-sm" onclick="selectAll(true)">Select All</button>
-          <button class="btn btn-secondary btn-sm" onclick="selectAll(false)">Deselect All</button>
+          <button class="btn btn-secondary btn-sm" data-onclick="selectAll" data-onclick-args="[true]">Select All</button>
+          <button class="btn btn-secondary btn-sm" data-onclick="selectAll" data-onclick-args="[false]">Deselect All</button>
         </div>
       </div>
 
@@ -66,7 +66,7 @@
       </div>
       <div id="ws-step" style="font-size:11px;color:var(--text-dim);margin-top:4px;min-height:16px"></div>
 
-      <button class="btn btn-primary" id="scan-btn" onclick="startScan()"
+      <button class="btn btn-primary" id="scan-btn" data-onclick="startScan"
               style="width:100%;justify-content:center;margin-top:8px">
         ▶ Start Scan
       </button>
@@ -105,10 +105,14 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function selectAll(checked) {
   document.querySelectorAll('.scan-type').forEach(cb => cb.checked = checked);
 }
+
+window.copyToScanTarget = function() {
+  document.getElementById('scan-target').value = this.value;
+};
 
 window.startScan = async function() {
   const target = document.getElementById('scan-target')?.value?.trim();
@@ -216,9 +220,9 @@ function finishScan(scanId, results, target) {
     <div class="alert alert-success">
       Scan completed!
       <button class="btn btn-secondary btn-sm" style="margin-left:8px"
-              onclick="generateReport('${esc(target)}')">📄 Generate Report</button>
+              data-onclick="generateReport" data-onclick-args="${optisecArgs([target])}">📄 Generate Report</button>
       <button class="btn btn-secondary btn-sm" style="margin-left:4px"
-              onclick="analyzeWithAI('${esc(target)}')">🤖 AI Analysis</button>
+              data-onclick="analyzeWithAI" data-onclick-args="${optisecArgs([target])}">🤖 AI Analysis</button>
     </div>`;
   renderScanResults(results, target);
 }

@@ -5,15 +5,15 @@
 {% block content %}
 <!-- Tab Navigation -->
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px">
-  <button class="btn btn-primary"   id="tab-btn-phone"     onclick="switchTab('phone')">📱 Phone Intel</button>
-  <button class="btn btn-secondary" id="tab-btn-username"  onclick="switchTab('username')">👤 Username</button>
-  <button class="btn btn-secondary" id="tab-btn-device"    onclick="switchTab('device')">💻 Device</button>
-  <button class="btn btn-secondary" id="tab-btn-plate"     onclick="switchTab('plate')">🚗 Plate</button>
-  <button class="btn btn-secondary" id="tab-btn-ip"        onclick="switchTab('ip')">🌐 IP/Geo</button>
-  <button class="btn btn-secondary" id="tab-btn-cell"      onclick="switchTab('cell')">📡 Cell Tower</button>
-  <button class="btn btn-secondary" id="tab-btn-natid"     onclick="switchTab('natid')">🪪 National ID</button>
-  <button class="btn btn-secondary" id="tab-btn-domain"    onclick="switchTab('domain')">🔍 Domain OSINT</button>
-  <button class="btn btn-secondary" id="tab-btn-phonesoc"  onclick="switchTab('phonesoc')">📲 Phone → Social</button>
+  <button class="btn btn-primary"   id="tab-btn-phone"     data-onclick="switchTab" data-onclick-args='["phone"]'>📱 Phone Intel</button>
+  <button class="btn btn-secondary" id="tab-btn-username"  data-onclick="switchTab" data-onclick-args='["username"]'>👤 Username</button>
+  <button class="btn btn-secondary" id="tab-btn-device"    data-onclick="switchTab" data-onclick-args='["device"]'>💻 Device</button>
+  <button class="btn btn-secondary" id="tab-btn-plate"     data-onclick="switchTab" data-onclick-args='["plate"]'>🚗 Plate</button>
+  <button class="btn btn-secondary" id="tab-btn-ip"        data-onclick="switchTab" data-onclick-args='["ip"]'>🌐 IP/Geo</button>
+  <button class="btn btn-secondary" id="tab-btn-cell"      data-onclick="switchTab" data-onclick-args='["cell"]'>📡 Cell Tower</button>
+  <button class="btn btn-secondary" id="tab-btn-natid"     data-onclick="switchTab" data-onclick-args='["natid"]'>🪪 National ID</button>
+  <button class="btn btn-secondary" id="tab-btn-domain"    data-onclick="switchTab" data-onclick-args='["domain"]'>🔍 Domain OSINT</button>
+  <button class="btn btn-secondary" id="tab-btn-phonesoc"  data-onclick="switchTab" data-onclick-args='["phonesoc"]'>📲 Phone → Social</button>
 </div>
 
 <!-- ── PHONE INTELLIGENCE ── -->
@@ -29,10 +29,10 @@
       <div class="form-group">
         <label>Phone Number (E.164 format)</label>
         <input type="text" id="phone-input" placeholder="+9647701234567 or +12025551234"
-               onkeydown="if(event.key==='Enter')runPhone()" />
+               data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runPhone"]' />
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Include country code (+964 for Iraq, +1 for USA)</div>
       </div>
-      <button class="btn btn-primary" onclick="runPhone()" id="phone-btn">🔍 Analyze Number</button>
+      <button class="btn btn-primary" data-onclick="runPhone" id="phone-btn">🔍 Analyze Number</button>
       <div id="phone-result" style="margin-top:16px"></div>
     </div>
     <div class="card">
@@ -61,9 +61,9 @@
       </div>
       <div class="form-group">
         <label>Username</label>
-        <input type="text" id="username-input" placeholder="johndoe" onkeydown="if(event.key==='Enter')runUsername()" />
+        <input type="text" id="username-input" placeholder="johndoe" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runUsername"]' />
       </div>
-      <button class="btn btn-primary" onclick="runUsername()" id="username-btn">🔍 Search Platforms</button>
+      <button class="btn btn-primary" data-onclick="runUsername" id="username-btn">🔍 Search Platforms</button>
       <div style="margin-top:8px">
         <div class="progress-bar" id="username-progress" style="display:none"><div class="progress-fill" style="width:100%;animation:pulse 1.5s infinite"></div></div>
       </div>
@@ -99,12 +99,12 @@
           placeholder="Mozilla/5.0 (Linux; Android 13; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"></textarea>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="setUA('desktop-chrome')">Desktop Chrome</button>
-        <button class="btn btn-secondary btn-sm" onclick="setUA('android-samsung')">Samsung Android</button>
-        <button class="btn btn-secondary btn-sm" onclick="setUA('iphone')">iPhone</button>
-        <button class="btn btn-secondary btn-sm" onclick="setUA('my-ua')">My Browser</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setUA" data-onclick-args='["desktop-chrome"]'>Desktop Chrome</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setUA" data-onclick-args='["android-samsung"]'>Samsung Android</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setUA" data-onclick-args='["iphone"]'>iPhone</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setUA" data-onclick-args='["my-ua"]'>My Browser</button>
       </div>
-      <button class="btn btn-primary" onclick="runDevice()" id="device-btn">🔍 Fingerprint Device</button>
+      <button class="btn btn-primary" data-onclick="runDevice" id="device-btn">🔍 Fingerprint Device</button>
       <div id="device-result" style="margin-top:16px"></div>
     </div>
     <div class="card">
@@ -134,17 +134,17 @@
       </div>
       <div class="form-group">
         <label>Plate Number</label>
-        <input type="text" id="plate-input" placeholder="10/12345ب or أ ب ج 1234" onkeydown="if(event.key==='Enter')runPlate()" />
+        <input type="text" id="plate-input" placeholder="10/12345ب or أ ب ج 1234" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runPlate"]' />
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
           Old format: province_code/serial+letters &nbsp;|&nbsp; New: letters + 4-6 digits
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="setPlate('1/12345أ')">Baghdad Old</button>
-        <button class="btn btn-secondary btn-sm" onclick="setPlate('أ ب 1234')">New Format</button>
-        <button class="btn btn-secondary btn-sm" onclick="setPlate('CD 456')">Diplomatic</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setPlate" data-onclick-args='["1/12345أ"]'>Baghdad Old</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setPlate" data-onclick-args='["أ ب 1234"]'>New Format</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setPlate" data-onclick-args='["CD 456"]'>Diplomatic</button>
       </div>
-      <button class="btn btn-primary" onclick="runPlate()" id="plate-btn">🔍 Decode Plate</button>
+      <button class="btn btn-primary" data-onclick="runPlate" id="plate-btn">🔍 Decode Plate</button>
       <div id="plate-result" style="margin-top:16px"></div>
     </div>
     <div class="card">
@@ -166,9 +166,9 @@
       </div>
       <div class="form-group">
         <label>IP Address or Domain</label>
-        <input type="text" id="ip-input" placeholder="8.8.8.8 or example.com" onkeydown="if(event.key==='Enter')runIP()" />
+        <input type="text" id="ip-input" placeholder="8.8.8.8 or example.com" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runIP"]' />
       </div>
-      <button class="btn btn-primary" onclick="runIP()" id="ip-btn">🔍 Geolocate</button>
+      <button class="btn btn-primary" data-onclick="runIP" id="ip-btn">🔍 Geolocate</button>
       <div id="ip-result" style="margin-top:16px"></div>
     </div>
     <div class="card">
@@ -216,12 +216,12 @@
         <input type="number" id="cell-dbm" placeholder="e.g. -75" />
       </div>
       <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="setCell(418,20)">Zain Iraq</button>
-        <button class="btn btn-secondary btn-sm" onclick="setCell(418,5)">Asiacell</button>
-        <button class="btn btn-secondary btn-sm" onclick="setCell(418,40)">Korek</button>
-        <button class="btn btn-secondary btn-sm" onclick="loadIraqCarriers()">List Iraq Carriers</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setCell" data-onclick-args='[418,20]'>Zain Iraq</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setCell" data-onclick-args='[418,5]'>Asiacell</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setCell" data-onclick-args='[418,40]'>Korek</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="loadIraqCarriers">List Iraq Carriers</button>
       </div>
-      <button class="btn btn-primary" onclick="runCell()" id="cell-btn">🔍 Lookup Tower</button>
+      <button class="btn btn-primary" data-onclick="runCell" id="cell-btn">🔍 Lookup Tower</button>
       <div id="cell-result" style="margin-top:16px"></div>
     </div>
     <div class="card">
@@ -243,17 +243,17 @@
       </div>
       <div class="form-group">
         <label>National ID (12 digits)</label>
-        <input type="text" id="natid-input" placeholder="100012345678" onkeydown="if(event.key==='Enter')runNatID()" />
+        <input type="text" id="natid-input" placeholder="100012345678" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runNatID"]' />
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
           Format: PP YY SSSSSS CC (province · year · sequence · check)
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
-        <button class="btn btn-secondary btn-sm" onclick="setNatID('100012345678')">Baghdad Example</button>
-        <button class="btn btn-secondary btn-sm" onclick="setNatID('200099876543')">Basra Example</button>
-        <button class="btn btn-secondary btn-sm" onclick="setNatID('350015678901')">Erbil Example</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setNatID" data-onclick-args='["100012345678"]'>Baghdad Example</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setNatID" data-onclick-args='["200099876543"]'>Basra Example</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="setNatID" data-onclick-args='["350015678901"]'>Erbil Example</button>
       </div>
-      <button class="btn btn-primary" onclick="runNatID()" id="natid-btn">🔍 Analyze ID</button>
+      <button class="btn btn-primary" data-onclick="runNatID" id="natid-btn">🔍 Analyze ID</button>
       <div class="alert alert-info" style="margin-top:12px;font-size:11px">
         ⚠️ Metadata extraction only — no real database lookup. For investigative use.
       </div>
@@ -288,17 +288,17 @@
       <div class="form-group">
         <label>Phone Number</label>
         <input type="text" id="ps-input" placeholder="+9647701234567 or 07701234567"
-               onkeydown="if(event.key==='Enter')runPhoneSocial()" />
+               data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runPhoneSocial"]' />
         <div style="font-size:11px;color:var(--text-dim);margin-top:4px">
           Iraqi formats accepted: +9647…, 009647…, 077…, 7…
         </div>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ps-input').value='+9647701234567'">Zain Sample</button>
-        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ps-input').value='+9647801234567'">Asiacell Sample</button>
-        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('ps-input').value='+9647501234567'">Korek Sample</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="fillPhoneSample" data-onclick-args='["+9647701234567"]'>Zain Sample</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="fillPhoneSample" data-onclick-args='["+9647801234567"]'>Asiacell Sample</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="fillPhoneSample" data-onclick-args='["+9647501234567"]'>Korek Sample</button>
       </div>
-      <button class="btn btn-primary" id="ps-btn" onclick="runPhoneSocial()">🔍 Run 5-Tier OSINT</button>
+      <button class="btn btn-primary" id="ps-btn" data-onclick="runPhoneSocial">🔍 Run 5-Tier OSINT</button>
       <div class="progress-bar" id="ps-progress" style="display:none;margin-top:10px"><div class="progress-fill" style="width:100%;animation:pulse 1.5s infinite"></div></div>
       <div id="ps-result" style="margin-top:16px"></div>
     </div>
@@ -329,9 +329,9 @@
     </div>
     <div class="form-group">
       <label>Target Domain</label>
-      <input type="text" id="domain-input" placeholder="example.com" onkeydown="if(event.key==='Enter')runDomain()" />
+      <input type="text" id="domain-input" placeholder="example.com" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runDomain"]' />
     </div>
-    <button class="btn btn-primary" id="domain-btn" onclick="runDomain()">🔍 Run Full OSINT</button>
+    <button class="btn btn-primary" id="domain-btn" data-onclick="runDomain">🔍 Run Full OSINT</button>
   </div>
   <div id="domain-result" style="margin-top:20px"></div>
 </div>
@@ -356,7 +356,7 @@
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 </style>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // ── Tab switching ──────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.osint-tab').forEach(t => t.style.display = 'none');
@@ -374,6 +374,16 @@ function sev(s) { const m={critical:'critical',high:'high',medium:'high',low:'me
 function infoRow(label, value, isHtml=false) {
   const v = isHtml ? value : `<span class="info-value">${esc(String(value??'—'))}</span>`;
   return `<div class="info-row"><span class="info-label">${esc(label)}</span>${v}</div>`;
+}
+
+function fillPhoneSample(value) {
+  document.getElementById('ps-input').value = value;
+}
+
+function copyDorkToClipboard(query) {
+  navigator.clipboard.writeText(query);
+  this.style.background = 'rgba(0,212,170,.15)';
+  setTimeout(() => { this.style.background = ''; }, 800);
 }
 
 function showLoading(btn_id, result_id) {
@@ -879,7 +889,7 @@ async function runPhoneSocial() {
       if (!queries?.length) continue;
       html += `<div style="margin-bottom:10px">
         <div style="font-size:11px;font-weight:700;color:var(--text-dim);margin-bottom:4px">${dorkIcons[engine]||'•'} ${esc(engine.toUpperCase())}</div>
-        ${queries.map(q=>`<div onclick="navigator.clipboard.writeText(${JSON.stringify(q)});this.style.background='rgba(0,212,170,.15)';setTimeout(()=>this.style.background='',800)"
+        ${queries.map(q=>`<div data-onclick="copyDorkToClipboard" data-onclick-args="${optisecArgs([q])}"
           style="font-family:monospace;font-size:11px;padding:5px 8px;border:1px solid var(--border);border-radius:4px;margin-bottom:4px;cursor:pointer;word-break:break-all;transition:background .2s">
           ${esc(q)} <span style="float:right;color:var(--text-dim);font-size:9px">copy</span>
         </div>`).join('')}

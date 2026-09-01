@@ -46,7 +46,7 @@
           </td>
           <td class="dim">{{ u.email }}</td>
           <td>
-            <select onchange="changeRole({{ u.id }}, this.value)"
+            <select data-onchange="changeRoleFromSelect" data-onchange-args='{{ [u.id] | tojson }}'
                     {% if u.id == user.id %}disabled title="Cannot change your own role"{% endif %}>
               <option value="admin"   {% if u.role == 'admin'   %}selected{% endif %}>Admin</option>
               <option value="analyst" {% if u.role == 'analyst' %}selected{% endif %}>Analyst</option>
@@ -69,11 +69,11 @@
           <td>
             {% if u.id != user.id %}
             <button class="btn btn-secondary btn-sm"
-                    onclick="toggleUser({{ u.id }}, {{ 'false' if u.is_active else 'true' }})">
+                    data-onclick="toggleUser" data-onclick-args='{{ [u.id, not u.is_active] | tojson }}'>
               {{ 'Disable' if u.is_active else 'Enable' }}
             </button>
             <button class="btn btn-danger btn-sm"
-                    onclick="deleteUser({{ u.id }}, '{{ u.username }}')">✕</button>
+                    data-onclick="deleteUser" data-onclick-args='{{ [u.id, u.username] | tojson }}'>✕</button>
             {% endif %}
           </td>
         </tr>
@@ -90,7 +90,7 @@
       <div class="card-subtitle">Login attempts, registrations, and logouts — newest first</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <select id="log-filter" onchange="filterLog()" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px">
+      <select id="log-filter" data-onchange="filterLog" style="font-size:12px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px">
         <option value="">All events</option>
         <option value="SUCCESS">Success only</option>
         <option value="FAILURE">Failures only</option>
@@ -98,7 +98,7 @@
         <option value="LOGOUT">Logout</option>
         <option value="REGISTER">Register</option>
       </select>
-      <button class="btn btn-secondary btn-sm" onclick="loadAuthLog()">↻ Refresh</button>
+      <button class="btn btn-secondary btn-sm" data-onclick="loadAuthLog">↻ Refresh</button>
     </div>
   </div>
   <div class="table-wrap">
@@ -129,8 +129,8 @@
     <code id="my-api-key" class="mono" style="font-size:12px">{{ user.api_key }}</code>
   </div>
   <div style="display:flex;gap:8px;margin-bottom:8px">
-    <button class="btn btn-secondary" onclick="copyApiKey()">📋 Copy</button>
-    <button class="btn btn-secondary" onclick="regenApiKey()">🔄 Regenerate</button>
+    <button class="btn btn-secondary" data-onclick="copyApiKey">📋 Copy</button>
+    <button class="btn btn-secondary" data-onclick="regenApiKey">🔄 Regenerate</button>
   </div>
   <div id="apikey-out"></div>
   <div style="margin-top:16px;font-size:12px;color:var(--text-dim)">
@@ -141,7 +141,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 let _allLogEntries = [];
 
 async function loadAuthLog() {
@@ -183,6 +183,10 @@ function filterLog() {
 }
 
 document.addEventListener('DOMContentLoaded', loadAuthLog);
+
+function changeRoleFromSelect(userId) {
+  changeRole(userId, this.value);
+}
 
 async function changeRole(userId, role) {
   const r = await API.patch(`/api/admin/users/${userId}`, { role });

@@ -24,7 +24,7 @@
       <label>Notes</label>
       <textarea id="target-notes" placeholder="Bug bounty scope, notes..."></textarea>
     </div>
-    <button class="btn btn-primary" onclick="addTarget()">Add Target</button>
+    <button class="btn btn-primary" data-onclick="addTarget">Add Target</button>
     {% else %}
     <div class="alert alert-info">Viewer role cannot add targets. Contact an admin to upgrade your role.</div>
     {% endif %}
@@ -63,7 +63,7 @@
             <td>
               <a href="/scan?target={{ t.url }}" class="btn btn-secondary btn-sm">🔍 Scan</a>
               {% if user.role in ('admin', 'analyst') %}
-              <button class="btn btn-danger btn-sm" onclick="deleteTarget({{ t.id }})">✕</button>
+              <button class="btn btn-danger btn-sm" data-onclick="deleteTarget" data-onclick-args='{{ [t.id] | tojson }}'>✕</button>
               {% endif %}
             </td>
           </tr>

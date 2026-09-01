@@ -106,7 +106,7 @@
   </div>
   <div style="text-align:right;font-size:11px;color:var(--text-dim)">
     Generated: {{ data.generated_at[:19] }} UTC<br>
-    <button class="btn btn-secondary btn-sm" onclick="refreshData()" id="refresh-btn" style="margin-top:6px">
+    <button class="btn btn-secondary btn-sm" data-onclick="refreshData" id="refresh-btn" style="margin-top:6px">
       ↺ Refresh
     </button>
   </div>
@@ -158,8 +158,8 @@
 
 <!-- ── Filter bar ─────────────────────────────────────────────── -->
 <div class="filter-bar">
-  <input type="text" id="search-input" placeholder="Search clusters…" oninput="applyFilters()" style="flex:1;min-width:180px">
-  <select id="sev-filter" onchange="applyFilters()">
+  <input type="text" id="search-input" placeholder="Search clusters…" data-oninput="applyFilters" style="flex:1;min-width:180px">
+  <select id="sev-filter" data-onchange="applyFilters">
     <option value="">All Severities</option>
     <option value="CRITICAL">Critical</option>
     <option value="HIGH">High</option>
@@ -167,7 +167,7 @@
     <option value="LOW">Low</option>
     <option value="INFORMATIONAL">Informational</option>
   </select>
-  <select id="strat-filter" onchange="applyFilters()">
+  <select id="strat-filter" data-onchange="applyFilters">
     <option value="">All Strategies</option>
     <option value="malware_family">Malware Family</option>
     <option value="adversary">Adversary</option>
@@ -187,7 +187,7 @@
        data-sev="{{ sev }}"
        data-strat="{{ c.strategy }}"
        data-id="{{ c.cluster_id }}"
-       onclick="openDetail('{{ c.cluster_id }}')">
+       data-onclick="openDetail" data-onclick-args='{{ [c.cluster_id] | tojson }}'>
 
     <!-- header row -->
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">
@@ -237,7 +237,7 @@
   <div class="empty-state" style="grid-column:1/-1">
     <div class="icon">🔗</div>
     <div>No correlation data available.</div>
-    <button class="btn btn-primary" style="margin-top:16px" onclick="refreshData()">Run Correlation Now</button>
+    <button class="btn btn-primary" style="margin-top:16px" data-onclick="refreshData">Run Correlation Now</button>
   </div>
   {% endfor %}
 </div>
@@ -247,14 +247,14 @@
 </div>
 
 <!-- ── Detail modal ────────────────────────────────────────────── -->
-<div class="modal-overlay" id="detail-modal" onclick="closeModal(event)">
-  <div class="modal-box" onclick="event.stopPropagation()">
+<div class="modal-overlay" id="detail-modal" data-onclick="closeModal" data-onclick-event>
+  <div class="modal-box" data-onclick="stopProp">
     <div class="modal-header">
       <div>
         <div id="m-title" style="font-size:16px;font-weight:700"></div>
         <div id="m-meta" style="font-size:11px;color:var(--text-dim);margin-top:3px"></div>
       </div>
-      <button class="modal-close" onclick="document.getElementById('detail-modal').classList.remove('open')">✕</button>
+      <button class="modal-close" data-onclick="closeDetailModal">✕</button>
     </div>
     <div class="modal-body" id="modal-body">
       <div style="text-align:center;padding:40px;color:var(--text-dim)">Loading…</div>
@@ -264,7 +264,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // ── Cluster data baked in from server ────────────────────────────
 const CLUSTERS = {{ data.clusters | tojson }};
 
@@ -409,6 +409,10 @@ function openDetail(clusterId) {
 
   document.getElementById('modal-body').innerHTML = html;
   document.getElementById('detail-modal').classList.add('open');
+}
+
+function closeDetailModal() {
+  document.getElementById('detail-modal').classList.remove('open');
 }
 
 function closeModal(event) {

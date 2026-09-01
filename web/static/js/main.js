@@ -1,5 +1,76 @@
 // OPTISEC Recon Pro — Main JS
 
+// ─── Event delegation dispatcher (replaces inline on*="" attributes, which a
+// strict script-src CSP with no 'unsafe-inline' silently ignores) ───────────
+// Markup declares intent via data attributes instead of inline JS:
+//   data-onclick="fnName"                 → window.fnName.apply(el, args)
+//   data-onclick-args='["a", 1]'          → JSON array, becomes the call args
+//   data-onclick-event                    → present (any value) => the
+//                                            DOMEvent is passed as the FIRST
+//                                            arg: fnName.call(el, evt, ...args)
+// Same data-on<type>[-args][-event] shape for change/keydown/keyup/submit/
+// input/error. One capturing listener per event type on `document` — capture
+// phase (not bubble) is required because `error`/`load` on <img>/<script>
+// don't bubble, so this is the only phase that reliably reaches every case
+// uniformly. `el` (the matched element, i.e. what `this` was under the old
+// inline attribute) is preserved via call/apply.
+const OPTISEC_DELEGATED_EVENTS = ['click', 'change', 'keydown', 'keyup', 'submit', 'input', 'error'];
+
+function optisecDispatch(evt) {
+  const attr = 'data-on' + evt.type;
+  const el = evt.target.closest ? evt.target.closest(`[${attr}]`) : null;
+  if (!el) return;
+  const fnName = el.getAttribute(attr);
+  const fn = window[fnName];
+  if (typeof fn !== 'function') return;
+  let args = [];
+  const argsRaw = el.getAttribute(attr + '-args');
+  if (argsRaw) {
+    try { args = JSON.parse(argsRaw); } catch (e) { args = []; }
+  }
+  if (el.hasAttribute(attr + '-event')) {
+    fn.call(el, evt, ...args);
+  } else {
+    fn.apply(el, args);
+  }
+}
+
+OPTISEC_DELEGATED_EVENTS.forEach(type => {
+  document.addEventListener(type, optisecDispatch, true);
+});
+
+// ─── Small generic handlers reused across multiple pages ───────────────────
+window.navigateTo = function (path) { location.href = path; };
+window.reloadPage = function () { location.reload(); };
+window.removeParentEl = function () { this.parentElement.remove(); };
+window.hideImgOnError = function () { this.style.display = 'none'; };
+window.stopProp = function (evt) { evt.stopPropagation(); };
+
+// Enter-key-submits pattern: data-onkeydown="runOnEnter" data-onkeydown-event
+// data-onkeydown-args='["someGlobalFn"]'
+window.runOnEnter = function (evt, fnName) {
+  if (evt.key !== 'Enter') return;
+  const fn = window[fnName];
+  if (typeof fn === 'function') fn();
+};
+
+// data-onsubmit="confirmOrPreventSubmit" data-onsubmit-event
+// data-onsubmit-args='["Are you sure?"]'
+window.confirmOrPreventSubmit = function (evt, message) {
+  if (!confirm(message)) evt.preventDefault();
+};
+
+// Builds a JSON-in-HTML-attribute string for a data-on*-args value, e.g.
+//   `data-onclick-args="${optisecArgs([target])}"`
+// Deliberately does its own escaping rather than relying on any page's local
+// esc()/escHtml() helper — several templates define their own esc() that
+// only covers &<>, not the `"` a JSON array's own string quoting needs
+// escaped for double-quoted-attribute embedding, and that mismatch would
+// silently truncate the attribute at the first embedded quote.
+window.optisecArgs = function (arr) {
+  return JSON.stringify(arr).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+};
+
 const API = {
   async post(url, data) {
     const r = await fetch(url, {
@@ -319,8 +390,8 @@ function renderScanResults(results, target) {
   html += `</div>`;
 
   html += `<div style="margin-top:20px;display:flex;gap:10px">
-    <button class="btn btn-primary" onclick="generateReport('${esc(target)}')">📄 Generate PDF Report</button>
-    <button class="btn btn-secondary" onclick="analyzeWithAI('${esc(target)}')">🤖 AI Analysis</button>
+    <button class="btn btn-primary" data-onclick="generateReport" data-onclick-args="${optisecArgs([target])}">📄 Generate PDF Report</button>
+    <button class="btn btn-secondary" data-onclick="analyzeWithAI" data-onclick-args="${optisecArgs([target])}">🤖 AI Analysis</button>
   </div>
   <div id="ai-output" style="margin-top:16px"></div>
   <div id="report-output" style="margin-top:16px"></div>`;
@@ -331,7 +402,7 @@ function renderScanResults(results, target) {
 
 window.generateReport = async function(target) {
   const scanId = window._currentScanId || '';
-  const btn = event.target;
+  const btn = this;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Generating...';
 

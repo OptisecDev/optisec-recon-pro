@@ -76,12 +76,12 @@
 </div>
 
 <div class="tabs" style="margin-bottom:20px">
-  <button class="tab-btn active" onclick="showTab('breach')">⚠️ Breach Detection</button>
-  <button class="tab-btn" onclick="showTab('paste')">Paste Monitor</button>
-  <button class="tab-btn" onclick="showTab('tor')">⚠️ Tor Intelligence</button>
-  <button class="tab-btn" onclick="showTab('keywords')">Keyword Alerts</button>
-  <button class="tab-btn" onclick="showTab('ransomware')">⚠️ Ransomware Groups</button>
-  <button class="tab-btn" onclick="showTab('monitor')">🟢 Continuous Monitoring · المراقبة المستمرة</button>
+  <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["breach"]'>⚠️ Breach Detection</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["paste"]'>Paste Monitor</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["tor"]'>⚠️ Tor Intelligence</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["keywords"]'>Keyword Alerts</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["ransomware"]'>⚠️ Ransomware Groups</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["monitor"]'>🟢 Continuous Monitoring · المراقبة المستمرة</button>
 </div>
 
 <!-- BREACH DETECTION TAB -->
@@ -92,7 +92,7 @@
       <h3 style="color:#FF6B6B;margin-bottom:16px">Domain Breach Check</h3>
       <div style="display:flex;gap:8px;margin-bottom:16px">
         <input type="text" id="domain-input" class="form-control" placeholder="e.g. example.com" style="flex:1">
-        <button class="btn btn-primary" onclick="checkDomain()">Check</button>
+        <button class="btn btn-primary" data-onclick="checkDomain">Check</button>
       </div>
       <div id="domain-result"></div>
     </div>
@@ -101,7 +101,7 @@
       <h3 style="color:#FF6B6B;margin-bottom:16px">Email Breach Check</h3>
       <div style="display:flex;gap:8px;margin-bottom:16px">
         <input type="email" id="email-input" class="form-control" placeholder="user@example.com" style="flex:1">
-        <button class="btn btn-primary" onclick="checkEmail()">Check</button>
+        <button class="btn btn-primary" data-onclick="checkEmail">Check</button>
       </div>
       <div id="email-result"></div>
     </div>
@@ -136,7 +136,7 @@
       <h3 style="color:#FFA726;margin-bottom:12px">Paste Content Scanner</h3>
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Paste content from Pastebin, GitHub Gist, or dark web paste sites to detect sensitive data patterns.</p>
       <textarea id="paste-content" class="form-control" rows="8" style="font-size:12px;font-family:monospace;resize:vertical" placeholder="Paste content here to scan for: credentials, API keys, credit cards, PII, malware C2 URLs..."></textarea>
-      <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="scanPaste()">Scan for Sensitive Data</button>
+      <button class="btn btn-primary" style="margin-top:12px;width:100%" data-onclick="scanPaste">Scan for Sensitive Data</button>
     </div>
     <div class="dw-card">
       <h3 style="color:#FFA726;margin-bottom:12px">Scan Results</h3>
@@ -233,7 +233,7 @@
             <option value="general">General</option>
           </select>
         </div>
-        <button class="btn btn-primary" onclick="addKeyword()">Add to Monitoring</button>
+        <button class="btn btn-primary" data-onclick="addKeyword">Add to Monitoring</button>
       </div>
 
       <div style="margin-top:20px">
@@ -259,7 +259,7 @@
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Generate a comprehensive dark web threat report for a domain including breach exposure, keyword hits, and ransomware mention risk.</p>
       <div style="display:flex;gap:8px;margin-bottom:16px">
         <input type="text" id="report-domain" class="form-control" placeholder="target-domain.com">
-        <button class="btn btn-primary" onclick="generateReport()">Generate</button>
+        <button class="btn btn-primary" data-onclick="generateReport">Generate</button>
       </div>
       <div id="report-result"></div>
     </div>
@@ -305,7 +305,7 @@
       </p>
       <div style="display:flex;gap:8px;margin-bottom:12px">
         <input type="text" id="monitor-target" class="form-control" placeholder="example.com or user@example.com" style="flex:1">
-        <button class="btn btn-primary" onclick="addMonitorTarget()">Add · إضافة</button>
+        <button class="btn btn-primary" data-onclick="addMonitorTarget">Add · إضافة</button>
       </div>
       <div id="monitor-add-result"></div>
 
@@ -322,8 +322,8 @@
               </div>
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
-              <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="checkMonitorTarget({{ m.id }})">فحص الآن</button>
-              <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteMonitorTarget({{ m.id }})">حذف</button>
+              <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" data-onclick="checkMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>فحص الآن</button>
+              <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" data-onclick="deleteMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>حذف</button>
             </div>
           </div>
           {% endfor %}
@@ -356,7 +356,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function showTab(t) {
   ['breach','paste','tor','keywords','ransomware','monitor'].forEach(id => {
     document.getElementById('tab-'+id).style.display = id===t?'':'none';
@@ -473,8 +473,8 @@ function monitorRowHtml(m) {
       <div style="font-size:10px;color:var(--text-dim)">${m.target} · ${m.target_type} · آخر فحص: ${lastChecked}</div>
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0">
-      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" onclick="checkMonitorTarget(${m.id})">فحص الآن</button>
-      <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" onclick="deleteMonitorTarget(${m.id})">حذف</button>
+      <button class="btn btn-secondary" style="font-size:11px;padding:4px 10px" data-onclick="checkMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">فحص الآن</button>
+      <button class="btn btn-danger" style="font-size:11px;padding:4px 10px" data-onclick="deleteMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">حذف</button>
     </div>
   </div>`;
 }

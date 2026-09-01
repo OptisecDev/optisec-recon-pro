@@ -44,7 +44,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function showRedeemAlert(message, type) {
   const el = document.getElementById('redeem-alert');
   el.className = 'alert alert-' + type;

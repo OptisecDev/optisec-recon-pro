@@ -4,10 +4,10 @@
 
 {% block content %}
 <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
-  <button class="btn btn-primary" onclick="showTab('inspector')">🔍 Request Inspector</button>
-  <button class="btn btn-secondary" onclick="showTab('log-analyzer')">📄 Log Analyzer</button>
-  <button class="btn btn-secondary" onclick="showTab('rules')">📋 Firewall Rules</button>
-  <button class="btn btn-secondary" onclick="showTab('rate')">⏱️ Rate Limiting</button>
+  <button class="btn btn-primary" data-onclick="showTab" data-onclick-args='["inspector"]'>🔍 Request Inspector</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["log-analyzer"]'>📄 Log Analyzer</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["rules"]'>📋 Firewall Rules</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["rate"]'>⏱️ Rate Limiting</button>
 </div>
 
 <!-- Request Inspector -->
@@ -27,7 +27,7 @@
       </div>
       <div class="form-group">
         <label>Path / URL</label>
-        <input type="text" id="req-path" placeholder="/search?q=<script>alert(1)</script>" />
+        <input type="text" id="req-path" placeholder="/search?q=&lt;script&gt;alert(1)&lt;/script&gt;" />
       </div>
       <div class="form-group">
         <label>Client IP</label>
@@ -41,7 +41,7 @@
         <label>Extra Headers (optional, JSON)</label>
         <input type="text" id="req-headers" placeholder='{"X-Forwarded-For": "127.0.0.1"}' />
       </div>
-      <button class="btn btn-primary" onclick="inspectRequest()" style="width:100%;justify-content:center">
+      <button class="btn btn-primary" data-onclick="inspectRequest" style="width:100%;justify-content:center">
         🔬 Inspect Request
       </button>
       <div style="margin-top:10px;font-size:11px;color:var(--text-dim)">
@@ -71,7 +71,7 @@
 10.0.0.5 - - [27/Jun/2026:10:00:01 +0000] "POST /login HTTP/1.1" 401 512
 10.0.0.5 - - [27/Jun/2026:10:00:02 +0000] "GET /?id=1 UNION SELECT 1,2,3-- HTTP/1.1" 200 2048'></textarea>
     </div>
-    <button class="btn btn-primary" onclick="analyzeLogs()" style="width:100%;justify-content:center">
+    <button class="btn btn-primary" data-onclick="analyzeLogs" style="width:100%;justify-content:center">
       🔍 Analyze Logs
     </button>
     <div id="log-results" style="margin-top:16px"></div>
@@ -127,7 +127,7 @@
       <label>Max Requests</label>
       <input type="number" id="rate-max" value="100" />
     </div>
-    <button class="btn btn-primary" onclick="checkRate()" style="width:100%;justify-content:center">Check Rate</button>
+    <button class="btn btn-primary" data-onclick="checkRate" style="width:100%;justify-content:center">Check Rate</button>
     <div id="rate-result" style="margin-top:12px"></div>
   </div>
 </div>
@@ -135,7 +135,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 const SEV_COLOR  = { CRITICAL:'#ff3366', HIGH:'#ff6600', MEDIUM:'#ffaa00', LOW:'#88ccff' };
 const SEV_BG     = { CRITICAL:'rgba(255,51,102,0.08)', HIGH:'rgba(255,102,0,0.08)', MEDIUM:'rgba(255,170,0,0.08)', LOW:'rgba(136,204,255,0.08)' };
 const SEV_BORDER = { CRITICAL:'rgba(255,51,102,0.5)', HIGH:'rgba(255,102,0,0.5)', MEDIUM:'rgba(255,170,0,0.5)', LOW:'rgba(136,204,255,0.5)' };

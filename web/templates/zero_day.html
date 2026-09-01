@@ -18,7 +18,7 @@
         <label>Version (optional)</label>
         <input type="text" id="zd-version" placeholder="2.4.51, 3.0.7, 108..." />
       </div>
-      <button class="btn btn-primary" onclick="predict()" style="width:100%;justify-content:center">
+      <button class="btn btn-primary" data-onclick="predict" style="width:100%;justify-content:center">
         🔮 Analyze Zero-Day Risk
       </button>
       <div id="predict-result" style="margin-top:12px"></div>
@@ -28,7 +28,7 @@
       <div class="card-header">
         <div class="card-title">🔥 CISA KEV — Trending Threats</div>
       </div>
-      <button class="btn btn-secondary btn-sm" onclick="loadTrending()" style="margin-bottom:12px">Load Trending</button>
+      <button class="btn btn-secondary btn-sm" data-onclick="loadTrending" style="margin-bottom:12px">Load Trending</button>
       <div id="trending-results"></div>
     </div>
   </div>
@@ -62,7 +62,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 async function predict() {
   const software = document.getElementById('zd-software').value.trim();
   if (!software) { alert('Enter software name'); return; }

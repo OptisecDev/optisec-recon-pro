@@ -189,8 +189,8 @@
         <span style="color:var(--accent);font-size:16px">💬</span>
         <input id="nlp-input" type="text"
           placeholder="افحص example.com عن ثغرات XSS | Scan target for XSS"
-          onkeydown="runNLPCommand(event)" />
-        <button class="btn btn-primary btn-sm" onclick="runNLPCommand(null)">Go</button>
+          data-onkeydown="runNLPCommand" data-onkeydown-event />
+        <button class="btn btn-primary btn-sm" data-onclick="runNLPCommand">Go</button>
       </div>
       {% if user %}
       <div style="font-size:11px;color:var(--text-dim);margin-left:8px;white-space:nowrap">

@@ -77,12 +77,12 @@
 </div>
 
 <div class="tabs" style="margin-bottom:20px">
-  <button class="tab-btn active" onclick="showTab('feed')">Live IOC Feed</button>
-  <button class="tab-btn" onclick="showTab('map')">Threat Map</button>
-  <button class="tab-btn" onclick="showTab('campaigns')">Campaigns</button>
-  <button class="tab-btn" onclick="showTab('sources')">Feed Sources</button>
-  <button class="tab-btn" onclick="showTab('submit')">Submit IOC</button>
-  <button class="tab-btn" onclick="showTab('sharing')">Threat Sharing · مشاركة التهديدات</button>
+  <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["feed"]'>Live IOC Feed</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["map"]'>Threat Map</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["campaigns"]'>Campaigns</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["sources"]'>Feed Sources</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["submit"]'>Submit IOC</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["sharing"]'>Threat Sharing · مشاركة التهديدات</button>
 </div>
 
 <!-- LIVE FEED TAB -->
@@ -91,12 +91,12 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <h3>Live IOC Stream</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <input type="text" class="form-control" style="max-width:200px;font-size:11px" placeholder="Search IOCs..." oninput="filterFeed(this.value)" id="feed-search">
-        <select class="form-control" style="max-width:130px;font-size:11px" onchange="filterFeedType(this.value)">
+        <input type="text" class="form-control" style="max-width:200px;font-size:11px" placeholder="Search IOCs..." data-oninput="filterFeedFromInput" id="feed-search">
+        <select class="form-control" style="max-width:130px;font-size:11px" data-onchange="filterFeedTypeFromInput">
           <option value="">All Types</option>
           {% for t, c in feed.stats.by_type.items() %}<option value="{{ t }}">{{ t }} ({{ c }})</option>{% endfor %}
         </select>
-        <button class="btn btn-secondary btn-sm" onclick="refreshFeed()">Refresh</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="refreshFeed">Refresh</button>
       </div>
     </div>
     <div id="ioc-feed-list">
@@ -270,7 +270,7 @@
         </div>
         <div>
           <label style="font-size:11px;color:var(--text-dim)">Confidence (0-100)</label>
-          <input type="range" id="sub-conf" min="0" max="100" value="75" oninput="document.getElementById('conf-val').textContent=this.value+'%'" style="width:100%;margin-top:4px">
+          <input type="range" id="sub-conf" min="0" max="100" value="75" data-oninput="updateConfDisplay" style="width:100%;margin-top:4px">
           <span id="conf-val" style="font-size:11px;color:var(--accent)">75%</span>
         </div>
         <div>
@@ -282,7 +282,7 @@
             <option value="RED">TLP:RED — Eyes only</option>
           </select>
         </div>
-        <button class="btn btn-primary" onclick="submitIOC()">Share to Global Feed</button>
+        <button class="btn btn-primary" data-onclick="submitIOC">Share to Global Feed</button>
       </div>
       <div id="submit-result" style="margin-top:14px"></div>
     </div>
@@ -291,7 +291,7 @@
       <h3 style="color:var(--accent);margin-bottom:16px">IOC Correlation Engine</h3>
       <p style="font-size:12px;color:var(--text-dim);margin-bottom:12px">Paste multiple IOCs (one per line) to correlate against known campaigns and TTPs.</p>
       <textarea id="correlate-input" class="form-control" rows="8" style="font-size:12px;font-family:monospace;resize:vertical" placeholder="ip:185.234.216.45&#10;domain:evil-c2.ru&#10;hash_md5:d41d8cd98f00b204e9800998ecf8427e&#10;cve:CVE-2021-44228"></textarea>
-      <button class="btn btn-primary" style="margin-top:12px;width:100%" onclick="correlateIOCs()">Correlate IOCs</button>
+      <button class="btn btn-primary" style="margin-top:12px;width:100%" data-onclick="correlateIOCs">Correlate IOCs</button>
       <div id="correlate-result" style="margin-top:14px"></div>
     </div>
   </div>
@@ -320,7 +320,7 @@
     <div class="tf-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <h3>IOCs مؤهلة للمشاركة · Local Candidates</h3>
-        <button class="btn btn-secondary btn-sm" onclick="loadLocalIocs()">Refresh</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="loadLocalIocs">Refresh</button>
       </div>
       <div id="local-iocs-list" style="font-size:11px;color:var(--text-dim)">Loading…</div>
     </div>
@@ -342,7 +342,7 @@
   <div id="share-result"></div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function showTab(t) {
   ['feed','map','campaigns','sources','submit','sharing'].forEach(id => {
     document.getElementById('tab-'+id).style.display = id===t?'':'none';
@@ -409,6 +409,18 @@ async function loadShareHistory() {
       <code style="font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.ioc_type}:${s.ioc_value}</code>
       <span style="color:${statusColor(s.status)};font-size:10px;font-weight:700">${s.status}</span>
     </div>`).join('');
+}
+
+function filterFeedFromInput() {
+  filterFeed(this.value);
+}
+
+function filterFeedTypeFromInput() {
+  filterFeedType(this.value);
+}
+
+function updateConfDisplay() {
+  document.getElementById('conf-val').textContent = this.value + '%';
 }
 
 function filterFeed(q) {

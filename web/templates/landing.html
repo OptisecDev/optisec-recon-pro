@@ -545,7 +545,7 @@
   </div>
 </footer>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // Animated counters
 document.querySelectorAll('[data-count]').forEach(el => {
   const target = parseInt(el.dataset.count);

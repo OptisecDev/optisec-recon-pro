@@ -135,14 +135,14 @@
     </div>
     <div style="display:flex;gap:8px">
       <input type="text" id="api-search" placeholder="Search endpoints..." style="width:240px"
-        oninput="filterEndpoints(this.value)"/>
+        data-oninput="filterEndpointsFromInput"/>
     </div>
   </div>
 
   <div id="endpoint-groups">
     {% for group in api_groups %}
     <div class="api-group" data-name="{{ group.name|lower }}">
-      <div class="api-group-header" onclick="toggleGroup(this)">
+      <div class="api-group-header" data-onclick="toggleGroup">
         <div style="display:flex;align-items:center;gap:10px">
           <span class="api-group-icon">{{ group.icon }}</span>
           <div>
@@ -236,14 +236,14 @@
 <div class="card">
   <div class="card-header">
     <div class="card-title">🗝️ Your API Key</div>
-    <button class="btn btn-secondary btn-sm" onclick="regenerateKey()">↻ Regenerate</button>
+    <button class="btn btn-secondary btn-sm" data-onclick="regenerateKey">↻ Regenerate</button>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
     <code style="flex:1;background:var(--bg);padding:10px 14px;border-radius:6px;border:1px solid var(--border);
                  font-size:13px;color:var(--accent);letter-spacing:0.5px;word-break:break-all" id="api-key-display">
       {{ user.api_key }}
     </code>
-    <button class="btn btn-secondary btn-sm" onclick="copyKey()">📋 Copy</button>
+    <button class="btn btn-secondary btn-sm" data-onclick="copyKey">📋 Copy</button>
   </div>
   <div style="margin-top:8px;font-size:12px;color:var(--text-dim)">
     Use as: <code style="color:var(--accent)">Authorization: Bearer {{ user.api_key[:16] }}...</code>
@@ -254,13 +254,18 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-function toggleGroup(header) {
+<script nonce="{{ request.state.csp_nonce }}">
+function toggleGroup() {
+  const header = this;
   const body = header.nextElementSibling;
   const toggle = header.querySelector('.api-group-toggle');
   const open = body.style.display === 'none';
   body.style.display = open ? 'block' : 'none';
   toggle.textContent = open ? '▲' : '▼';
+}
+
+function filterEndpointsFromInput() {
+  filterEndpoints(this.value);
 }
 
 function filterEndpoints(q) {

@@ -4,24 +4,24 @@
 
 {% block content %}
 <div style="margin-bottom:16px;display:flex;gap:8px;flex-wrap:wrap">
-  <button class="btn btn-primary" id="tab-btn-hackerone" onclick="showTab('hackerone')">🎯 HackerOne</button>
-  <button class="btn btn-secondary" id="tab-btn-bugcrowd" onclick="showTab('bugcrowd')">🐛 Bugcrowd</button>
-  <button class="btn btn-secondary" id="tab-btn-intigriti" onclick="showTab('intigriti')">🔵 Intigriti</button>
-  <button class="btn btn-secondary" id="tab-btn-cve" onclick="showTab('cve')">📋 CVE Pipeline</button>
-  <button class="btn btn-secondary" id="tab-btn-submit" onclick="showTab('submit')">📤 Submit Report</button>
+  <button class="btn btn-primary" id="tab-btn-hackerone" data-onclick="showTab" data-onclick-args='["hackerone"]'>🎯 HackerOne</button>
+  <button class="btn btn-secondary" id="tab-btn-bugcrowd" data-onclick="showTab" data-onclick-args='["bugcrowd"]'>🐛 Bugcrowd</button>
+  <button class="btn btn-secondary" id="tab-btn-intigriti" data-onclick="showTab" data-onclick-args='["intigriti"]'>🔵 Intigriti</button>
+  <button class="btn btn-secondary" id="tab-btn-cve" data-onclick="showTab" data-onclick-args='["cve"]'>📋 CVE Pipeline</button>
+  <button class="btn btn-secondary" id="tab-btn-submit" data-onclick="showTab" data-onclick-args='["submit"]'>📤 Submit Report</button>
 </div>
 
 <!-- ══ Scope Modal ══════════════════════════════════════════════════════════ -->
-<div id="scope-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)" onclick="if(event.target===this)closeScopeModal()">
+<div id="scope-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)" data-onclick="closeModalIfBackdrop" data-onclick-event>
   <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(680px,95vw);max-height:88vh;overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:0">
     <!-- Modal Header -->
     <div style="display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg-card);z-index:1">
-      <img id="modal-logo" src="" alt="" style="width:36px;height:36px;border-radius:6px;object-fit:contain;display:none" onerror="this.style.display='none'" />
+      <img id="modal-logo" src="" alt="" style="width:36px;height:36px;border-radius:6px;object-fit:contain;display:none" data-onerror="hideImgOnError" />
       <div style="flex:1;min-width:0">
         <div id="modal-name" style="font-weight:700;font-size:15px"></div>
         <div id="modal-state-row" style="margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap"></div>
       </div>
-      <button onclick="closeScopeModal()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1;padding:4px">✕</button>
+      <button data-onclick="closeScopeModal" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1;padding:4px">✕</button>
     </div>
 
     <!-- Bounty Ranges -->
@@ -50,9 +50,9 @@
 
     <!-- Footer Actions -->
     <div style="padding:14px 20px;display:flex;gap:8px;flex-wrap:wrap">
-      <button id="modal-scan-btn" class="btn btn-primary btn-sm" onclick="scanModalTarget()">🎯 Scan This Target</button>
+      <button id="modal-scan-btn" class="btn btn-primary btn-sm" data-onclick="scanModalTarget">🎯 Scan This Target</button>
       <a id="modal-h1-link" href="#" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">🔗 View Full Program</a>
-      <button onclick="closeScopeModal()" class="btn btn-secondary btn-sm" style="margin-left:auto">Close</button>
+      <button data-onclick="closeScopeModal" class="btn btn-secondary btn-sm" style="margin-left:auto">Close</button>
     </div>
   </div>
 </div>
@@ -67,9 +67,9 @@
       </div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:4px">
-      <input type="text" id="h1-keyword" placeholder="shopify, github, uber..." style="flex:1" onkeydown="if(event.key==='Enter')searchH1Programs()" />
-      <button class="btn btn-primary btn-sm" onclick="searchH1Programs()">Search</button>
-      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('h1-keyword').value='';searchH1Programs()">All</button>
+      <input type="text" id="h1-keyword" placeholder="shopify, github, uber..." style="flex:1" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["searchH1Programs"]' />
+      <button class="btn btn-primary btn-sm" data-onclick="searchH1Programs">Search</button>
+      <button class="btn btn-secondary btn-sm" data-onclick="clearAndSearchH1">All</button>
     </div>
     <div id="h1-source-badge" style="font-size:11px;color:var(--text-dim);margin-bottom:12px"></div>
     <div id="h1-programs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
@@ -86,7 +86,7 @@
           <option value="resolved">Resolved</option>
           <option value="bounty_awarded">Bounty Awarded</option>
         </select>
-        <button class="btn btn-secondary btn-sm" onclick="loadH1Reports()">Load</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="loadH1Reports">Load</button>
       </div>
       <div id="h1-reports-list"></div>
     </div>
@@ -95,8 +95,8 @@
       <div class="card-header"><div class="card-title">🔍 Scope Inspector</div></div>
       <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Enter a program handle to load live scope (requires API token)</div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input type="text" id="h1-scope-handle" placeholder="e.g. shopify" style="flex:1" onkeydown="if(event.key==='Enter')loadH1Scope()" />
-        <button class="btn btn-primary btn-sm" onclick="loadH1Scope()">Load Scope</button>
+        <input type="text" id="h1-scope-handle" placeholder="e.g. shopify" style="flex:1" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["loadH1Scope"]' />
+        <button class="btn btn-primary btn-sm" data-onclick="loadH1Scope">Load Scope</button>
       </div>
       <div id="h1-scope-result"></div>
     </div>
@@ -111,7 +111,7 @@
         <div class="card-title">🐛 Bugcrowd Programs</div>
         <div class="card-subtitle">Live public program directory</div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="loadBCPrograms()">Refresh</button>
+      <button class="btn btn-primary btn-sm" data-onclick="loadBCPrograms">Refresh</button>
     </div>
     <div id="bc-source-badge" style="font-size:11px;color:var(--text-dim);margin-bottom:12px"></div>
     <div id="bc-programs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
@@ -121,7 +121,7 @@
     <div class="card-header"><div class="card-title">🎯 Program Targets</div></div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <input type="text" id="bc-program-code" placeholder="program code (e.g. tesla)" style="flex:1" />
-      <button class="btn btn-secondary btn-sm" onclick="loadBCTargets()">Load Targets</button>
+      <button class="btn btn-secondary btn-sm" data-onclick="loadBCTargets">Load Targets</button>
     </div>
     <div id="bc-targets-list"></div>
   </div>
@@ -135,7 +135,7 @@
         <div class="card-title">🔵 Intigriti Programs</div>
         <div class="card-subtitle">European bug bounty platform</div>
       </div>
-      <button class="btn btn-primary btn-sm" onclick="loadIGPrograms()">Refresh</button>
+      <button class="btn btn-primary btn-sm" data-onclick="loadIGPrograms">Refresh</button>
     </div>
     <div id="ig-source-badge" style="font-size:11px;color:var(--text-dim);margin-bottom:12px"></div>
     <div id="ig-programs-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px"></div>
@@ -148,14 +148,14 @@
     <div class="card">
       <div class="card-header"><div class="card-title">🔍 NVD CVE Search</div></div>
       <div style="display:flex;gap:8px;margin-bottom:12px">
-        <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" onkeydown="if(event.key==='Enter')searchCVE()" />
-        <button class="btn btn-primary btn-sm" onclick="searchCVE()">Search</button>
+        <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["searchCVE"]' />
+        <button class="btn btn-primary btn-sm" data-onclick="searchCVE">Search</button>
       </div>
       <div id="cve-search-results"></div>
     </div>
     <div class="card">
       <div class="card-header"><div class="card-title">📋 CVE Submission Queue</div></div>
-      <button class="btn btn-secondary btn-sm" onclick="loadCVEQueue()" style="margin-bottom:12px">Refresh Queue</button>
+      <button class="btn btn-secondary btn-sm" data-onclick="loadCVEQueue" style="margin-bottom:12px">Refresh Queue</button>
       <div id="cve-queue"></div>
     </div>
   </div>
@@ -203,7 +203,7 @@
       <label>Steps to Reproduce</label>
       <textarea id="submit-steps" rows="4" placeholder="1. Navigate to...\n2. Enter payload...\n3. Observe..."></textarea>
     </div>
-    <button class="btn btn-primary" onclick="submitReport()" style="width:100%;justify-content:center">📤 Submit Report</button>
+    <button class="btn btn-primary" data-onclick="submitReport" style="width:100%;justify-content:center">📤 Submit Report</button>
     <div id="submit-result" style="margin-top:12px"></div>
   </div>
 </div>
@@ -211,7 +211,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 // ── State ──────────────────────────────────────────────────────────────────
 const _programs = {};   // handle → program data for scope modal
 let _modalTarget = '';
@@ -311,6 +311,15 @@ function closeScopeModal() {
   document.getElementById('scope-modal').style.display = 'none';
 }
 
+function closeModalIfBackdrop(evt) {
+  if (evt.target === this) closeScopeModal();
+}
+
+function clearAndSearchH1() {
+  document.getElementById('h1-keyword').value = '';
+  searchH1Programs();
+}
+
 function scanModalTarget() {
   if (_modalTarget) {
     sessionStorage.setItem('quickTarget', _modalTarget);
@@ -342,7 +351,7 @@ async function searchH1Programs() {
     _programs[handle] = { ...p, main_domain: handle ? handle + '.com' : '' };
     const stateCls = p.submission_state === 'open' ? 'badge-low' : 'badge-medium';
     const logoHtml = p.logo
-      ? `<img src="${escHtml(p.logo)}" style="width:32px;height:32px;border-radius:4px;object-fit:contain;margin-right:10px;flex-shrink:0" onerror="this.style.display='none'" />`
+      ? `<img src="${escHtml(p.logo)}" style="width:32px;height:32px;border-radius:4px;object-fit:contain;margin-right:10px;flex-shrink:0" data-onerror="hideImgOnError" />`
       : `<div style="width:32px;height:32px;border-radius:4px;background:var(--bg);display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;font-size:16px">🎯</div>`;
     return `
       <div style="padding:14px;border:1px solid var(--border);border-radius:8px;display:flex;flex-direction:column;gap:8px;background:var(--bg-card)">
@@ -365,8 +374,8 @@ async function searchH1Programs() {
         </div>
 
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
-          <button class="btn btn-secondary btn-sm" onclick="openScopeModal('${escHtml(handle)}')">🔍 View Scope</button>
-          <button class="btn btn-primary btn-sm" onclick="scanTarget('${escHtml(handle+'.com')}')">🎯 Scan Target</button>
+          <button class="btn btn-secondary btn-sm" data-onclick="openScopeModal" data-onclick-args="${optisecArgs([handle])}">🔍 View Scope</button>
+          <button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([handle+'.com'])}">🎯 Scan Target</button>
           <a href="${escHtml(p.url)}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">↗ Open</a>
         </div>
       </div>`;
@@ -449,7 +458,7 @@ async function loadBCPrograms() {
 
   grid.innerHTML = (data.programs || []).map(p => {
     const logoHtml = p.logo
-      ? `<img src="${escHtml(p.logo)}" style="width:32px;height:32px;border-radius:4px;object-fit:contain;margin-right:10px;flex-shrink:0" onerror="this.style.display='none'" />`
+      ? `<img src="${escHtml(p.logo)}" style="width:32px;height:32px;border-radius:4px;object-fit:contain;margin-right:10px;flex-shrink:0" data-onerror="hideImgOnError" />`
       : `<div style="width:32px;height:32px;border-radius:4px;background:var(--bg);display:flex;align-items:center;justify-content:center;margin-right:10px;flex-shrink:0;font-size:16px">🐛</div>`;
     const domain = p.code ? p.code + '.com' : '';
     return `
@@ -465,7 +474,7 @@ async function loadBCPrograms() {
         ${p.tagline ? `<div style="font-size:11px;color:var(--text-dim);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${escHtml(p.tagline)}</div>` : ''}
         <div style="font-size:12px;color:var(--accent);font-weight:600">${escHtml(p.reward_summary || (p.min_payout ? p.min_payout + ' – ' + (p.max_payout||'?') : ''))}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${domain ? `<button class="btn btn-primary btn-sm" onclick="scanTarget('${escHtml(domain)}')">🎯 Scan Target</button>` : ''}
+          ${domain ? `<button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([domain])}">🎯 Scan Target</button>` : ''}
           <a href="${escHtml(p.url||'#')}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">↗ Open</a>
         </div>
       </div>`;
@@ -485,7 +494,7 @@ async function loadBCTargets() {
         <span class="badge badge-${t.priority==='P1'?'critical':'medium'}" style="margin-left:4px">${t.priority||''}</span>
         <div style="color:var(--text-dim)">${escHtml(t.uri||'')}</div>
       </div>
-      ${t.uri ? `<button class="btn btn-primary btn-sm" onclick="scanTarget('${escHtml(t.uri)}')">🎯 Scan</button>` : ''}
+      ${t.uri ? `<button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([t.uri])}">🎯 Scan</button>` : ''}
     </div>`).join('') || '<div class="text-dim">No targets — enter a program code above</div>';
 }
 
@@ -519,7 +528,7 @@ async function loadIGPrograms() {
             €${fmt(p.min_bounty||0)} – €${maxBounty ? fmt(maxBounty) : '?'}
           </div>` : ''}
         <div style="display:flex;gap:6px;flex-wrap:wrap">
-          ${handle ? `<button class="btn btn-primary btn-sm" onclick="scanTarget('${escHtml(handle+'.com')}')">🎯 Scan Target</button>` : ''}
+          ${handle ? `<button class="btn btn-primary btn-sm" data-onclick="scanTarget" data-onclick-args="${optisecArgs([handle+'.com'])}">🎯 Scan Target</button>` : ''}
           <a href="${escHtml(p.url||'#')}" target="_blank" class="btn btn-secondary btn-sm" style="text-decoration:none">↗ Open</a>
         </div>
       </div>`;

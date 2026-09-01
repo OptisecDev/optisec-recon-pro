@@ -4,9 +4,9 @@
 
 {% block content %}
 <div style="margin-bottom:16px;display:flex;gap:8px">
-  <button class="btn btn-primary" onclick="showTab('engagements')">🎯 Engagements</button>
-  <button class="btn btn-secondary" onclick="showTab('new')">➕ New Engagement</button>
-  <button class="btn btn-secondary" onclick="showTab('library')">📚 Technique Library</button>
+  <button class="btn btn-primary" data-onclick="showTab" data-onclick-args='["engagements"]'>🎯 Engagements</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["new"]'>➕ New Engagement</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["library"]'>📚 Technique Library</button>
 </div>
 
 <!-- Engagements List -->
@@ -14,7 +14,7 @@
   {% if engagements %}
   <div class="grid-2">
     {% for eng in engagements %}
-    <div class="card" onclick="loadEngagement('{{ eng.id }}')" style="cursor:pointer">
+    <div class="card" data-onclick="loadEngagement" data-onclick-args='{{ [eng.id] | tojson }}' style="cursor:pointer">
       <div class="card-header">
         <div>
           <div class="card-title">{{ eng.id }}</div>
@@ -39,7 +39,7 @@
   <div class="card" style="text-align:center;padding:40px">
     <div style="font-size:48px;margin-bottom:12px">🎯</div>
     <div style="color:var(--text-dim)">No engagements yet. Create your first AI Red Team engagement.</div>
-    <button class="btn btn-primary" style="margin-top:12px" onclick="showTab('new')">Create Engagement</button>
+    <button class="btn btn-primary" style="margin-top:12px" data-onclick="showTab" data-onclick-args='["new"]'>Create Engagement</button>
   </div>
   {% endif %}
   <div id="engagement-detail" style="margin-top:16px"></div>
@@ -78,7 +78,7 @@
       <label>Rules of Engagement</label>
       <textarea id="eng-roe" rows="3" placeholder="No production data exfiltration. No DoS. Test only on agreed systems..."></textarea>
     </div>
-    <button class="btn btn-primary" onclick="createEngagement()" style="width:100%;justify-content:center">
+    <button class="btn btn-primary" data-onclick="createEngagement" style="width:100%;justify-content:center">
       🤖 Generate AI Red Team Plan
     </button>
     <div id="eng-result" style="margin-top:12px"></div>
@@ -114,7 +114,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function showTab(name) {
   ['engagements','new','library'].forEach(t => {
     const el = document.getElementById(`tab-${t}`);
@@ -202,7 +202,7 @@ function renderEngagementDetail(data) {
       </div>` : ''}
 
       <div style="margin-top:12px">
-        <button class="btn btn-secondary btn-sm" onclick="showLogFinding('${data.id}')">➕ Log Finding</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="showLogFinding" data-onclick-args="${optisecArgs([data.id])}">➕ Log Finding</button>
       </div>
 
       <div id="log-finding-form-${data.id}" style="display:none;margin-top:12px">
@@ -211,7 +211,7 @@ function renderEngagementDetail(data) {
           <select id="finding-sev-${data.id}"><option>critical</option><option>high</option><option>medium</option><option>low</option></select>
         </div>
         <div class="form-group"><label>Description</label><textarea id="finding-desc-${data.id}" rows="2"></textarea></div>
-        <button class="btn btn-primary btn-sm" onclick="logFinding('${data.id}')">Save Finding</button>
+        <button class="btn btn-primary btn-sm" data-onclick="logFinding" data-onclick-args="${optisecArgs([data.id])}">Save Finding</button>
       </div>
     </div>`;
 }

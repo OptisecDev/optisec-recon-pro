@@ -34,7 +34,7 @@
     </div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <input type="text" id="cve-keyword" placeholder="Search keyword or CVE-XXXX-XXXXX" style="flex:1" />
-      <button class="btn btn-primary btn-sm" onclick="searchCVE()">Search</button>
+      <button class="btn btn-primary btn-sm" data-onclick="searchCVE">Search</button>
     </div>
     <div id="cve-search-results"></div>
   </div>
@@ -51,7 +51,7 @@
       <select id="finding-select" style="flex:1">
         <option value="">Loading findings…</option>
       </select>
-      <button class="btn btn-primary btn-sm" onclick="draftFromFinding()">Generate</button>
+      <button class="btn btn-primary btn-sm" data-onclick="draftFromFinding">Generate</button>
     </div>
     <div id="finding-draft-result" style="margin-top:12px"></div>
   </div>
@@ -103,7 +103,7 @@
       <label>PoC / Reference URL (optional)</label>
       <input type="text" id="submit-poc" placeholder="https://github.com/..." />
     </div>
-    <button class="btn btn-primary" onclick="draftCVE()" style="width:100%;justify-content:center">
+    <button class="btn btn-primary" data-onclick="draftCVE" style="width:100%;justify-content:center">
       📝 Save Draft · حفظ المسودة
     </button>
     <div id="draft-result" style="margin-top:12px"></div>
@@ -111,14 +111,14 @@
 
   <div class="cve-card">
     <div class="card-header"><div class="card-title">📋 المسودات · CVE Drafts</div></div>
-    <button class="btn btn-secondary btn-sm" onclick="loadCVEDrafts()" style="margin-bottom:12px">Refresh</button>
+    <button class="btn btn-secondary btn-sm" data-onclick="loadCVEDrafts" style="margin-bottom:12px">Refresh</button>
     <div id="cve-drafts"></div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 async function searchCVE() {
   const kw = document.getElementById('cve-keyword').value.trim();
   if (!kw) return;

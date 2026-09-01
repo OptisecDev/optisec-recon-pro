@@ -57,10 +57,10 @@
 </div>
 
 <div class="tabs" style="margin-bottom:20px">
-  <button class="tab-btn active" onclick="showTab('launch')">Launch Simulation</button>
-  <button class="tab-btn" onclick="showTab('phases')">Attack Phases</button>
-  <button class="tab-btn" onclick="showTab('payloads')">Payload Library</button>
-  <button class="tab-btn" onclick="showTab('sessions')">Session History</button>
+  <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["launch"]'>Launch Simulation</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["phases"]'>Attack Phases</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["payloads"]'>Payload Library</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["sessions"]'>Session History</button>
 </div>
 
 <!-- LAUNCH TAB -->
@@ -99,7 +99,7 @@
         <div style="display:flex;flex-wrap:wrap;gap:8px">
           {% set atypes = [("xss","XSS","🔗"),("sqli","SQLi","💉"),("ssrf","SSRF","🔄"),("lfi","LFI","📂"),("cmd_injection","Cmd Inj","💻"),("privilege_escalation","Priv Esc","⬆️")] %}
           {% for val,label,icon in atypes %}
-          <button class="attack-type-btn" data-val="{{ val }}" onclick="toggleAttackType(this)">
+          <button class="attack-type-btn" data-val="{{ val }}" data-onclick="toggleAttackType">
             <span style="font-size:16px">{{ icon }}</span>
             <span>{{ label }}</span>
           </button>
@@ -111,7 +111,7 @@
         <label class="toggle-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="art-ai" style="display:none">
           <div id="ai-toggle" style="width:36px;height:20px;background:var(--bg-secondary);border-radius:10px;
-            position:relative;transition:background 0.2s;border:1px solid var(--border);cursor:pointer" onclick="toggleAI()">
+            position:relative;transition:background 0.2s;border:1px solid var(--border);cursor:pointer" data-onclick="toggleAI">
             <div id="ai-knob" style="width:14px;height:14px;background:#888;border-radius:50%;
               position:absolute;top:2px;left:2px;transition:all 0.2s"></div>
           </div>
@@ -119,7 +119,7 @@
         </label>
       </div>
 
-      <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="launchSimulation()" id="launch-btn">
+      <button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px" data-onclick="launchSimulation" id="launch-btn">
         ⚡ Launch Autonomous Simulation
       </button>
 
@@ -186,14 +186,14 @@
           <div style="font-size:13px;font-weight:700">{{ cat.type }}{% if cat.subtype %} — {{ cat.subtype }}{% endif %}</div>
           <div style="font-size:10px;color:var(--text-dim)">{{ cat.payloads|length }} payloads</div>
         </div>
-        <button class="btn btn-secondary btn-sm" onclick="togglePayloads('{{ key }}')">Show Payloads</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="togglePayloads" data-onclick-args='{{ [key] | tojson }}'>Show Payloads</button>
       </div>
       {% if cat.bypass_waf %}
       <div style="font-size:10px;color:var(--text-dim)">WAF Bypass: {{ cat.bypass_waf | join(', ') }}</div>
       {% endif %}
       <div id="payloads-{{ key }}" style="display:none;margin-top:10px">
         {% for p in cat.payloads %}
-        <div class="payload-code" onclick="copyPayload(this)">{{ p }}</div>
+        <div class="payload-code" data-onclick="copyPayload">{{ p }}</div>
         {% endfor %}
         <div style="font-size:10px;color:var(--text-dim);margin-top:4px">Click payload to copy</div>
       </div>
@@ -207,7 +207,7 @@
   <div id="sessions-list">
     {% if sessions %}
       {% for s in sessions %}
-      <div class="session-card" onclick="viewSession('{{ s.id }}')">
+      <div class="session-card" data-onclick="viewSession" data-onclick-args='{{ [s.id] | tojson }}'>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
           <div>
             <div style="font-size:14px;font-weight:700">{{ s.id }}</div>
@@ -236,7 +236,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 const selectedTypes = new Set();
 
 function showTab(t) {
@@ -248,7 +248,8 @@ function showTab(t) {
   });
 }
 
-function toggleAttackType(btn) {
+function toggleAttackType() {
+  const btn = this;
   const val = btn.dataset.val;
   if (selectedTypes.has(val)) { selectedTypes.delete(val); btn.classList.remove('selected'); }
   else { selectedTypes.add(val); btn.classList.add('selected'); }
@@ -267,7 +268,8 @@ function togglePayloads(key) {
   el.style.display = el.style.display === 'none' ? '' : 'none';
 }
 
-function copyPayload(el) {
+function copyPayload() {
+  const el = this;
   navigator.clipboard?.writeText(el.textContent).then(() => {
     const orig = el.style.background;
     el.style.background = 'rgba(0,255,136,0.2)';
@@ -350,7 +352,7 @@ function renderResults(data) {
       <div style="font-size:11px;font-weight:700;margin-bottom:6px;color:var(--accent)">Compliance Impact:</div>
       ${Object.entries(report.compliance_impact||{}).map(([k,v])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:11px"><span>${k}</span><span style="color:${v.includes('NON')||v.includes('MATERIAL')?'#FF6B6B':'#FFA726'}">${v}</span></div>`).join('')}
     </div>` : ''}
-    <button class="btn btn-secondary btn-sm" onclick="viewFullReport('${data.id}')">View Full Report</button>
+    <button class="btn btn-secondary btn-sm" data-onclick="viewFullReport" data-onclick-args="${optisecArgs([data.id])}">View Full Report</button>
   `;
 }
 

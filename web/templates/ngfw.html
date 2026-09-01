@@ -51,10 +51,10 @@
 </div>
 
 <div class="tabs" style="margin-bottom:20px">
-  <button class="tab-btn active" onclick="showTab('inspect')">DPI Inspect</button>
-  <button class="tab-btn" onclick="showTab('traffic')">Traffic Log</button>
-  <button class="tab-btn" onclick="showTab('rules')">DPI Rules</button>
-  <button class="tab-btn" onclick="showTab('geo')">Geo Intelligence</button>
+  <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["inspect"]'>DPI Inspect</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["traffic"]'>Traffic Log</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["rules"]'>DPI Rules</button>
+  <button class="tab-btn" data-onclick="showTab" data-onclick-args='["geo"]'>Geo Intelligence</button>
 </div>
 
 <!-- DPI INSPECT TAB -->
@@ -91,8 +91,8 @@
           <label style="font-size:11px;color:var(--text-dim)">User-Agent</label>
           <input type="text" id="dpi-ua" class="form-control" placeholder="Mozilla/5.0 or sqlmap/1.7..." style="margin-top:4px;font-size:12px">
         </div>
-        <button class="btn btn-primary" onclick="runDPI()">Inspect Packet</button>
-        <button class="btn btn-secondary btn-sm" onclick="simulateTraffic()">Simulate 20 Requests</button>
+        <button class="btn btn-primary" data-onclick="runDPI">Inspect Packet</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="simulateTraffic">Simulate 20 Requests</button>
       </div>
     </div>
 
@@ -112,8 +112,8 @@
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
       <h3>Inspected Traffic Log</h3>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-secondary btn-sm" onclick="refreshTraffic()">Refresh</button>
-        <button class="btn btn-primary btn-sm" onclick="startAutoRefresh()" id="auto-btn">Auto (5s)</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="refreshTraffic">Refresh</button>
+        <button class="btn btn-primary btn-sm" data-onclick="startAutoRefresh" id="auto-btn">Auto (5s)</button>
       </div>
     </div>
     <div style="font-size:11px;color:var(--text-dim);margin-bottom:14px">
@@ -141,7 +141,7 @@
   <div class="fw-card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3>DPI Signature Database ({{ stats.dpi_rules_count }} rules)</h3>
-      <input type="text" class="form-control" style="max-width:200px;font-size:12px" placeholder="Search rules..." oninput="searchRules(this.value)">
+      <input type="text" class="form-control" style="max-width:200px;font-size:12px" placeholder="Search rules..." data-oninput="searchRulesFromInput">
     </div>
     <div id="rules-list">
       {% for rule in dpi_rules %}
@@ -209,7 +209,7 @@
   </div>
 </div>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 function showTab(t) {
   ['inspect','traffic','rules','geo'].forEach(id => {
     document.getElementById('tab-'+id).style.display = id===t?'':'none';
@@ -327,6 +327,10 @@ function startAutoRefresh() {
   const btn = document.getElementById('auto-btn');
   if (autoTimer) { clearInterval(autoTimer); autoTimer=null; btn.textContent='Auto (5s)'; btn.classList.remove('active'); }
   else { autoTimer=setInterval(refreshTraffic,5000); btn.textContent='Stop Auto'; btn.classList.add('active'); refreshTraffic(); }
+}
+
+function searchRulesFromInput() {
+  searchRules(this.value);
 }
 
 function searchRules(q) {
