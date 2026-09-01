@@ -51,7 +51,7 @@ EXPLOIT_DB_BASE = "https://www.exploit-db.com/search"
 CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 
 
-async def predict_zero_days(target_software: str, version: str = "") -> dict:
+async def predict_zero_days(target_software: str, version: str = "", user_id: Optional[int] = None) -> dict:
     """Predict zero-day risk for given software using threat intel + heuristics."""
     groq_key = os.environ.get("GROQ_API_KEY", "")
 
@@ -69,6 +69,7 @@ async def predict_zero_days(target_software: str, version: str = "") -> dict:
     prediction = {
         "target_software": target_software,
         "version": version,
+        "user_id": user_id,
         "analyzed_at": datetime.utcnow().isoformat(),
         "risk_score": ai_analysis.get("risk_score", 0.0),
         "risk_level": ai_analysis.get("risk_level", "unknown"),

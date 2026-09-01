@@ -63,6 +63,7 @@ async def create_engagement(
     objectives: list[str],
     categories: list[str],
     rules_of_engagement: str = "",
+    user_id: Optional[int] = None,
 ) -> dict:
     groq_key = os.environ.get("GROQ_API_KEY", "")
 
@@ -74,6 +75,7 @@ async def create_engagement(
     engagement = {
         "id": f"RT-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
         "target": target,
+        "user_id": user_id,
         "scope": scope,
         "objectives": objectives,
         "categories": categories,

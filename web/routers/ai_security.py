@@ -76,11 +76,17 @@ async def high_risk_entities(threshold: float = 0.5, user: User = Depends(_user)
 async def zero_day_home(request: Request, user: User = Depends(_user)):
     require_feature_or_402("zero_day_predict", user)
     from modules.ai_advanced.zero_day import list_predictions
-    preds = list_predictions()
+    preds = _own_predictions(list_predictions(), user)
     return templates.TemplateResponse(request, "zero_day.html", {
         "app_name": APP_NAME, "user": user, "active": "zero_day",
         "predictions": preds[:10],
     })
+
+
+def _own_predictions(predictions: list, user: User) -> list:
+    if user.role == "admin":
+        return predictions
+    return [p for p in predictions if p.get("user_id") == user.id]
 
 
 @router.post("/api/zero-day/predict")
@@ -91,6 +97,7 @@ async def predict(request: Request, user: User = Depends(_user)):
     return await predict_zero_days(
         target_software=data.get("software", ""),
         version=data.get("version", ""),
+        user_id=user.id,
     )
 
 
@@ -98,7 +105,7 @@ async def predict(request: Request, user: User = Depends(_user)):
 async def get_predictions(user: User = Depends(_user)):
     require_feature_or_402("zero_day_predict", user)
     from modules.ai_advanced.zero_day import list_predictions
-    return {"predictions": list_predictions()}
+    return {"predictions": _own_predictions(list_predictions(), user)}
 
 
 @router.get("/api/zero-day/trending")
@@ -149,13 +156,18 @@ async def get_history(user: User = Depends(_user)):
 
 # ── AI Red Team ───────────────────────────────────────────────────────────────
 
+def _owns_engagement(engagement: dict, user: User) -> bool:
+    return user.role == "admin" or engagement.get("user_id") == user.id
+
+
 @router.get("/red-team", response_class=HTMLResponse)
 async def red_team_home(request: Request, user: User = Depends(_user)):
     require_feature_or_402("ai_red_team", user)
     from modules.ai_advanced.red_team import list_engagements, get_technique_library, ATTACK_CATEGORIES
+    own_engagements = [e for e in list_engagements() if _owns_engagement(e, user)]
     return templates.TemplateResponse(request, "red_team.html", {
         "app_name": APP_NAME, "user": user, "active": "red_team",
-        "engagements": list_engagements()[:10],
+        "engagements": own_engagements[:10],
         "categories": ATTACK_CATEGORIES,
         "technique_library": get_technique_library(),
     })
@@ -172,6 +184,7 @@ async def create_engagement(request: Request, user: User = Depends(_user)):
         objectives=data.get("objectives", []),
         categories=data.get("categories", ["reconnaissance", "web_application"]),
         rules_of_engagement=data.get("roe", ""),
+        user_id=user.id,
     )
 
 
@@ -179,7 +192,8 @@ async def create_engagement(request: Request, user: User = Depends(_user)):
 async def list_engagements_api(user: User = Depends(_user)):
     require_feature_or_402("ai_red_team", user)
     from modules.ai_advanced.red_team import list_engagements
-    return {"engagements": list_engagements()}
+    engagements = [e for e in list_engagements() if _owns_engagement(e, user)]
+    return {"engagements": engagements}
 
 
 @router.get("/api/red-team/engagements/{engagement_id}")
@@ -187,7 +201,7 @@ async def get_engagement_api(engagement_id: str, user: User = Depends(_user)):
     require_feature_or_402("ai_red_team", user)
     from modules.ai_advanced.red_team import get_engagement
     eng = get_engagement(engagement_id)
-    if not eng:
+    if not eng or not _owns_engagement(eng, user):
         from fastapi import HTTPException
         raise HTTPException(404, f"Engagement {engagement_id} not found")
     return eng
@@ -196,6 +210,11 @@ async def get_engagement_api(engagement_id: str, user: User = Depends(_user)):
 @router.post("/api/red-team/engagements/{engagement_id}/findings")
 async def log_finding(engagement_id: str, request: Request, user: User = Depends(_user)):
     require_feature_or_402("ai_red_team", user)
+    from modules.ai_advanced.red_team import get_engagement
+    eng = get_engagement(engagement_id)
+    if not eng or not _owns_engagement(eng, user):
+        from fastapi import HTTPException
+        raise HTTPException(404, f"Engagement {engagement_id} not found")
     data = await request.json()
     from modules.ai_advanced.red_team import log_finding as _log
     return await _log(engagement_id, data)
