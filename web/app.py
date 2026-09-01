@@ -479,7 +479,7 @@ async def custom_redoc(request: Request):
   <style nonce="{request.state.csp_nonce}">body{{margin:0;background:#0d1117}}</style>
 </head>
 <body>
-  <redoc spec-url='/openapi.json'
+  <redoc spec-url='/openapi.json' nonce="{request.state.csp_nonce}"
     theme='{{"colors":{{"primary":{{"main":"#00ff88"}}}},"rightPanel":{{"backgroundColor":"#161b22"}},"sidebar":{{"backgroundColor":"#161b22"}}}}'
   ></redoc>
   <script src="https://cdn.jsdelivr.net/npm/redoc@latest/bundles/redoc.standalone.js"></script>
@@ -580,14 +580,48 @@ app.include_router(license_routes.page_router)
 #     relative same-origin path, and scan.html's WebSocket is built from
 #     location.host, both covered by 'self'.
 # COOP/COEP/CORP are still NOT set — separate from CSP, tracked separately.
+#
+# /redoc-specific additions (found broken — "Something went wrong..." — while
+# testing the SRI/pin change below, pre-existing since the CSP was first added
+# in 177ae70, unrelated to that commit's own template audit which only covers
+# static <script src=>/<link href=> tags, not what a loaded bundle injects at
+# runtime):
+#   - redoc@2.5.3 bundles styled-components v5, which injects its CSS via a
+#     runtime-created <style> tag. It reads the nonce off ReDoc's own `nonce`
+#     option (passed here as the `nonce` attribute on the <redoc> element,
+#     alongside the existing `theme`/`spec-url` attributes it already reads
+#     the same way) and threads it through to styled-components — that covers
+#     the non-empty stylesheet. Two more first-paint <style> tags come out
+#     empty (some measurement/reset step that runs before the nonce plumbing
+#     above takes effect) and so can't carry that nonce; they're covered
+#     instead by their own exact sha256 hash-source, computed by Chrome's own
+#     CSP violation report for redoc@2.5.3's exact bundle — a hash-source and
+#     a nonce-source are independent expressions in the same style-src
+#     directive, same as the nonce/host-source independence already noted
+#     above for script-src.
+#   - redoc's search feature runs in a Web Worker constructed from a `blob:`
+#     URL, which needs a worker-src (a CSP directive with no default fallback
+#     from script-src as of the Fetch-metadata-era spec now implemented here)
+#     — added scoped to 'self' and blob: only.
+#   - redoc's own sidebar badge loads a logo from cdn.redoc.ly (Redocly's own
+#     asset host, not jsdelivr) — added to img-src.
+# Verified with a real headless-Chromium load (playwright, same harness used
+# below for the SRI check): 0 console errors/warnings on /redoc after these
+# four additions, vs. 11 errors + a fatal "Something went wrong" render
+# before. /docs needed none of this — swagger-ui-dist doesn't inject
+# unnonced runtime styles or spawn workers.
 def _build_csp(nonce: str) -> str:
     return (
         "default-src 'none'; "
         f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-        f"style-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
-        "img-src 'self' data:; "
+        f"style-src 'self' 'nonce-{nonce}' "
+        "'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=' "
+        "'sha256-QMIg+bpjm3JdElJ388KYke01izlUW0UoNOeKjpMxdgc=' "
+        "https://cdn.jsdelivr.net; "
+        "img-src 'self' data: https://cdn.redoc.ly; "
         "font-src 'self' data:; "
         "connect-src 'self' https://cdn.jsdelivr.net; "
+        "worker-src 'self' blob:; "
         "frame-src 'none'; "
         "frame-ancestors 'none'; "
         "object-src 'none'; "
