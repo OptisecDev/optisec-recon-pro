@@ -20,6 +20,11 @@ GROQ_CONCURRENCY_LIMIT = int(os.environ.get("GROQ_CONCURRENCY_LIMIT", "20"))
 GROQ_TPM_LIMIT = int(os.environ.get("GROQ_TPM_LIMIT", "8000"))
 GROQ_TPD_LIMIT = int(os.environ.get("GROQ_TPD_LIMIT", "200000"))
 
+# Analytics — GA4 measurement ID for the public /landing and /redeem
+# purchase-path pages only. Empty by default: templates render no tracking
+# snippet at all until this is set.
+GA_MEASUREMENT_ID = os.environ.get("GA_MEASUREMENT_ID", "")
+
 # Threat Intelligence
 OTX_API_KEY = os.environ.get("OTX_API_KEY", "")
 OTX_BASE_URL = "https://otx.alienvault.com/api/v1"

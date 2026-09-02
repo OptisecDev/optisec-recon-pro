@@ -21,7 +21,7 @@ from web.database import get_db
 from web.models import User, LicenseKey
 from web.auth import get_current_user
 from web.shared_templates import templates
-from config import APP_NAME
+from config import APP_NAME, GA_MEASUREMENT_ID
 from license_utils import hash_license_key
 
 router = APIRouter(prefix="/api/subscription", tags=["subscription"])
@@ -97,4 +97,5 @@ async def subscription_status(user: User = Depends(_user)):
 async def redeem_page(request: Request, user: User | None = Depends(_user_optional)):
     return templates.TemplateResponse(request, "redeem.html", {
         "app_name": APP_NAME, "user": user, "active": "redeem",
+        "ga_measurement_id": GA_MEASUREMENT_ID,
     })

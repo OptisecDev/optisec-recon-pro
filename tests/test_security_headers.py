@@ -74,7 +74,9 @@ def test_csp_denies_by_default_and_allowlists_only_jsdelivr(client):
     assert "object-src 'none'" in csp
     assert "base-uri 'self'" in csp
     assert "form-action 'self'" in csp
-    # The only third-party origin the app actually loads anywhere.
+    # Third-party origins the app actually loads: jsdelivr everywhere, plus
+    # Google Analytics (gtag.js) scoped to the /landing and /redeem
+    # purchase-path pages only.
     assert "https://cdn.jsdelivr.net" in csp
     # No eval-requiring code anywhere in the frontend, so this must stay out.
     assert "unsafe-eval" not in csp

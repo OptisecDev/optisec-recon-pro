@@ -6,6 +6,17 @@
   <title>OPTISEC Recon Pro — منصة أمن المعلومات الاحترافية</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
   <link rel="stylesheet" href="/static/css/inline-extracted.css">
+  {% if ga_measurement_id %}
+  <script async nonce="{{ request.state.csp_nonce }}" src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
+  <script nonce="{{ request.state.csp_nonce }}">
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', '{{ ga_measurement_id }}');
+  </script>
+  {% else %}
+  <!-- TODO: set GA_MEASUREMENT_ID env var to enable Google Analytics (GA4) here -->
+  {% endif %}
   <style nonce="{{ request.state.csp_nonce }}">
     :root {
       --accent: #00ff88;

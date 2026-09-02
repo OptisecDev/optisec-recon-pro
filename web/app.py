@@ -64,7 +64,7 @@ from modules.ai.triage_engine import classify_findings_batch
 from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
-from config import APP_NAME, APP_VERSION, REPORTS_DIR, IS_PRODUCTION
+from config import APP_NAME, APP_VERSION, REPORTS_DIR, IS_PRODUCTION, GA_MEASUREMENT_ID
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
 from web.routers import darkweb_monitor
@@ -612,16 +612,21 @@ app.include_router(license_routes.page_router)
 # before. /docs needed none of this — swagger-ui-dist doesn't inject
 # unnonced runtime styles or spawn workers.
 def _build_csp(nonce: str) -> str:
+    # Google Analytics (GA4, gtag.js) additions below are scoped to Google's
+    # own analytics domains only — needed for the /landing and /redeem
+    # purchase-path pages' tracking snippet (web/templates/landing.html,
+    # web/templates/redeem.html), harmless no-op elsewhere since no other
+    # page loads gtag.js.
     return (
         "default-src 'none'; "
-        f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net; "
+        f"script-src 'self' 'nonce-{nonce}' https://cdn.jsdelivr.net https://www.googletagmanager.com; "
         f"style-src 'self' 'nonce-{nonce}' "
         "'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU=' "
         "'sha256-QMIg+bpjm3JdElJ388KYke01izlUW0UoNOeKjpMxdgc=' "
         "https://cdn.jsdelivr.net; "
-        "img-src 'self' data: https://cdn.redoc.ly; "
+        "img-src 'self' data: https://cdn.redoc.ly https://www.google-analytics.com https://www.googletagmanager.com; "
         "font-src 'self' data:; "
-        "connect-src 'self' https://cdn.jsdelivr.net; "
+        "connect-src 'self' https://cdn.jsdelivr.net https://www.google-analytics.com https://analytics.google.com https://www.googletagmanager.com; "
         "worker-src 'self' blob:; "
         "frame-src 'none'; "
         "frame-ancestors 'none'; "
@@ -954,6 +959,7 @@ async def on_http_exception(request: Request, exc: HTTPException):
         if request.url.path == "/":
             return templates.TemplateResponse(request, "landing.html", {
                 "app_name": APP_NAME, "version": APP_VERSION,
+                "ga_measurement_id": GA_MEASUREMENT_ID,
             })
         return RedirectResponse(f"/login?next={request.url.path}", status_code=302)
     if exc.status_code == 403 and not request.url.path.startswith("/api/"):
@@ -998,6 +1004,7 @@ async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
 async def landing_page(request: Request):
     return templates.TemplateResponse(request, "landing.html", {
         "app_name": APP_NAME, "version": APP_VERSION,
+        "ga_measurement_id": GA_MEASUREMENT_ID,
     })
 
 

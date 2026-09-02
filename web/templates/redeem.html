@@ -2,6 +2,20 @@
 {% block title %}Redeem License — {{ app_name }}{% endblock %}
 {% block page_title %}Redeem License Key{% endblock %}
 
+{% block head_extra %}
+{% if ga_measurement_id %}
+<script async nonce="{{ request.state.csp_nonce }}" src="https://www.googletagmanager.com/gtag/js?id={{ ga_measurement_id }}"></script>
+<script nonce="{{ request.state.csp_nonce }}">
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '{{ ga_measurement_id }}');
+</script>
+{% else %}
+<!-- TODO: set GA_MEASUREMENT_ID env var to enable Google Analytics (GA4) here -->
+{% endif %}
+{% endblock %}
+
 {% block content %}
 
 <div class="card ie826d2b22" >
