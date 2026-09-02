@@ -4,6 +4,7 @@ import time
 import secrets
 import hashlib
 import hmac
+import ipaddress
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -29,17 +30,54 @@ _TRUSTED_PROXY_IPS = {
     ip.strip() for ip in os.environ.get("TRUSTED_PROXY_IPS", "").split(",") if ip.strip()
 }
 
+# Render sets this on every service automatically; it cannot be supplied by
+# an external client (it's an env var, not a header), so it's a safe signal
+# that we're deployed on Render's network.
+_ON_RENDER = bool(os.environ.get("RENDER"))
+
+
+def _is_valid_ip(value: str) -> bool:
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        return False
+
 
 def get_client_ip(request: Request) -> str:
-    """Return the real client IP, honoring X-Forwarded-For/X-Real-IP only
-    when the immediate connecting peer is a trusted reverse proxy."""
+    """Return the real client IP.
+
+    Render's web services are never directly reachable from the public
+    internet -- every request is proxied through Render's own edge, which
+    (confirmed against onrender.com response headers: server: cloudflare,
+    cf-ray, x-render-origin-server) is Cloudflare. Cloudflare sets
+    CF-Connecting-IP from the actual TCP connection to its edge and an
+    external client cannot forge it (Cloudflare docs), so on Render this is
+    the only header safe to trust unconditionally.
+
+    X-Forwarded-For is NOT safe to trust by taking "the first entry": per
+    Cloudflare's own docs, Cloudflare *appends* its verified IP to whatever
+    X-Forwarded-For the client already sent rather than replacing it, so an
+    attacker can prepend arbitrary fake IPs and the real one ends up
+    somewhere other than position 0. TRUSTED_PROXY_IPS/X-Forwarded-For below
+    stays as the mechanism for non-Render deployments (e.g. self-hosted
+    behind Nginx), where the operator controls and can pin the proxy's IP.
+    """
     direct_ip = request.client.host if request.client else "unknown"
+
+    if _ON_RENDER:
+        cf_ip = request.headers.get("CF-Connecting-IP")
+        if cf_ip and _is_valid_ip(cf_ip.strip()):
+            return cf_ip.strip()
+
     if direct_ip in _TRUSTED_PROXY_IPS:
         forwarded_for = request.headers.get("X-Forwarded-For")
         if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
+            candidate = forwarded_for.split(",")[0].strip()
+            if _is_valid_ip(candidate):
+                return candidate
         real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
+        if real_ip and _is_valid_ip(real_ip.strip()):
             return real_ip.strip()
     return direct_ip
 
