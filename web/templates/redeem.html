@@ -12,10 +12,18 @@
     </div>
   </div>
 
+  {% if user %}
   <div class="info-row ie8e86974b" >
     <span class="info-label">الخطة الحالية / Current plan</span>
     <span class="lic-badge lic-badge-{{ user.subscription_tier }}">{{ user.subscription_tier|upper }}</span>
   </div>
+  {% else %}
+  <div class="info-row ie8e86974b" >
+    <span class="info-label">
+      <a href="/login?next=/redeem">سجّل الدخول</a> لاستبدال مفتاحك / <a href="/login?next=/redeem">Log in</a> to redeem your key
+    </span>
+  </div>
+  {% endif %}
 
   <div id="redeem-alert" class="ie7715c83f"></div>
 
@@ -68,6 +76,12 @@ document.getElementById('redeem-form').addEventListener('submit', async (e) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ license_key: key }),
     });
+    if (res.status === 401) {
+      showRedeemAlert('Please log in to redeem a key — redirecting…', 'error');
+      setTimeout(() => window.location.href = '/login?next=/redeem', 1200);
+      return;
+    }
+
     const data = await res.json();
 
     if (res.ok && data.success) {

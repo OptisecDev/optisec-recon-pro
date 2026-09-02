@@ -34,6 +34,17 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     return await get_current_user(request, db)
 
 
+async def _user_optional(request: Request, db: AsyncSession = Depends(get_db)) -> User | None:
+    """Same as _user, but returns None instead of raising 401 — lets the
+    /redeem page render its pricing/purchase info for anonymous visitors
+    while the actual redeem action (POST /api/subscription/redeem) still
+    requires a real login via _user."""
+    try:
+        return await get_current_user(request, db)
+    except HTTPException:
+        return None
+
+
 class RedeemRequest(BaseModel):
     license_key: str
 
@@ -83,7 +94,7 @@ async def subscription_status(user: User = Depends(_user)):
 # above, which upgrades this account's User.subscription_tier.
 
 @page_router.get("/redeem", response_class=HTMLResponse, include_in_schema=False)
-async def redeem_page(request: Request, user: User = Depends(_user)):
+async def redeem_page(request: Request, user: User | None = Depends(_user_optional)):
     return templates.TemplateResponse(request, "redeem.html", {
         "app_name": APP_NAME, "user": user, "active": "redeem",
     })
