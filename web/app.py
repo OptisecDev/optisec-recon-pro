@@ -969,7 +969,7 @@ async def on_http_exception(request: Request, exc: HTTPException):
         return templates.TemplateResponse(request, "error.html", {
             "app_name": APP_NAME, "error": "Access denied", "code": 403
         }, status_code=403)
-    return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+    return JSONResponse({"error": exc.detail}, status_code=exc.status_code, headers=exc.headers)
 
 
 # ─── Auth Dependency ──────────────────────────────────────────────────────────

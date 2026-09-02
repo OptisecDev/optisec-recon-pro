@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from license_utils import generate_license_key, hash_license_key
 from web.database import get_db
 from web.models import LicenseKey, PendingPayment
+from web.rate_limit import rate_limiter
 from web.services.email_delivery import send_license_key_email
 from web.services.nowpayments_client import NowPaymentsError, build_order_id, create_invoice
 
@@ -38,6 +39,36 @@ router = APIRouter(prefix="/api/payments", tags=["payments"])
 webhook_router = APIRouter(tags=["payments"])
 
 PRO_PRICE_USD = 399.0
+
+# ─── Rate limiting ──────────────────────────────────────────────────────────
+# create-invoice: tight per-IP cap (env-tunable) — an anonymous, unauthenticated
+# endpoint that calls the paid NOWPayments API and writes a DB row per call.
+_CREATE_INVOICE_RATE_LIMIT_WINDOW = 600  # 10 minutes
+
+
+def _create_invoice_rate_limit_max() -> int:
+    return int(os.environ.get("RATE_LIMIT_CREATE_INVOICE", "5"))
+
+
+_create_invoice_limiter = rate_limiter(
+    "payments_create_invoice", _create_invoice_rate_limit_max, _CREATE_INVOICE_RATE_LIMIT_WINDOW
+)
+
+# webhook: a much looser cap — this is the unauthenticated NOWPayments IPN
+# receiver. It must never block NOWPayments' own legitimate retry traffic
+# (same order_id can be re-notified several times), so this is only a flood
+# backstop, not a strict per-order gate; signature verification (below) is
+# what actually rejects forged calls.
+_WEBHOOK_RATE_LIMIT_WINDOW = 60  # 1 minute
+
+
+def _webhook_rate_limit_max() -> int:
+    return int(os.environ.get("RATE_LIMIT_NOWPAYMENTS_WEBHOOK", "30"))
+
+
+_webhook_limiter = rate_limiter(
+    "nowpayments_webhook", _webhook_rate_limit_max, _WEBHOOK_RATE_LIMIT_WINDOW
+)
 
 # Statuses where the payment is definitively over and no LicenseKey is
 # ever generated. "partially_paid" is handled separately (logged for
@@ -56,7 +87,11 @@ class CreateInvoiceResponse(BaseModel):
     order_id: str
 
 
-@router.post("/create-invoice", response_model=CreateInvoiceResponse)
+@router.post(
+    "/create-invoice",
+    response_model=CreateInvoiceResponse,
+    dependencies=[Depends(_create_invoice_limiter)],
+)
 async def create_payment_invoice(
     body: CreateInvoiceRequest,
     db: AsyncSession = Depends(get_db),
@@ -116,7 +151,11 @@ def _verify_ipn_signature(raw_body: bytes, signature_header: str, secret: str) -
     return hmac.compare_digest(computed, signature_header), payload
 
 
-@webhook_router.post("/webhooks/nowpayments", include_in_schema=False)
+@webhook_router.post(
+    "/webhooks/nowpayments",
+    include_in_schema=False,
+    dependencies=[Depends(_webhook_limiter)],
+)
 async def nowpayments_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     raw_body = await request.body()
     signature = request.headers.get("x-nowpayments-sig", "")
