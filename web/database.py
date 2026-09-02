@@ -1,7 +1,20 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+
+# Standalone scripts (generate_licenses_admin.py, web/migrate_add_*.py, ...)
+# import this module directly without ever importing config.py, which is
+# otherwise the only place that calls load_dotenv(). Without this, DATABASE_URL
+# below reads only the real process environment, silently missing .env's
+# value and falling back to local SQLite -- while the actual Render/Neon
+# production DB goes untouched. load_dotenv() never overrides an already-set
+# env var, so this is a no-op in production, where Render sets DATABASE_URL
+# directly and there is no .env file.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 def _ensure_asyncpg_driver(database_url: str) -> str:
     """Force the ``+asyncpg`` driver on any bare postgres(ql):// URL.

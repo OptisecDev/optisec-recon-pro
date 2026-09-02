@@ -39,6 +39,9 @@ def main() -> None:
     parser.add_argument("--count", type=int, required=True, help="Number of keys to generate")
     parser.add_argument("--tier", default="pro", help="Tier to grant on redemption (default: pro)")
     parser.add_argument("--note", default="", help="Optional note stored alongside each key")
+    parser.add_argument("--raw", action="store_true",
+                         help="Print only the raw key(s), one per line, no other text — "
+                              "for piping straight into a clipboard tool")
     args = parser.parse_args()
 
     if args.count < 1:
@@ -46,6 +49,11 @@ def main() -> None:
         sys.exit(1)
 
     raw_keys = asyncio.run(generate(args.count, args.tier, args.note))
+
+    if args.raw:
+        for key in raw_keys:
+            print(key)
+        return
 
     print(f"[OPTISEC] Generated {len(raw_keys)} license key(s), tier={args.tier!r}")
     print("[OPTISEC] Raw keys (shown once — copy these now for SellApp upload):")

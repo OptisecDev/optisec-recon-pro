@@ -49,6 +49,38 @@ class LicenseKey(Base):
     redeemer = relationship("User")
 
 
+class PendingPayment(Base):
+    """One row per NOWPayments invoice created via
+    web/routers/payment_routes.py's POST /api/payments/create-invoice —
+    tracks a purchase from invoice creation through the
+    POST /webhooks/nowpayments IPN that eventually completes it. Unlike
+    LicenseKey above (pre-generated in bulk, sold as SellApp Unique Codes),
+    a PendingPayment's LicenseKey is generated on demand, only once
+    payment_status == "finished", and the row is looked up by order_id
+    (not payment_id, which NOWPayments only assigns once the first webhook
+    call arrives) — see build_order_id() in web/services/nowpayments_client.py."""
+    __tablename__ = "pending_payments"
+
+    id = Column(Integer, primary_key=True)
+    order_id = Column(String(120), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False)
+    tier = Column(String(20), default="pro")
+    price_amount = Column(Float, nullable=False)
+    price_currency = Column(String(10), default="usd")
+    # NOWPayments' own payment id — absent until the first webhook call.
+    payment_id = Column(String(64), nullable=True, index=True)
+    # pending -> completed | failed | expired | refunded | partially_paid,
+    # or an in-flight NOWPayments status (e.g. "confirming") stored verbatim
+    # for visibility while no LicenseKey is generated yet.
+    status = Column(String(20), default="pending", nullable=False)
+    # Set exactly once a LicenseKey is generated for this order. The webhook
+    # checks this (not just status) to guarantee at most one LicenseKey per
+    # order_id even if NOWPayments retries the same "finished" notification.
+    license_key_hash = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class Target(Base):
     __tablename__ = "targets"
 

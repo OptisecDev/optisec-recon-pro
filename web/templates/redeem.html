@@ -58,8 +58,23 @@
   </form>
 
   <div class="ie6fe27512">
-    Don't have a key yet?
-    <a href="https://optisecdev.github.io/optisec-store/#products" target="_blank" rel="noopener noreferrer">Buy PRO — $399 one-time</a>
+    <div class="iefc9973a7">Don't have a key yet? Buy PRO — $399 one-time</div>
+    <form id="buy-pro-form" class="ie1a0c9c83">
+      <input type="email" id="buy-pro-email" placeholder="you@example.com"
+             class="ie1cea24b1" autocomplete="email" required />
+      <button type="submit" class="btn btn-primary" id="buy-pro-btn">💳 Pay with Crypto — $399</button>
+    </form>
+    <div id="buy-pro-alert" class="ie7715c83f"></div>
+    <!--
+    Manual USDT purchase flow (pre-NOWPayments) — kept, not deleted, as a
+    documented fallback until a real NOWPayments purchase has been
+    confirmed working end-to-end. Re-enable this link (and remove the
+    "Having trouble" note below) if NOWPayments needs to be rolled back:
+    <a href="https://optisecdev.github.io/optisec-store/#products" target="_blank" rel="noopener noreferrer">Buy PRO — $399 one-time (manual USDT)</a>
+    -->
+    <div class="ief7bb9223">
+      Having trouble? <a href="mailto:ahssanali84.syber@gmail.com">Email us</a> and we'll help you complete the purchase manually.
+    </div>
   </div>
   <p class="ie-refund-note">
     💚 Full refund within 7 days of purchase if you're not satisfied.
@@ -114,6 +129,42 @@ document.getElementById('redeem-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
     btn.textContent = '✓ Redeem Key';
   }
+});
+
+document.getElementById('buy-pro-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const emailInput = document.getElementById('buy-pro-email');
+  const btn = document.getElementById('buy-pro-btn');
+  const alertEl = document.getElementById('buy-pro-alert');
+  const email = emailInput.value.trim();
+  if (!email) return;
+
+  alertEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Starting checkout…';
+
+  try {
+    const res = await fetch('/api/payments/create-invoice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+
+    if (res.ok && data.invoice_url) {
+      window.location.href = data.invoice_url;
+      return;
+    }
+    alertEl.className = 'alert alert-error';
+    alertEl.textContent = '✗ ' + (data.detail || 'Could not start checkout — please try again');
+    alertEl.style.display = 'block';
+  } catch (err) {
+    alertEl.className = 'alert alert-error';
+    alertEl.textContent = '✗ Network error — please try again';
+    alertEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = '💳 Pay with Crypto — $399';
 });
 </script>
 {% endblock %}

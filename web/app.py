@@ -72,6 +72,7 @@ from web.routers import honeypot as honeypot_router
 from web.routers import threat_sharing as threat_sharing_router
 from web.routers import cve_submission as cve_router
 from web.routers import license_routes
+from web.routers import payment_routes
 from web.routers import ioc as ioc_router
 from modules.ioc_correlation import run_correlation, load_cached
 
@@ -511,6 +512,8 @@ app.include_router(cve_router.router)
 app.include_router(ioc_router.router)
 app.include_router(license_routes.router)
 app.include_router(license_routes.page_router)
+app.include_router(payment_routes.router)
+app.include_router(payment_routes.webhook_router)
 
 
 # ─── Security response headers ─────────────────────────────────────────────────
