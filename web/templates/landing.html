@@ -166,6 +166,7 @@
     .dot-r { background: #ff5f56; } .dot-y { background: #ffbd2e; } .dot-g { background: #27c93f; }
     .preview-url { flex: 1; text-align: center; font-size: 12px; color: var(--dim); font-family: monospace; }
     .preview-body { padding: 0; }
+    .preview-screenshot { display: block; width: 100%; height: auto; }
 
     /* Mini dashboard mockup */
     .mock-layout { display: flex; height: 400px; }
@@ -350,44 +351,7 @@
         <div class="preview-url">localhost:8000 — OPTISEC Dashboard</div>
       </div>
       <div class="preview-body">
-        <div class="mock-layout">
-          <div class="mock-sidebar">
-            <div class="mock-logo">🛡️ OPTISEC</div>
-            <div class="mock-nav-item active">🏠 Dashboard</div>
-            <div class="mock-nav-item">🔍 Scan</div>
-            <div class="mock-nav-item">🎯 Targets</div>
-            <div class="mock-nav-item">💰 Bug Bounty</div>
-            <div class="mock-nav-item">🧠 UEBA</div>
-            <div class="mock-nav-item">🔮 Zero-Day</div>
-            <div class="mock-nav-item">🕸️ Dark Web</div>
-            <div class="mock-nav-item">🤖 Auto RT</div>
-            <div class="mock-nav-item">⚛️ Quantum</div>
-          </div>
-          <div class="mock-main">
-            <div class="mock-stats">
-              <div class="mock-stat"><div class="mock-stat-val ie146bf057" >12</div><div class="mock-stat-lbl">Targets</div></div>
-              <div class="mock-stat"><div class="mock-stat-val ie85e4e68a" >47</div><div class="mock-stat-lbl">Scans</div></div>
-              <div class="mock-stat"><div class="mock-stat-val ie040f94f7" >183</div><div class="mock-stat-lbl">Findings</div></div>
-              <div class="mock-stat"><div class="mock-stat-val ie6b6037b9" >8</div><div class="mock-stat-lbl">Critical</div></div>
-            </div>
-            <div class="mock-row">
-              <div class="mock-card">
-                <div class="mock-card-title">Vulnerability Breakdown</div>
-                <div class="mock-bar"><div class="mock-bar-fill iead424967" ></div></div>
-                <div class="mock-bar"><div class="mock-bar-fill ie89a7eb59" ></div></div>
-                <div class="mock-bar"><div class="mock-bar-fill iedf7a0900" ></div></div>
-                <div class="mock-bar"><div class="mock-bar-fill ie2a8d5576" ></div></div>
-              </div>
-              <div class="mock-card">
-                <div class="mock-card-title">Recent Scans</div>
-                <div class="mock-table-row"><span class="ie63ef97ae">tesla.com</span><span class="mock-badge mock-badge-g">done</span></div>
-                <div class="mock-table-row"><span class="ie63ef97ae">google.com</span><span class="mock-badge mock-badge-o">running</span></div>
-                <div class="mock-table-row"><span class="ie63ef97ae">apple.com</span><span class="mock-badge mock-badge-g">done</span></div>
-                <div class="mock-table-row"><span class="ie63ef97ae">amazon.com</span><span class="mock-badge mock-badge-r">failed</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <img src="/static/screenshots/dashboard.png" alt="OPTISEC Dashboard — real screenshot" class="preview-screenshot">
       </div>
     </div>
   </div>
