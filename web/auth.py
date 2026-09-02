@@ -247,5 +247,17 @@ def require_roles(*roles: str):
     return check
 
 
+def require_login(user) -> None:
+    """Any authenticated user, regardless of role.
+
+    get_current_user already rejects unauthenticated requests (401) before
+    this runs, so this only exists to be called the same way require_admin
+    and require_analyst_or_admin are, for routes that must stay open to
+    every logged-in role.
+    """
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+
 require_admin = require_roles("admin")
 require_analyst_or_admin = require_roles("admin", "analyst")

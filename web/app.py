@@ -38,7 +38,7 @@ from web.schemas import (
 from web.auth import (
     verify_password, hash_password, create_access_token,
     generate_api_key, hash_api_key, get_current_user, get_ws_user,
-    require_admin, require_analyst_or_admin,
+    require_admin, require_analyst_or_admin, require_login,
     check_rate_limit, record_failed_attempt, clear_attempts,
     log_auth_event, validate_password_strength, get_client_ip,
     generate_csrf_token, verify_csrf_token,
@@ -2396,7 +2396,7 @@ async def license_activate_form(
     csrf_token: str = Form(...),
     user: User = Depends(web_user),
 ):
-    require_admin(user)
+    require_login(user)
     if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
         raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
     ip = get_client_ip(request)
@@ -2448,7 +2448,7 @@ async def license_deactivate_form(
     csrf_token: str = Form(...),
     user: User = Depends(web_user),
 ):
-    require_admin(user)
+    require_login(user)
     if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
         raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
     deactivate_license()
