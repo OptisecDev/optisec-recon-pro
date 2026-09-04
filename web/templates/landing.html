@@ -97,7 +97,7 @@
     .hero-badge-dot { width: 6px; height: 6px; background: var(--accent); border-radius: 50%; animation: blink 2s ease-in-out infinite; }
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
     .hero-title {
-      font-size: clamp(36px, 6vw, 64px); font-weight: 800; line-height: 1.1;
+      font-size: clamp(30px, 5vw, 52px); font-weight: 800; line-height: 1.55;
       color: var(--text); margin-bottom: 20px; direction: rtl;
     }
     .hero-title .accent { color: var(--accent); }
@@ -159,6 +159,20 @@
     .feature-title { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 6px; direction: rtl; }
     .feature-desc  { font-size: 13px; color: var(--dim); line-height: 1.6; direction: rtl; }
     .feature-badge { display: inline-block; margin-top: 10px; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 10px; }
+
+    /* ── ROADMAP (coming soon) CARDS ── */
+    .roadmap-heading { display: flex; align-items: center; gap: 12px; margin-top: 64px; flex-wrap: wrap; }
+    .roadmap-badge-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(188,140,255,0.1); border: 1px solid rgba(188,140,255,0.35);
+      color: var(--purple); font-size: 11px; font-weight: 700;
+      padding: 4px 12px; border-radius: 20px; letter-spacing: 0.5px;
+    }
+    .roadmap-sub { font-size: 14px; color: var(--dim); margin-top: 6px; direction: rtl; }
+    .feature-card.roadmap-card {
+      background: rgba(22,27,34,0.5); border: 1px dashed var(--border); opacity: 0.85;
+    }
+    .feature-card.roadmap-card:hover { opacity: 1; }
 
     /* ── DASHBOARD PREVIEW ── */
     .preview-wrap {
@@ -308,8 +322,9 @@
       v4.0 SINGULARITY — الآن متاح
     </div>
     <h1 class="hero-title">
-      منصة <span class="accent">أمن المعلومات</span><br>
-      الاحترافية لـ Bug Bounty
+      أول ماسح ثغرات ذكي <span class="accent">يفهم العربية</span><br>
+      افحص، حلّل بالذكاء الاصطناعي،<br>
+      وأرسل تقريرك لـHackerOne مباشرة
     </h1>
     <p class="hero-sub">
       أقوى منصة عربية للكشف عن الثغرات الأمنية — مدعومة بالذكاء الاصطناعي،
@@ -331,10 +346,6 @@
   <div class="stat-item">
     <div class="stat-num" data-count="13">0</div>
     <div class="stat-lbl">وحدة فحص</div>
-  </div>
-  <div class="stat-item">
-    <div class="stat-num" data-count="32">0</div>
-    <div class="stat-lbl">ميزة أمنية</div>
   </div>
   <div class="stat-item">
     <div class="stat-num" data-count="29">0</div>
@@ -376,11 +387,29 @@
   <p class="section-sub">من الفحص الأساسي إلى الذكاء الاصطناعي المتقدم وما وراء ذلك.</p>
 
   <div class="features-grid">
-    {% set features = [
+    {% set core_features = [
       ('🔍', 'فحص الثغرات الأمنية', 'XSS، SQLi، SSRF، LFI، Open Redirect — مع payload ذكي وكشف آلي.', '#00ff88', 'CORE'),
       ('🧠', 'ذكاء اصطناعي Groq LLaMA', 'تحليل نتائج الفحص وتوليد تقارير أمنية احترافية بالذكاء الاصطناعي.', '#bc8cff', 'AI'),
       ('💬', 'أوامر عربية NLP', 'اكتب أوامرك بالعربية مثل "افحص tesla.com عن ثغرات XSS" وسيفهم النظام.', '#00ff88', 'عربي'),
       ('💰', 'Bug Bounty Platform', 'تكامل مع HackerOne وBugcrowd — تصفح البرامج وأرسل التقارير مباشرة.', '#ff8800', 'PRO'),
+    ] %}
+    {% for icon, title, desc, color, badge in core_features %}
+    <div class="feature-card" data-dyn-style="--card-color:{{ color }}">
+      <div class="feature-icon">{{ icon }}</div>
+      <div class="feature-title">{{ title }}</div>
+      <div class="feature-desc">{{ desc }}</div>
+      <span class="feature-badge" data-dyn-style="background:{{ color }}20;color:{{ color }};border:1px solid {{ color }}40">{{ badge }}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="roadmap-heading">
+    <span class="roadmap-badge-pill">🛠️ خارطة الطريق — قادم قريباً</span>
+  </div>
+  <p class="roadmap-sub">قيد التطوير النشط — هذي المميزات بمراحل مختلفة من الجاهزية ولم تُطلق بعد بشكل كامل.</p>
+
+  <div class="features-grid">
+    {% set roadmap_features = [
       ('🎯', 'ATT&CK Navigator', 'خريطة تقنيات MITRE ATT&CK كاملة مع تتبع APT وتحليل أنماط الهجوم.', '#58a6ff', 'v4.0'),
       ('🤖', 'Autonomous RedTeam', 'محرك اختبار اختراق ذاتي بالذكاء الاصطناعي — يخطط وينفذ ويولد تقارير.', '#bc8cff', 'v4.0'),
       ('⚛️', 'Quantum Cryptography', 'إطار تشفير ما بعد الكمّي (Kyber-768) — يعمل بمفاتيح محاكاة افتراضياً، ويُفعَّل التشفير الحقيقي بعد تثبيت مكتبة liboqs.', '#58a6ff', 'ENTERPRISE'),
@@ -389,8 +418,8 @@
       ('🌍', 'Global Threat Feed', 'خلاصة استخباراتية عالمية — IOCs، CVEs، وحملات الهجوم النشطة.', '#ff4444', 'v4.0'),
       ('📄', 'PDF Reports', 'توليد تقارير PDF احترافية مع ملخص تنفيذي وتوصيات تفصيلية.', '#00ff88', 'CORE'),
     ] %}
-    {% for icon, title, desc, color, badge in features %}
-    <div class="feature-card" data-dyn-style="--card-color:{{ color }}">
+    {% for icon, title, desc, color, badge in roadmap_features %}
+    <div class="feature-card roadmap-card" data-dyn-style="--card-color:{{ color }}">
       <div class="feature-icon">{{ icon }}</div>
       <div class="feature-title">{{ title }}</div>
       <div class="feature-desc">{{ desc }}</div>
