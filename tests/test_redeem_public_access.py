@@ -74,3 +74,35 @@ def test_anonymous_redeem_action_still_requires_login(client):
         json={"license_key": "OPTISEC-RECON-AAAA-BBBB-CCCC-DDDD"},
     )
     assert resp.status_code == 401
+
+
+# ── ?payment=success|cancelled banner (NOWPayments success_url/cancel_url
+# redirect target — see web/services/nowpayments_client.py::create_invoice) ──
+
+def test_payment_success_query_param_shows_success_banner(client):
+    resp = client.get("/redeem?payment=success")
+    assert resp.status_code == 200
+    assert "تم استلام الدفع بنجاح" in resp.text
+    assert "Payment received" in resp.text
+
+
+def test_payment_cancelled_query_param_shows_cancelled_banner(client):
+    resp = client.get("/redeem?payment=cancelled")
+    assert resp.status_code == 200
+    assert "تم إلغاء عملية الدفع" in resp.text
+    assert "Payment was cancelled" in resp.text
+
+
+def test_no_payment_query_param_shows_no_banner(client):
+    resp = client.get("/redeem")
+    assert resp.status_code == 200
+    assert "Payment received" not in resp.text
+    assert "Payment was cancelled" not in resp.text
+
+
+def test_unrecognized_payment_query_param_is_ignored(client):
+    resp = client.get("/redeem?payment=<script>alert(1)</script>")
+    assert resp.status_code == 200
+    assert "Payment received" not in resp.text
+    assert "Payment was cancelled" not in resp.text
+    assert "<script>" not in resp.text

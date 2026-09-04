@@ -19,6 +19,7 @@ import hmac
 import json
 import os
 import sys
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -78,6 +79,17 @@ class _FakeAsyncClient:
         if self._exc:
             raise self._exc
         return self._response
+
+
+class _CapturingAsyncClient(_FakeAsyncClient):
+    """Same fake as above, but records the JSON body of the last POST so
+    tests can assert on the request payload (e.g. success_url/cancel_url),
+    not just the response."""
+    last_payload = None
+
+    async def post(self, url, json=None, headers=None):
+        _CapturingAsyncClient.last_payload = json
+        return await super().post(url, json=json, headers=headers)
 
 
 # ── 1. nowpayments_client.create_invoice ────────────────────────────────────
@@ -146,6 +158,38 @@ class TestCreateInvoice:
         assert npc._api_base() == npc._API_BASE_SANDBOX
         monkeypatch.setenv("NOWPAYMENTS_SANDBOX", "false")
         assert npc._api_base() == npc._API_BASE_LIVE
+
+
+class TestCreateInvoiceRedirectUrls:
+    """Point 1 of the 2026-09-04 UX audit fix: create_invoice() must send
+    success_url/cancel_url so NOWPayments' hosted invoice page can redirect
+    the buyer back to /redeem instead of stranding them."""
+
+    def test_default_base_url_used_when_env_var_unset(self, monkeypatch):
+        monkeypatch.setenv("NOWPAYMENTS_API_KEY", "test-key")
+        monkeypatch.delenv("NOWPAYMENTS_APP_BASE_URL", raising=False)
+        fake_resp = _FakeHttpResponse(200, {"id": "inv_1", "invoice_url": "https://nowpayments.io/pay/inv_1"})
+        monkeypatch.setattr(npc.httpx, "AsyncClient", lambda *a, **kw: _CapturingAsyncClient(response=fake_resp))
+
+        _run(npc.create_invoice(order_id="reconpro|x|pro", price_amount=399.0,
+                                 customer_email="buyer@example.com"))
+
+        payload = _CapturingAsyncClient.last_payload
+        assert payload["success_url"] == "https://optisec-recon-pro.onrender.com/redeem?payment=success"
+        assert payload["cancel_url"] == "https://optisec-recon-pro.onrender.com/redeem?payment=cancelled"
+
+    def test_custom_base_url_env_var_is_used_and_trailing_slash_stripped(self, monkeypatch):
+        monkeypatch.setenv("NOWPAYMENTS_API_KEY", "test-key")
+        monkeypatch.setenv("NOWPAYMENTS_APP_BASE_URL", "https://custom.example.com/")
+        fake_resp = _FakeHttpResponse(200, {"id": "inv_1", "invoice_url": "https://nowpayments.io/pay/inv_1"})
+        monkeypatch.setattr(npc.httpx, "AsyncClient", lambda *a, **kw: _CapturingAsyncClient(response=fake_resp))
+
+        _run(npc.create_invoice(order_id="reconpro|x|pro", price_amount=399.0,
+                                 customer_email="buyer@example.com"))
+
+        payload = _CapturingAsyncClient.last_payload
+        assert payload["success_url"] == "https://custom.example.com/redeem?payment=success"
+        assert payload["cancel_url"] == "https://custom.example.com/redeem?payment=cancelled"
 
 
 # ── 2. IPN signature verification ───────────────────────────────────────────
@@ -296,6 +340,120 @@ class TestCreateInvoiceEndpoint:
         monkeypatch.setattr(payment_routes, "create_invoice", failing_create_invoice)
         resp = c.post("/api/payments/create-invoice", json={"email": "buyer@example.com"})
         assert resp.status_code == 502
+
+
+class TestStalePendingPaymentExpiry:
+    """Point 2 of the 2026-09-04 UX audit fix: a PendingPayment stuck at
+    status="pending" with no webhook ever arriving (no cron/worker exists
+    in this deployment) must eventually be marked "expired" rather than
+    sitting there forever. Swept opportunistically on each
+    POST /api/payments/create-invoice call — see
+    payment_routes._expire_stale_pending_payments()."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_create_invoice_rate_limit(self):
+        # web/rate_limit.py's _buckets dict is module-global and keyed by
+        # client IP, not per-TestClient-instance — every test in this class
+        # calls POST /api/payments/create-invoice, so without this reset
+        # they'd collectively trip RATE_LIMIT_CREATE_INVOICE (default 5)
+        # and start seeing 429s unrelated to what's under test here.
+        import web.rate_limit as rate_limit
+        rate_limit._buckets["payments_create_invoice"].clear()
+        yield
+
+    @staticmethod
+    def _patch_create_invoice(monkeypatch):
+        async def fake_create_invoice(order_id, price_amount, customer_email, price_currency="usd"):
+            return {"invoice_url": "https://nowpayments.io/pay/new", "payment_id": "np_new", "raw": {}}
+        monkeypatch.setattr(payment_routes, "create_invoice", fake_create_invoice)
+
+    def test_pending_payment_older_than_24h_is_marked_expired(self, client, monkeypatch):
+        c, session_factory = client
+        self._patch_create_invoice(monkeypatch)
+        stale_order_id = _seed_pending_payment(
+            session_factory,
+            order_id="reconpro|22222222-2222-2222-2222-222222222222|pro",
+            created_at=datetime.utcnow() - timedelta(hours=25),
+        )
+
+        resp = c.post("/api/payments/create-invoice", json={"email": "new-buyer@example.com"})
+        assert resp.status_code == 200
+
+        async def fetch():
+            async with session_factory() as db:
+                return (await db.execute(
+                    select(PendingPayment).where(PendingPayment.order_id == stale_order_id)
+                )).scalar_one()
+
+        pending = _run(fetch())
+        assert pending.status == "expired"
+        assert pending.license_key_hash is None  # never generates a key
+
+    def test_pending_payment_within_24h_is_left_untouched(self, client, monkeypatch):
+        c, session_factory = client
+        self._patch_create_invoice(monkeypatch)
+        recent_order_id = _seed_pending_payment(
+            session_factory,
+            order_id="reconpro|33333333-3333-3333-3333-333333333333|pro",
+            created_at=datetime.utcnow() - timedelta(hours=1),
+        )
+
+        resp = c.post("/api/payments/create-invoice", json={"email": "new-buyer2@example.com"})
+        assert resp.status_code == 200
+
+        async def fetch():
+            async with session_factory() as db:
+                return (await db.execute(
+                    select(PendingPayment).where(PendingPayment.order_id == recent_order_id)
+                )).scalar_one()
+
+        pending = _run(fetch())
+        assert pending.status == "pending"
+
+    def test_already_resolved_payment_is_never_touched_even_if_old(self, client, monkeypatch):
+        c, session_factory = client
+        self._patch_create_invoice(monkeypatch)
+        completed_order_id = _seed_pending_payment(
+            session_factory,
+            order_id="reconpro|44444444-4444-4444-4444-444444444444|pro",
+            created_at=datetime.utcnow() - timedelta(hours=48),
+            status="completed",
+            license_key_hash="deadbeef" * 8,
+        )
+
+        resp = c.post("/api/payments/create-invoice", json={"email": "new-buyer3@example.com"})
+        assert resp.status_code == 200
+
+        async def fetch():
+            async with session_factory() as db:
+                return (await db.execute(
+                    select(PendingPayment).where(PendingPayment.order_id == completed_order_id)
+                )).scalar_one()
+
+        pending = _run(fetch())
+        assert pending.status == "completed"  # untouched, not clobbered to "expired"
+
+    def test_custom_expiry_window_env_var_is_honored(self, monkeypatch, client):
+        c, session_factory = client
+        self._patch_create_invoice(monkeypatch)
+        monkeypatch.setenv("PENDING_PAYMENT_EXPIRY_HOURS", "1")
+        order_id = _seed_pending_payment(
+            session_factory,
+            order_id="reconpro|55555555-5555-5555-5555-555555555555|pro",
+            created_at=datetime.utcnow() - timedelta(hours=2),
+        )
+
+        resp = c.post("/api/payments/create-invoice", json={"email": "new-buyer4@example.com"})
+        assert resp.status_code == 200
+
+        async def fetch():
+            async with session_factory() as db:
+                return (await db.execute(
+                    select(PendingPayment).where(PendingPayment.order_id == order_id)
+                )).scalar_one()
+
+        pending = _run(fetch())
+        assert pending.status == "expired"
 
 
 class TestWebhookSignatureGate:

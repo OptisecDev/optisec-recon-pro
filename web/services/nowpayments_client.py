@@ -6,7 +6,8 @@ handler that completes the purchase once payment_status == "finished".
 
 Env vars read at call time (not import time), same convention as
 modules/bug_bounty/hackerone.py, so tests can monkeypatch them freely:
-NOWPAYMENTS_API_KEY, NOWPAYMENTS_SANDBOX, NOWPAYMENTS_IPN_CALLBACK_URL.
+NOWPAYMENTS_API_KEY, NOWPAYMENTS_SANDBOX, NOWPAYMENTS_IPN_CALLBACK_URL,
+NOWPAYMENTS_APP_BASE_URL.
 """
 from __future__ import annotations
 
@@ -17,6 +18,12 @@ import httpx
 
 _API_BASE_LIVE = "https://api.nowpayments.io/v1"
 _API_BASE_SANDBOX = "https://api-sandbox.nowpayments.io/v1"
+
+# Fallback origin for success_url/cancel_url below when
+# NOWPAYMENTS_APP_BASE_URL is unset — this project's live deployment
+# (see README's "Live Demo" link), so a buyer is always redirected
+# somewhere real rather than to a relative/broken URL.
+_DEFAULT_APP_BASE_URL = "https://optisec-recon-pro.onrender.com"
 
 
 class NowPaymentsError(Exception):
@@ -74,6 +81,18 @@ async def create_invoice(
     callback_url = os.environ.get("NOWPAYMENTS_IPN_CALLBACK_URL", "").strip()
     if callback_url:
         payload["ipn_callback_url"] = callback_url
+
+    # Where NOWPayments' hosted invoice page sends the buyer back to —
+    # without these, a paid buyer is left stranded on NOWPayments' own
+    # page with no path back to /redeem. Both point at the same page
+    # (web/routers/license_routes.py's GET /redeem) with a ?payment=
+    # query param the template reads to show a tailored message; see
+    # web/templates/redeem.html.
+    base_url = os.environ.get("NOWPAYMENTS_APP_BASE_URL", "").strip().rstrip("/")
+    if not base_url:
+        base_url = _DEFAULT_APP_BASE_URL
+    payload["success_url"] = f"{base_url}/redeem?payment=success"
+    payload["cancel_url"] = f"{base_url}/redeem?payment=cancelled"
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:

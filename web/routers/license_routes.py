@@ -95,7 +95,17 @@ async def subscription_status(user: User = Depends(_user)):
 
 @page_router.get("/redeem", response_class=HTMLResponse, include_in_schema=False)
 async def redeem_page(request: Request, user: User | None = Depends(_user_optional)):
+    # ?payment=success|cancelled — set by NOWPayments' hosted invoice page
+    # redirecting back via success_url/cancel_url (see
+    # web/services/nowpayments_client.py's create_invoice()). Any other
+    # value is ignored so an arbitrary query string can't inject an
+    # unexpected banner into the page.
+    payment_status = request.query_params.get("payment")
+    if payment_status not in ("success", "cancelled"):
+        payment_status = None
+
     return templates.TemplateResponse(request, "redeem.html", {
         "app_name": APP_NAME, "user": user, "active": "redeem",
         "ga_measurement_id": GA_MEASUREMENT_ID,
+        "payment_status": payment_status,
     })

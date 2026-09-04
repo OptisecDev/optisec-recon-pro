@@ -18,12 +18,12 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from license_utils import generate_license_key, hash_license_key
@@ -77,6 +77,48 @@ _TERMINAL_NO_KEY_STATUSES = {"failed", "expired", "refunded"}
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
+# ─── Stale PendingPayment cleanup ───────────────────────────────────────────
+# No cron/worker process exists in this deployment (Render runs this app's
+# own uvicorn workers only — see modules/ioc/scheduler.py's docstring for
+# that constraint), so a PendingPayment that never gets a webhook call at
+# all (buyer abandons the hosted invoice page, or NOWPayments never fires
+# the IPN) would otherwise sit at status="pending" forever. Instead this
+# runs opportunistically at the top of every POST /api/payments/create-invoice
+# call — cheap (one indexed UPDATE), and that endpoint is the one place a
+# buyer-facing request already touches this table.
+_PENDING_PAYMENT_EXPIRY_HOURS_DEFAULT = 24.0
+
+
+def _pending_payment_expiry_hours() -> float:
+    raw = os.environ.get("PENDING_PAYMENT_EXPIRY_HOURS", str(_PENDING_PAYMENT_EXPIRY_HOURS_DEFAULT))
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return _PENDING_PAYMENT_EXPIRY_HOURS_DEFAULT
+    return value if value > 0 else _PENDING_PAYMENT_EXPIRY_HOURS_DEFAULT
+
+
+async def _expire_stale_pending_payments(db: AsyncSession) -> None:
+    """Mark PendingPayment rows stuck at status="pending" past a crypto
+    invoice's realistic validity window as "expired" — for bookkeeping only,
+    never deleted. Never touches rows already resolved by the webhook
+    (completed/failed/expired/refunded/partially_paid/in-flight statuses),
+    and never generates a LicenseKey. Best-effort: a failure here must never
+    break invoice creation, so it's logged and swallowed, not raised.
+    """
+    cutoff = datetime.utcnow() - timedelta(hours=_pending_payment_expiry_hours())
+    try:
+        await db.execute(
+            update(PendingPayment)
+            .where(PendingPayment.status == "pending")
+            .where(PendingPayment.created_at < cutoff)
+            .values(status="expired", updated_at=datetime.utcnow())
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("Failed to expire stale pending payments")
+        await db.rollback()
+
 
 class CreateInvoiceRequest(BaseModel):
     email: str
@@ -96,6 +138,8 @@ async def create_payment_invoice(
     body: CreateInvoiceRequest,
     db: AsyncSession = Depends(get_db),
 ):
+    await _expire_stale_pending_payments(db)
+
     email = body.email.strip().lower()
     if not _EMAIL_RE.match(email):
         raise HTTPException(status_code=400, detail="Enter a valid email address")

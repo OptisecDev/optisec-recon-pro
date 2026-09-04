@@ -26,6 +26,20 @@
     </div>
   </div>
 
+  {% if payment_status == "success" %}
+  <div class="alert alert-success">
+    ✓ تم استلام الدفع بنجاح! تحقق من بريدك الإلكتروني — سنرسل مفتاح الترخيص خلال دقائق.
+    وصلك المفتاح بالفعل؟ أدخله أدناه مباشرة.<br />
+    Payment received! Check your email — your license key is on its way.
+    Already have it? Enter it below.
+  </div>
+  {% elif payment_status == "cancelled" %}
+  <div class="alert alert-error">
+    تم إلغاء عملية الدفع — لم يتم خصم أي مبلغ. يمكنك المحاولة مرة أخرى في أي وقت.<br />
+    Payment was cancelled — you were not charged. You can try again anytime.
+  </div>
+  {% endif %}
+
   {% if user %}
   <div class="info-row ie8e86974b" >
     <span class="info-label">الخطة الحالية / Current plan</span>
