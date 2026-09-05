@@ -126,6 +126,21 @@ def test_generate_static_summary_handles_missing_fields_gracefully():
     assert "Total findings: 2" in result  # never raises on missing type/severity
 
 
+def test_generate_static_summary_leads_with_explicit_unavailable_warning_ar():
+    """The fallback must not read like a real AI analysis: it has to open
+    with an unmistakable warning that AI analysis is unavailable, not bury
+    that fact in a parenthetical after a report-like heading."""
+    result = groq_analyzer.generate_static_summary(_findings(1), "example.com", lang="ar")
+    assert result.startswith("⚠️ تحليل الذكاء الاصطناعي غير متاح حالياً")
+    assert "يرجى مراجعة النتائج يدوياً" in result
+
+
+def test_generate_static_summary_leads_with_explicit_unavailable_warning_en():
+    result = groq_analyzer.generate_static_summary(_findings(1), "example.com", lang="en")
+    assert result.startswith("⚠️ AI analysis is currently unavailable")
+    assert "review the results manually" in result
+
+
 # ── analyze_findings: empty input ──────────────────────────────────────────
 
 

@@ -95,7 +95,11 @@ def generate_static_summary(findings: list, target: str, lang: str = "ar") -> st
     most_common_type = max(type_counts, key=type_counts.get) if type_counts else None
 
     if lang == "ar":
-        lines = [f"ملخص تلقائي لنتائج فحص {target} (بدون ذكاء اصطناعي):", ""]
+        lines = [
+            "⚠️ تحليل الذكاء الاصطناعي غير متاح حالياً - يرجى مراجعة النتائج يدوياً",
+            "",
+            f"ملخص تلقائي لنتائج فحص {target} (بدون ذكاء اصطناعي):", "",
+        ]
         lines.append(f"إجمالي الثغرات المكتشفة: {len(findings)}")
         lines.append("توزيع الخطورة:")
         for severity, count in sorted(severity_counts.items(), key=lambda kv: -kv[1]):
@@ -106,7 +110,11 @@ def generate_static_summary(findings: list, target: str, lang: str = "ar") -> st
         lines.append("توصية عامة: راجع الثغرات الحرجة والعالية الخطورة أولاً، وطبّق الإصلاحات الموصى بها لكل نوع ثغرة قبل إعادة الفحص.")
         return "\n".join(lines)
 
-    lines = [f"Automatic summary of scan results for {target} (no AI):", ""]
+    lines = [
+        "⚠️ AI analysis is currently unavailable - please review the results manually",
+        "",
+        f"Automatic summary of scan results for {target} (no AI):", "",
+    ]
     lines.append(f"Total findings: {len(findings)}")
     lines.append("Severity breakdown:")
     for severity, count in sorted(severity_counts.items(), key=lambda kv: -kv[1]):

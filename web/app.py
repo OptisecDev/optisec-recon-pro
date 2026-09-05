@@ -1147,7 +1147,7 @@ async def register_submit(
         username=username,
         email=email,
         password_hash=hash_password(password),
-        role="admin" if count == 0 else "viewer",
+        role="admin" if count == 0 else "analyst",
         api_key_hash=hash_api_key(generate_api_key()),
         is_active=True,
     )
@@ -1240,7 +1240,7 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     summary="Register new user account",
     description=(
         "Create a new user account. The **first registered user** automatically receives "
-        "`admin` role; all subsequent accounts start as `viewer`. "
+        "`admin` role; all subsequent accounts start as `analyst` (able to run scans immediately). "
         "Password must have ≥8 characters, at least one uppercase letter, digit, and special character."
     ),
     responses={
@@ -1277,7 +1277,7 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     user = User(
         username=username, email=email,
         password_hash=hash_password(password),
-        role="admin" if count == 0 else "viewer",
+        role="admin" if count == 0 else "analyst",
         api_key_hash=hash_api_key(api_key),
     )
     db.add(user)
