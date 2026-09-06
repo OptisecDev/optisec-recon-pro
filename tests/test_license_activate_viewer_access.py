@@ -40,10 +40,13 @@ RATE_LIMIT_MAX = auth_module.RATE_LIMIT_MAX
 # The web_user dependency is overridden below for the authenticated
 # fixtures, bypassing the real cookie-login flow -- but the CSRF check
 # reads request.cookies directly, so the client still needs a real
-# (non-empty) access_token cookie set by hand, and a CSRF token computed
-# from that same value.
+# (non-empty) access_token cookie set by hand, plus the dedicated
+# csrf_secret cookie the CSRF token is actually bound to (see
+# web/auth.py generate_csrf_secret()), and a CSRF token computed from
+# that same csrf_secret value.
 FAKE_SESSION_COOKIE = "fixture-session-value"
-CSRF_TOKEN = auth_module.generate_csrf_token(FAKE_SESSION_COOKIE)
+FAKE_CSRF_SECRET = "fixture-csrf-secret-value"
+CSRF_TOKEN = auth_module.generate_csrf_token(FAKE_CSRF_SECRET)
 
 
 def _run(coro):
@@ -93,6 +96,7 @@ def _authenticated_client(db_engine, username):
     auth_module._login_attempts.clear()
     test_client = TestClient(app_module.app)
     test_client.cookies.set("access_token", FAKE_SESSION_COOKIE)
+    test_client.cookies.set("csrf_secret", FAKE_CSRF_SECRET)
     return test_client
 
 
@@ -193,11 +197,15 @@ def test_csrf_missing_token_still_rejected_for_viewer(viewer_client):
 
 
 def test_csrf_wrong_token_still_rejected_for_viewer(viewer_client):
+    # A wrong CSRF token no longer 403s -- it re-renders /license with a
+    # fresh token and a retry message (see test_csrf_protection.py for
+    # the full rationale). The activation itself must still be refused.
     resp = viewer_client.post(
         "/license/activate",
         data={"key": "not-a-real-key", "csrf_token": "wrong-token"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert "session was refreshed" in resp.text
 
 
 def test_rate_limit_still_works_for_viewer(viewer_client):

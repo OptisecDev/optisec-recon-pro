@@ -184,16 +184,33 @@ def hash_api_key(api_key: str) -> str:
     return hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
 
+def generate_csrf_secret() -> str:
+    """A fresh random per-session CSRF secret.
+
+    Issued once at login (web/app.py) into a dedicated `csrf_secret`
+    httponly cookie, separate from `access_token`. It is deliberately
+    *not* derived from the access_token JWT: that token is re-minted on
+    every request by the sliding-session middleware (new `exp`, new
+    signature bytes), so an HMAC keyed on its exact value would go stale
+    the instant any other request refreshed it -- including from a
+    second tab, a background asset load, or just idle time. This secret
+    stays constant for the life of the session (the middleware slides its
+    *expiry* forward without changing its value) and only rotates when a
+    fresh login mints a new one.
+    """
+    return secrets.token_hex(32)
+
+
 def generate_csrf_token(session_value: str) -> str:
-    """Stateless CSRF token bound to the caller's access_token cookie.
+    """Stateless CSRF token bound to the caller's csrf_secret cookie.
 
     This app has no server-side session store (auth is a self-contained
     JWT cookie), so the token can't be stashed server-side like a classic
-    synchronizer token. Instead it's an HMAC of the session's own
-    access_token value: only someone who already holds that httponly
-    cookie (i.e. the real browser session, not a cross-site attacker page)
-    can be handed a token that will verify -- an attacker page can trigger
-    a cross-site POST but can't read the cookie to compute a matching one.
+    synchronizer token. Instead it's an HMAC of a stable per-session
+    secret: only someone who already holds that httponly cookie (i.e. the
+    real browser session, not a cross-site attacker page) can be handed a
+    token that will verify -- an attacker page can trigger a cross-site
+    POST but can't read the cookie to compute a matching one.
     """
     return hmac.new(SECRET_KEY.encode("utf-8"), session_value.encode("utf-8"), hashlib.sha256).hexdigest()
 

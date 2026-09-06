@@ -41,7 +41,7 @@ from web.auth import (
     require_admin, require_analyst_or_admin, require_login,
     check_rate_limit, record_failed_attempt, clear_attempts,
     log_auth_event, validate_password_strength, get_client_ip,
-    generate_csrf_token, verify_csrf_token,
+    generate_csrf_token, verify_csrf_token, generate_csrf_secret,
     SECRET_KEY, ALGORITHM,
 )
 from web.websocket_manager import ws_manager
@@ -689,6 +689,13 @@ async def session_refresh_middleware(request: Request, call_next):
                 "access_token", new_token,
                 httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION,
             )
+            # Slide the CSRF secret's expiry alongside access_token, but
+            # keep its *value* unchanged -- that's what lets a CSRF token
+            # embedded in a page long before this refresh still verify
+            # after it. See generate_csrf_secret() (web/auth.py).
+            csrf_secret = request.cookies.get(CSRF_COOKIE_NAME)
+            if csrf_secret:
+                _set_csrf_cookie(response, csrf_secret)
         except Exception:
             pass
     return response
@@ -1000,6 +1007,7 @@ async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
+    _set_csrf_cookie(response, generate_csrf_secret())
     return response
 
 
@@ -1096,6 +1104,7 @@ async def login_submit(
     token = create_access_token(user.id, user.role)
     response = RedirectResponse(_safe_next_path(next), status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
+    _set_csrf_cookie(response, generate_csrf_secret())
     return response
 
 
@@ -1159,6 +1168,7 @@ async def register_submit(
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
+    _set_csrf_cookie(response, generate_csrf_secret())
     return response
 
 
@@ -1177,6 +1187,7 @@ async def logout(request: Request):
     log_auth_event("LOGOUT", username, ip, True)
     response = RedirectResponse("/login", status_code=302)
     response.delete_cookie("access_token")
+    response.delete_cookie(CSRF_COOKIE_NAME)
     return response
 
 
@@ -2378,25 +2389,87 @@ async def admin_delete_user(
 
 # ─── License Routes ───────────────────────────────────────────────────────────
 
-@app.get("/license", response_class=HTMLResponse, include_in_schema=False)
-async def license_page(request: Request, user: User = Depends(web_user),
-                       msg: str = "", msg_type: str = ""):
+# Dedicated CSRF-secret cookie, deliberately separate from access_token --
+# see generate_csrf_secret()'s docstring (web/auth.py) for why binding to
+# the JWT cookie's exact value goes stale under the sliding-session
+# middleware below. Same lifetime/flags as access_token so it behaves like
+# one session to the user.
+CSRF_COOKIE_NAME = "csrf_secret"
+CSRF_COOKIE_MAX_AGE = 1800
+
+
+def _current_csrf_secret(request: Request) -> tuple:
+    """Return (secret, is_freshly_minted) for the caller's session.
+
+    Reuses the existing csrf_secret cookie when present so a token handed
+    out on one request keeps verifying on the next, however long that
+    takes. Only mints a new one when there truly isn't one yet (e.g. a
+    session cookie set before this fix shipped, or cookies cleared
+    mid-session) -- callers must then set it on their response.
+    """
+    secret = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if secret:
+        return secret, False
+    return generate_csrf_secret(), True
+
+
+def _set_csrf_cookie(response, secret: str) -> None:
+    response.set_cookie(
+        CSRF_COOKIE_NAME, secret, httponly=True, max_age=CSRF_COOKIE_MAX_AGE,
+        samesite="lax", secure=IS_PRODUCTION,
+    )
+
+
+def _license_page_state(user: User) -> dict:
+    """Shared template context for every /license render (GET, rate-limit,
+    CSRF-retry, and post-activate/deactivate) -- kept in one place so the
+    four call sites can't drift out of sync with each other."""
     lic = get_license()
-    features_list = list(FEATURE_LABELS.items())
-    free_features = set(TIER_FEATURES["free"])
-    pro_features  = set(TIER_FEATURES["pro"])
-    return templates.TemplateResponse(request, "license.html", {
+    return {
         "app_name": APP_NAME, "version": APP_VERSION,
         "active": "license", "user": user,
         "lic": lic,
-        "features": features_list,
-        "free_features": free_features,
-        "pro_features": pro_features,
+        "features": list(FEATURE_LABELS.items()),
+        "free_features": set(TIER_FEATURES["free"]),
+        "pro_features": set(TIER_FEATURES["pro"]),
+    }
+
+
+@app.get("/license", response_class=HTMLResponse, include_in_schema=False)
+async def license_page(request: Request, user: User = Depends(web_user),
+                       msg: str = "", msg_type: str = ""):
+    csrf_secret, is_new = _current_csrf_secret(request)
+    response = templates.TemplateResponse(request, "license.html", {
+        **_license_page_state(user),
         "flash_msg": msg,
         "flash_type": msg_type or "info",
         "prefill_key": "",
-        "csrf_token": generate_csrf_token(request.cookies.get("access_token", "")),
+        "csrf_token": generate_csrf_token(csrf_secret),
     })
+    if is_new:
+        _set_csrf_cookie(response, csrf_secret)
+    return response
+
+
+def _csrf_retry_response(request: Request, user: User, prefill_key: str = ""):
+    """Render /license in place with a fresh CSRF token instead of a
+    dead-end 403, for the one failure mode that's routinely a legitimate
+    user (stale tab, cross-tab re-login, long idle) rather than an actual
+    forged cross-site request -- see generate_csrf_secret()'s docstring
+    (web/auth.py). The action itself is still refused either way; this
+    only changes what the user sees when it is.
+    """
+    csrf_secret, is_new = _current_csrf_secret(request)
+    response = templates.TemplateResponse(request, "license.html", {
+        **_license_page_state(user),
+        "flash_msg": "Your session was refreshed for security. Please try again.",
+        "flash_type": "warning",
+        "prefill_key": prefill_key,
+        "csrf_token": generate_csrf_token(csrf_secret),
+    }, status_code=200)
+    if is_new:
+        _set_csrf_cookie(response, csrf_secret)
+    return response
 
 
 @app.post("/license/activate", response_class=HTMLResponse, include_in_schema=False)
@@ -2408,26 +2481,21 @@ async def license_activate_form(
 ):
     require_login(user)
     ip = get_client_ip(request)
-    if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
+    csrf_secret, _ = _current_csrf_secret(request)
+    if not verify_csrf_token(csrf_secret, csrf_token):
         log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, "csrf_rejected")
-        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+        return _csrf_retry_response(request, user, prefill_key=key)
 
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
         minutes = remaining // 60 + 1
         log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, f"rate_limited remaining={remaining}s")
-        lic = get_license()
         return templates.TemplateResponse(request, "license.html", {
-            "app_name": APP_NAME, "version": APP_VERSION,
-            "active": "license", "user": user,
-            "lic": lic,
-            "features": list(FEATURE_LABELS.items()),
-            "free_features": set(TIER_FEATURES["free"]),
-            "pro_features":  set(TIER_FEATURES["pro"]),
+            **_license_page_state(user),
             "flash_msg": f"Too many attempts. Try again in {minutes} minute(s).",
             "flash_type": "error",
             "prefill_key": key,
-            "csrf_token": generate_csrf_token(request.cookies.get("access_token", "")),
+            "csrf_token": generate_csrf_token(csrf_secret),
         }, status_code=429)
 
     success, message, new_lic = activate_license(key.strip())
@@ -2437,19 +2505,12 @@ async def license_activate_form(
     else:
         record_failed_attempt(ip)
         log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, message)
-    lic = get_license()
-    features_list = list(FEATURE_LABELS.items())
     return templates.TemplateResponse(request, "license.html", {
-        "app_name": APP_NAME, "version": APP_VERSION,
-        "active": "license", "user": user,
-        "lic": lic,
-        "features": features_list,
-        "free_features": set(TIER_FEATURES["free"]),
-        "pro_features":  set(TIER_FEATURES["pro"]),
+        **_license_page_state(user),
         "flash_msg": message,
         "flash_type": "success" if success else "error",
         "prefill_key": "" if success else key,
-        "csrf_token": generate_csrf_token(request.cookies.get("access_token", "")),
+        "csrf_token": generate_csrf_token(csrf_secret),
     })
 
 
@@ -2461,9 +2522,10 @@ async def license_deactivate_form(
 ):
     require_login(user)
     ip = get_client_ip(request)
-    if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
+    csrf_secret, _ = _current_csrf_secret(request)
+    if not verify_csrf_token(csrf_secret, csrf_token):
         log_auth_event("LICENSE_DEACTIVATE", user.username, ip, False, "csrf_rejected")
-        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
+        return _csrf_retry_response(request, user)
     deactivate_license()
     return RedirectResponse("/license?msg=تم+إلغاء+الترخيص+والعودة+للنسخة+المجانية&msg_type=warning",
                             status_code=302)

@@ -37,7 +37,8 @@ RATE_LIMIT_MAX = auth_module.RATE_LIMIT_MAX
 # session value on purpose, since a real browser session always carries a
 # real cookie) and the matching CSRF token computed from that same value.
 FAKE_SESSION_COOKIE = "fixture-session-value"
-CSRF_TOKEN = auth_module.generate_csrf_token(FAKE_SESSION_COOKIE)
+FAKE_CSRF_SECRET = "fixture-csrf-secret-value"
+CSRF_TOKEN = auth_module.generate_csrf_token(FAKE_CSRF_SECRET)
 
 
 def _run(coro):
@@ -81,6 +82,7 @@ def client():
     auth_module._login_attempts.clear()
     test_client = TestClient(app_module.app)
     test_client.cookies.set("access_token", FAKE_SESSION_COOKIE)
+    test_client.cookies.set("csrf_secret", FAKE_CSRF_SECRET)
     yield test_client
     app_module.app.dependency_overrides.clear()
     auth_module._login_attempts.clear()
