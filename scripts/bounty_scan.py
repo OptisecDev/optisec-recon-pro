@@ -308,7 +308,7 @@ _PREFLIGHT_TIMEOUT = 4.0
 def _tcp_reachable(host: str, port: int, timeout: float = _PREFLIGHT_TIMEOUT) -> bool:
     """Cheap TCP-connect probe, used only to decide whether it's worth running
     the full XSS/SSRF/LFI payload matrix (dozens of requests at
-    DEFAULT_TIMEOUT=10s each) against a scheme/port. If the port doesn't even
+    DEFAULT_TIMEOUT=5s each) against a scheme/port. If the port doesn't even
     accept a TCP handshake, no payload will ever get a response either — this
     just avoids burning the full timeout on every single one of them.
 

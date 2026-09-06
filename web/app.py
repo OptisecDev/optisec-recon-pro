@@ -1719,6 +1719,7 @@ _STEP_PROGRESS = {
     "xss": 58, "sqli": 66, "ssrf": 74, "lfi": 80,
     "redirect": 87, "osint": 94,
 }
+_STEP_ORDER = list(_STEP_PROGRESS.keys())
 
 
 def _finding_kwargs_from_vuln(v: dict, scan_id: str, target_id: Optional[int], triage: Optional[dict]) -> dict:
@@ -1793,6 +1794,23 @@ async def _run_scan_task(
     results: dict = {}
     all_vulns: list = []
 
+    async def push_start(step: str):
+        """Broadcast-only ping fired right before a step's work begins, so the
+        live UI reflects what's actually running instead of the last step to
+        finish (previously the only broadcast was the completion `push()`
+        below, so the UI stayed frozen on the prior step's label for that
+        step's entire — potentially long — runtime). Not persisted to the DB:
+        progress hasn't advanced yet, there's no new data, and a client that
+        reconnects mid-step already resyncs to the last completed step via
+        the `state` message.
+        """
+        idx = _STEP_ORDER.index(step)
+        prev_pct = _STEP_PROGRESS[_STEP_ORDER[idx - 1]] if idx > 0 else 0
+        await ws_manager.broadcast(scan_id, {
+            "type": "progress", "step": step, "progress": prev_pct,
+            "status": "running", "phase": "start", "data": None,
+        })
+
     async def push(step: str, pct: int, data=None):
         async with SessionLocal() as db:
             scan = await db.get(Scan, scan_id)
@@ -1808,7 +1826,7 @@ async def _run_scan_task(
                 await db.commit()
         await ws_manager.broadcast(scan_id, {
             "type": "progress", "step": step, "progress": pct,
-            "status": "running", "data": data,
+            "status": "running", "phase": "done", "data": data,
         })
 
     try:
@@ -1822,69 +1840,82 @@ async def _run_scan_task(
         run_all = not scan_types
 
         if run_all or "subdomain" in scan_types:
+            await push_start("subdomain")
             d = await asyncio.to_thread(enumerate_subdomains, domain)
             results["subdomains"] = d
             await push("subdomain", _STEP_PROGRESS["subdomain"], d)
 
         if run_all or "dns" in scan_types:
+            await push_start("dns")
             d = await asyncio.to_thread(dns_lookup, domain)
             results["dns"] = d
             await push("dns", _STEP_PROGRESS["dns"], d)
 
         if run_all or "whois" in scan_types:
+            await push_start("whois")
             d = await asyncio.to_thread(whois_lookup, domain)
             results["whois"] = d
             await push("whois", _STEP_PROGRESS["whois"], d)
 
         if run_all or "nmap" in scan_types:
+            await push_start("nmap")
             d = await asyncio.to_thread(nmap_scan, domain)
             results["nmap"] = d
             await push("nmap", _STEP_PROGRESS["nmap"], d)
 
         if run_all or "ssl" in scan_types:
             from modules.recon.ssl_analysis import analyze_ssl
+            await push_start("ssl")
             d = await asyncio.to_thread(analyze_ssl, domain)
             results["ssl"] = d
             await push("ssl", _STEP_PROGRESS["ssl"], d)
 
         if run_all or "headers" in scan_types:
             from modules.recon.security_headers import check_security_headers
+            await push_start("headers")
             d = await asyncio.to_thread(check_security_headers, url)
             results["headers"] = d
             await push("headers", _STEP_PROGRESS["headers"], d)
 
         if run_all or "ports" in scan_types:
             from modules.recon.port_scanner import scan_ports
+            await push_start("ports")
             d = await asyncio.to_thread(scan_ports, domain)
             results["ports"] = d
             await push("ports", _STEP_PROGRESS["ports"], d)
 
         if run_all or "xss" in scan_types:
+            await push_start("xss")
             d = await asyncio.to_thread(scan_xss, url)
             all_vulns.extend(d)
             await push("xss", _STEP_PROGRESS["xss"])
 
         if run_all or "sqli" in scan_types:
+            await push_start("sqli")
             d = await asyncio.to_thread(scan_sqli, url)
             all_vulns.extend(d)
             await push("sqli", _STEP_PROGRESS["sqli"])
 
         if run_all or "ssrf" in scan_types:
+            await push_start("ssrf")
             d = await asyncio.to_thread(scan_ssrf, url)
             all_vulns.extend(d)
             await push("ssrf", _STEP_PROGRESS["ssrf"])
 
         if run_all or "lfi" in scan_types:
+            await push_start("lfi")
             d = await asyncio.to_thread(scan_lfi, url)
             all_vulns.extend(d)
             await push("lfi", _STEP_PROGRESS["lfi"])
 
         if run_all or "redirect" in scan_types:
+            await push_start("redirect")
             d = await asyncio.to_thread(scan_open_redirect, url)
             all_vulns.extend(d)
             await push("redirect", _STEP_PROGRESS["redirect"])
 
         if run_all or "osint" in scan_types:
+            await push_start("osint")
             emails = await asyncio.to_thread(find_emails, domain)
             social = await asyncio.to_thread(find_social_profiles, domain)
             results["osint"] = {"emails": emails, "social": social}

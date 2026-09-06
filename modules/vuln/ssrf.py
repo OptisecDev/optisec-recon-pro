@@ -1,6 +1,7 @@
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode
 from config import DEFAULT_TIMEOUT
+from modules.vuln._concurrency import run_concurrent_scan
 from modules.vuln.waf_aware_classifier import classify_signature_match
 
 SSRF_PAYLOADS = [
@@ -70,8 +71,63 @@ def _ssrf_indicator_confirmed(body: str, matched_indicator: str, baseline_elapse
     return False
 
 
+def _test_param(session: requests.Session, parsed, params: dict, param: str) -> list:
+    # Only the CONFIRMED entry (if any) or the last non-reporting verdict
+    # tried for this param is kept — one row per param, not one per
+    # payload, so retaining WAF_BLOCKED/etc. doesn't multiply findings.
+    pending = None
+
+    # Baseline (unmodified) request for this param, used to detect a real
+    # timing differential against SSRF payloads further down.
+    baseline_elapsed = None
+    try:
+        baseline_params = {k: v[0] for k, v in params.items()}
+        baseline_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(baseline_params)}"
+        baseline_resp = session.get(baseline_url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
+        baseline_elapsed = _elapsed_seconds(baseline_resp)
+    except Exception:
+        baseline_elapsed = None
+
+    for payload in SSRF_PAYLOADS:
+        test_params = {k: v[0] for k, v in params.items()}
+        test_params[param] = payload
+        test_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(test_params)}"
+        try:
+            r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
+            body_lower = r.text.lower()
+            matched_indicator = next((ind for ind in SSRF_INDICATORS if ind.lower() in body_lower), None)
+            if matched_indicator and not _ssrf_indicator_confirmed(
+                r.text, matched_indicator, baseline_elapsed, _elapsed_seconds(r)
+            ):
+                matched_indicator = None
+            result = classify_signature_match(
+                r.status_code, r.headers, r.text, matched_indicator,
+                severity="Critical", signal_label="SSRF indicator",
+            )
+            entry = {
+                "type": "SSRF",
+                "severity": result.severity,
+                "url": test_url,
+                "parameter": param,
+                "payload": payload,
+                "evidence": result.reason,
+                "waf_detected": result.waf_detected,
+                "verdict": result.verdict,
+                "status_code": r.status_code,
+                "response_body": r.text[:3000],
+            }
+            if result.verdict == "ENDPOINT_INVALID":
+                pending = entry  # path itself is unreachable, no point trying more payloads
+                break
+            if result.should_report:
+                return [entry]
+            pending = entry
+        except Exception:
+            continue
+    return [pending] if pending is not None else []
+
+
 def scan_ssrf(url: str) -> list:
-    findings = []
     parsed = urlparse(url)
     params = parse_qs(parsed.query)
 
@@ -83,62 +139,4 @@ def scan_ssrf(url: str) -> list:
     session = requests.Session()
     session.headers["User-Agent"] = "OPTISEC-ReconPro/1.0 (Security Testing)"
 
-    for param in url_params:
-        # Only the CONFIRMED entry (if any) or the last non-reporting verdict
-        # tried for this param is kept — one row per param, not one per
-        # payload, so retaining WAF_BLOCKED/etc. doesn't multiply findings.
-        pending = None
-
-        # Baseline (unmodified) request for this param, used to detect a real
-        # timing differential against SSRF payloads further down.
-        baseline_elapsed = None
-        try:
-            baseline_params = {k: v[0] for k, v in params.items()}
-            baseline_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(baseline_params)}"
-            baseline_resp = session.get(baseline_url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
-            baseline_elapsed = _elapsed_seconds(baseline_resp)
-        except Exception:
-            baseline_elapsed = None
-
-        for payload in SSRF_PAYLOADS:
-            test_params = {k: v[0] for k, v in params.items()}
-            test_params[param] = payload
-            test_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{urlencode(test_params)}"
-            try:
-                r = session.get(test_url, timeout=DEFAULT_TIMEOUT, allow_redirects=False)
-                body_lower = r.text.lower()
-                matched_indicator = next((ind for ind in SSRF_INDICATORS if ind.lower() in body_lower), None)
-                if matched_indicator and not _ssrf_indicator_confirmed(
-                    r.text, matched_indicator, baseline_elapsed, _elapsed_seconds(r)
-                ):
-                    matched_indicator = None
-                result = classify_signature_match(
-                    r.status_code, r.headers, r.text, matched_indicator,
-                    severity="Critical", signal_label="SSRF indicator",
-                )
-                entry = {
-                    "type": "SSRF",
-                    "severity": result.severity,
-                    "url": test_url,
-                    "parameter": param,
-                    "payload": payload,
-                    "evidence": result.reason,
-                    "waf_detected": result.waf_detected,
-                    "verdict": result.verdict,
-                    "status_code": r.status_code,
-                    "response_body": r.text[:3000],
-                }
-                if result.verdict == "ENDPOINT_INVALID":
-                    pending = entry  # path itself is unreachable, no point trying more payloads
-                    break
-                if result.should_report:
-                    findings.append(entry)
-                    pending = None
-                    break
-                pending = entry
-            except Exception:
-                continue
-        if pending is not None:
-            findings.append(pending)
-
-    return findings
+    return run_concurrent_scan(url_params, lambda param: _test_param(session, parsed, params, param))

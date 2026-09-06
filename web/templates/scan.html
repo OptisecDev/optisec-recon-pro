@@ -175,8 +175,13 @@ window.startScan = async function() {
 
       if (msg.type === 'progress') {
         fill.style.width = `${msg.progress}%`;
-        if (wsStep) wsStep.textContent = `Running: ${msg.step} (${msg.progress}%)`;
-        logStep(`✓ ${msg.step} — ${msg.progress}%`);
+        if (msg.phase === 'start') {
+          if (wsStep) wsStep.textContent = `Running: ${msg.step}…`;
+          logStep(`▶ ${msg.step} started`);
+        } else {
+          if (wsStep) wsStep.textContent = `Running: ${msg.step} (${msg.progress}%)`;
+          logStep(`✓ ${msg.step} — ${msg.progress}%`);
+        }
       }
 
       if (msg.type === 'completed') {

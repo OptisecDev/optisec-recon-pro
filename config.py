@@ -99,8 +99,17 @@ APP_VERSION = "4.0.0-singularity"
 ACCENT_COLOR = "#00ff88"
 
 # Scanning
-DEFAULT_TIMEOUT = 10
+# 5s per request is still generous for a live target that's actually up; a
+# hung/filtered request no longer eats a full 10s before the (now-concurrent)
+# scanners can move on, halving the worst-case per-request wait.
+DEFAULT_TIMEOUT = 5
 MAX_THREADS = 50
+# Concurrency for the vuln scanners (xss/sqli/ssrf/lfi/open_redirect), which
+# test one target's params/forms in parallel. Kept well below MAX_THREADS
+# (used for lightweight DNS-only subdomain probing) since these are full
+# HTTP requests against a single live target — too high a value risks
+# looking like a request flood / tripping the target's own rate limiting.
+VULN_SCAN_CONCURRENCY = int(os.environ.get("VULN_SCAN_CONCURRENCY", "8"))
 NMAP_DEFAULT_FLAGS = "-sV -sC --open"
 WORDLIST_PATH = DATA_DIR / "wordlists" / "subdomains.txt"
 TARGETS_FILE = DATA_DIR / "targets.json"
