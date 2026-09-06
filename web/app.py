@@ -2407,9 +2407,10 @@ async def license_activate_form(
     user: User = Depends(web_user),
 ):
     require_login(user)
-    if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
-        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
     ip = get_client_ip(request)
+    if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
+        log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, "csrf_rejected")
+        raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
 
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
@@ -2459,7 +2460,9 @@ async def license_deactivate_form(
     user: User = Depends(web_user),
 ):
     require_login(user)
+    ip = get_client_ip(request)
     if not verify_csrf_token(request.cookies.get("access_token", ""), csrf_token):
+        log_auth_event("LICENSE_DEACTIVATE", user.username, ip, False, "csrf_rejected")
         raise HTTPException(status_code=403, detail="Invalid or missing CSRF token")
     deactivate_license()
     return RedirectResponse("/license?msg=تم+إلغاء+الترخيص+والعودة+للنسخة+المجانية&msg_type=warning",
@@ -2473,8 +2476,12 @@ async def license_deactivate_form(
     description="Activate a new OPTISEC license key. **Admin role required.**",
 )
 async def api_license_activate(request: Request, user: User = Depends(web_user)):
-    require_admin(user)
     ip = get_client_ip(request)
+    try:
+        require_admin(user)
+    except HTTPException:
+        log_auth_event("LICENSE_ACTIVATE", user.username, ip, False, f"role_rejected role={user.role}")
+        raise
 
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
@@ -2510,7 +2517,12 @@ async def api_license_activate(request: Request, user: User = Depends(web_user))
     description="Generate a signed license key. **Admin role required.** Dev/testing use.",
 )
 async def api_license_generate(request: Request, user: User = Depends(web_user)):
-    require_admin(user)
+    ip = get_client_ip(request)
+    try:
+        require_admin(user)
+    except HTTPException:
+        log_auth_event("LICENSE_GENERATE", user.username, ip, False, f"role_rejected role={user.role}")
+        raise
     data = await request.json()
     try:
         key = generate_license_key(
