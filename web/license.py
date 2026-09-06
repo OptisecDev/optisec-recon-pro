@@ -352,6 +352,19 @@ def user_tier(user) -> str:
     return tier if tier in TIER_FEATURES else "free"
 
 
+def user_tier_label(user) -> str:
+    """Display label for `user`'s own subscription_tier (e.g. "PRO"). Use
+    this for any user-facing tier badge -- never get_license(), which is
+    the instance-wide license and has no per-user identity."""
+    return TIER_LABELS[user_tier(user)][0]
+
+
+def user_tier_color(user) -> str:
+    """Display color for `user`'s own subscription_tier. See
+    user_tier_label()."""
+    return TIER_LABELS[user_tier(user)][1]
+
+
 def user_has_feature(user, feature: str) -> bool:
     """True if `user`'s own subscription_tier includes `feature`. Shared by
     require_feature_or_402() and the template layer (base.html, license.html)

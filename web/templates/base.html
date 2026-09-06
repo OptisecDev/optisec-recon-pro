@@ -11,18 +11,15 @@
 </head>
 <body>
 
-{% set lic = get_license() %}
 {% set user = user if user is defined else none %}
+{% set my_tier = user_tier(user) %}
 
 <nav class="sidebar">
   <div class="sidebar-logo">
     <h1>🛡️ OPTISEC</h1>
     <div class="version ieab099171" >v4.0 SINGULARITY</div>
-    <a href="/license" class="lic-sidebar-badge lic-tier-{{ lic.tier }}" title="License: {{ lic.tier_label }}">
-      {{ lic.tier_label }}
-      {% if lic.tier != 'free' and lic.days_left < 30 %}
-        <span class="lic-expiry-warn">{{ lic.days_left }}d</span>
-      {% endif %}
+    <a href="/license" class="lic-sidebar-badge lic-tier-{{ my_tier }}" title="License: {{ user_tier_label(user) }}">
+      {{ user_tier_label(user) }}
     </a>
   </div>
   <div class="sidebar-nav">
@@ -182,10 +179,9 @@
     <div class="topbar-title">{% block page_title %}{% endblock %}</div>
     <div class="topbar-right">
       <!-- License status pill in topbar -->
-      <a href="/license" class="lic-topbar-pill lic-tier-{{ lic.tier }}" title="License Management">
+      <a href="/license" class="lic-topbar-pill lic-tier-{{ my_tier }}" title="License Management">
         <span class="lic-tier-dot-sm"></span>
-        {{ lic.tier_label }}
-        {% if lic.tier != 'free' %}· {{ lic.days_left }}d{% endif %}
+        {{ user_tier_label(user) }}
       </a>
       <div class="nlp-bar iebd1d1e9d" >
         <span class="ie6f1201e8">💬</span>
