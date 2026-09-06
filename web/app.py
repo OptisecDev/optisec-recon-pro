@@ -19,7 +19,7 @@ from starlette.exceptions import WebSocketException
 from starlette import status as ws_status
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,7 +42,7 @@ from web.auth import (
     check_rate_limit, record_failed_attempt, clear_attempts,
     log_auth_event, validate_password_strength, get_client_ip,
     generate_csrf_token, verify_csrf_token, generate_csrf_secret,
-    SECRET_KEY, ALGORITHM,
+    SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 from web.websocket_manager import ws_manager
 from web.license import (
@@ -674,7 +674,13 @@ async def security_headers_middleware(request: Request, call_next):
     return response
 
 
-# ─── Session timeout middleware (sliding 30-min window) ───────────────────────
+# ─── Session timeout middleware (sliding window, see ACCESS_TOKEN_MAX_AGE_SECONDS) ──
+
+# Single source of truth for every access_token cookie's max_age, derived from
+# web.auth.ACCESS_TOKEN_EXPIRE_MINUTES so the cookie can never drift out of
+# sync with the JWT's own `exp` (see web/auth.py for why that default changed).
+ACCESS_TOKEN_MAX_AGE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
 
 @app.middleware("http")
 async def session_refresh_middleware(request: Request, call_next):
@@ -687,7 +693,7 @@ async def session_refresh_middleware(request: Request, call_next):
             new_token = create_access_token(int(payload["sub"]), payload["role"])
             response.set_cookie(
                 "access_token", new_token,
-                httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION,
+                httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION,
             )
             # Slide the CSRF secret's expiry alongside access_token, but
             # keep its *value* unchanged -- that's what lets a CSRF token
@@ -992,6 +998,15 @@ async def optional_user(request: Request, db: AsyncSession = Depends(get_db)) ->
         return None
 
 
+@app.get("/session/heartbeat", include_in_schema=False)
+async def session_heartbeat(user: User = Depends(web_user)):
+    """Pinged periodically by static/js/main.js while a tab is open and
+    visible, so session_refresh_middleware slides access_token's expiry
+    forward even when the user is only reading a page -- not navigating or
+    submitting anything -- for longer than the session window."""
+    return Response(status_code=204)
+
+
 # ─── Demo Route ───────────────────────────────────────────────────────────────
 
 @app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
@@ -1006,7 +1021,7 @@ async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
     await db.commit()
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
+    response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
     return response
 
@@ -1103,7 +1118,7 @@ async def login_submit(
 
     token = create_access_token(user.id, user.role)
     response = RedirectResponse(_safe_next_path(next), status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
+    response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
     return response
 
@@ -1167,7 +1182,7 @@ async def register_submit(
 
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
-    response.set_cookie("access_token", token, httponly=True, max_age=1800, samesite="lax", secure=IS_PRODUCTION)
+    response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
     return response
 
@@ -2426,7 +2441,7 @@ async def admin_delete_user(
 # middleware below. Same lifetime/flags as access_token so it behaves like
 # one session to the user.
 CSRF_COOKIE_NAME = "csrf_secret"
-CSRF_COOKIE_MAX_AGE = 1800
+CSRF_COOKIE_MAX_AGE = ACCESS_TOKEN_MAX_AGE_SECONDS
 
 
 def _current_csrf_secret(request: Request) -> tuple:

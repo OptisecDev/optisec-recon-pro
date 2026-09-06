@@ -16,10 +16,15 @@ from fastapi import HTTPException, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from config import JWT_SECRET as SECRET_KEY  # config resolves/validates JWT_SECRET at startup
+from config import JWT_SECRET as SECRET_KEY, JWT_EXPIRE_HOURS  # config resolves/validates JWT_SECRET at startup
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", "30"))
+# Was a hardcoded "30" default, disconnected from config.JWT_EXPIRE_HOURS (which
+# nothing read) -- a user idle for as little as 30 minutes (no click, just
+# reading a page) got silently logged out on their next request, since
+# session_refresh_middleware only slides the expiry forward on an actual
+# request. JWT_EXPIRE_MINUTES still overrides both if set explicitly.
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", str(JWT_EXPIRE_HOURS * 60)))
 
 # ─── Trusted proxy IP resolution ───────────────────────────────────────────────
 # Set TRUSTED_PROXY_IPS (comma-separated) when deploying behind a reverse

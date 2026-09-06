@@ -620,4 +620,26 @@ function esc(s) {
   return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ─── Session heartbeat ──────────────────────────────────────────────────────
+// session_refresh_middleware (web/app.py) only slides access_token's expiry
+// forward on an actual request -- a tab left open on a dashboard/report with
+// no clicks and no navigation never sends one, so it hit the session
+// timeout even while genuinely "in use". Ping a no-op endpoint periodically
+// while the tab is visible to keep that request flowing.
+(function () {
+  if (document.body.dataset.authenticated !== 'true') return;
+
+  const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // well under ACCESS_TOKEN_EXPIRE_MINUTES
+
+  function ping() {
+    if (document.visibilityState !== 'visible') return;
+    fetch('/session/heartbeat', { credentials: 'same-origin' }).catch(() => {});
+  }
+
+  setInterval(ping, HEARTBEAT_INTERVAL_MS);
+  // Catch up immediately after the tab was backgrounded/minimized for a
+  // while (e.g. laptop sleep) instead of waiting out the rest of the interval.
+  document.addEventListener('visibilitychange', ping);
+})();
+
 document.addEventListener('DOMContentLoaded', initTabs);
