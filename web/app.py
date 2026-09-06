@@ -782,6 +782,9 @@ async def startup():
     from modules.ioc.scheduler import start_scheduler as start_ioc_scheduler
     start_ioc_scheduler(asyncio.get_running_loop())
 
+    from modules.scan_watchdog.scheduler import start_scheduler as start_scan_watchdog
+    start_scan_watchdog(asyncio.get_running_loop())
+
     from modules.honeypot.manager import start_honeypots
     await start_honeypots()
 
@@ -793,6 +796,9 @@ async def shutdown():
 
     from modules.ioc.scheduler import stop_scheduler as stop_ioc_scheduler
     stop_ioc_scheduler()
+
+    from modules.scan_watchdog.scheduler import stop_scheduler as stop_scan_watchdog
+    stop_scan_watchdog()
 
     from modules.honeypot.manager import stop_honeypots
     await stop_honeypots()
@@ -1856,84 +1862,141 @@ async def _run_scan_task(
 
         if run_all or "subdomain" in scan_types:
             await push_start("subdomain")
-            d = await asyncio.to_thread(enumerate_subdomains, domain)
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(enumerate_subdomains, domain), timeout=40)
+            except asyncio.TimeoutError:
+                d = {"error": "module_timeout", "timeout_seconds": 40}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "subdomain", 40)
             results["subdomains"] = d
             await push("subdomain", _STEP_PROGRESS["subdomain"], d)
 
         if run_all or "dns" in scan_types:
             await push_start("dns")
-            d = await asyncio.to_thread(dns_lookup, domain)
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(dns_lookup, domain), timeout=45)
+            except asyncio.TimeoutError:
+                d = {"error": "module_timeout", "timeout_seconds": 45}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "dns", 45)
             results["dns"] = d
             await push("dns", _STEP_PROGRESS["dns"], d)
 
         if run_all or "whois" in scan_types:
             await push_start("whois")
-            d = await asyncio.to_thread(whois_lookup, domain)
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(whois_lookup, domain), timeout=25)
+            except asyncio.TimeoutError:
+                d = {"error": "module_timeout", "timeout_seconds": 25}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "whois", 25)
             results["whois"] = d
             await push("whois", _STEP_PROGRESS["whois"], d)
 
         if run_all or "nmap" in scan_types:
             await push_start("nmap")
-            d = await asyncio.to_thread(nmap_scan, domain)
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(nmap_scan, domain), timeout=120)
+            except asyncio.TimeoutError:
+                d = {"error": "module_timeout", "timeout_seconds": 120}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "nmap", 120)
             results["nmap"] = d
             await push("nmap", _STEP_PROGRESS["nmap"], d)
 
         if run_all or "ssl" in scan_types:
             from modules.recon.ssl_analysis import analyze_ssl
             await push_start("ssl")
-            d = await asyncio.to_thread(analyze_ssl, domain)
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(analyze_ssl, domain), timeout=15)
+            except asyncio.TimeoutError:
+                d = {"error": "module_timeout", "timeout_seconds": 15}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "ssl", 15)
             results["ssl"] = d
             await push("ssl", _STEP_PROGRESS["ssl"], d)
 
         if run_all or "headers" in scan_types:
             from modules.recon.security_headers import check_security_headers
             await push_start("headers")
-            d = await asyncio.to_thread(check_security_headers, url)
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(check_security_headers, url), timeout=15)
+            except asyncio.TimeoutError:
+                d = {"error": "module_timeout", "timeout_seconds": 15}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "headers", 15)
             results["headers"] = d
             await push("headers", _STEP_PROGRESS["headers"], d)
 
         if run_all or "ports" in scan_types:
             from modules.recon.port_scanner import scan_ports
             await push_start("ports")
-            d = await asyncio.to_thread(scan_ports, domain)
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(scan_ports, domain), timeout=30)
+            except asyncio.TimeoutError:
+                d = {"error": "module_timeout", "timeout_seconds": 30}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "ports", 30)
             results["ports"] = d
             await push("ports", _STEP_PROGRESS["ports"], d)
 
         if run_all or "xss" in scan_types:
             await push_start("xss")
-            d = await asyncio.to_thread(scan_xss, url)
-            all_vulns.extend(d)
-            await push("xss", _STEP_PROGRESS["xss"])
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(scan_xss, url), timeout=75)
+                all_vulns.extend(d)
+                await push("xss", _STEP_PROGRESS["xss"])
+            except asyncio.TimeoutError:
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "xss", 75)
+                await push("xss", _STEP_PROGRESS["xss"], {"error": "module_timeout", "timeout_seconds": 75})
 
         if run_all or "sqli" in scan_types:
             await push_start("sqli")
-            d = await asyncio.to_thread(scan_sqli, url)
-            all_vulns.extend(d)
-            await push("sqli", _STEP_PROGRESS["sqli"])
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(scan_sqli, url), timeout=75)
+                all_vulns.extend(d)
+                await push("sqli", _STEP_PROGRESS["sqli"])
+            except asyncio.TimeoutError:
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "sqli", 75)
+                await push("sqli", _STEP_PROGRESS["sqli"], {"error": "module_timeout", "timeout_seconds": 75})
 
         if run_all or "ssrf" in scan_types:
             await push_start("ssrf")
-            d = await asyncio.to_thread(scan_ssrf, url)
-            all_vulns.extend(d)
-            await push("ssrf", _STEP_PROGRESS["ssrf"])
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(scan_ssrf, url), timeout=75)
+                all_vulns.extend(d)
+                await push("ssrf", _STEP_PROGRESS["ssrf"])
+            except asyncio.TimeoutError:
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "ssrf", 75)
+                await push("ssrf", _STEP_PROGRESS["ssrf"], {"error": "module_timeout", "timeout_seconds": 75})
 
         if run_all or "lfi" in scan_types:
             await push_start("lfi")
-            d = await asyncio.to_thread(scan_lfi, url)
-            all_vulns.extend(d)
-            await push("lfi", _STEP_PROGRESS["lfi"])
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(scan_lfi, url), timeout=75)
+                all_vulns.extend(d)
+                await push("lfi", _STEP_PROGRESS["lfi"])
+            except asyncio.TimeoutError:
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "lfi", 75)
+                await push("lfi", _STEP_PROGRESS["lfi"], {"error": "module_timeout", "timeout_seconds": 75})
 
         if run_all or "redirect" in scan_types:
             await push_start("redirect")
-            d = await asyncio.to_thread(scan_open_redirect, url)
-            all_vulns.extend(d)
-            await push("redirect", _STEP_PROGRESS["redirect"])
+            try:
+                d = await asyncio.wait_for(asyncio.to_thread(scan_open_redirect, url), timeout=75)
+                all_vulns.extend(d)
+                await push("redirect", _STEP_PROGRESS["redirect"])
+            except asyncio.TimeoutError:
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "redirect", 75)
+                await push("redirect", _STEP_PROGRESS["redirect"], {"error": "module_timeout", "timeout_seconds": 75})
 
         if run_all or "osint" in scan_types:
             await push_start("osint")
-            emails = await asyncio.to_thread(find_emails, domain)
-            social = await asyncio.to_thread(find_social_profiles, domain)
-            results["osint"] = {"emails": emails, "social": social}
+
+            async def _run_osint():
+                emails = await asyncio.to_thread(find_emails, domain)
+                social = await asyncio.to_thread(find_social_profiles, domain)
+                return emails, social
+
+            try:
+                emails, social = await asyncio.wait_for(_run_osint(), timeout=45)
+                results["osint"] = {"emails": emails, "social": social}
+            except asyncio.TimeoutError:
+                results["osint"] = {"error": "module_timeout", "timeout_seconds": 45}
+                logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "osint", 45)
             await push("osint", _STEP_PROGRESS["osint"], results["osint"])
 
         # all_vulns now carries every classifier verdict (CONFIRMED plus
@@ -2348,6 +2411,27 @@ async def admin_auth_log(
             "detail": detail,
         })
     return JSONResponse(list(reversed(entries)))
+
+
+@app.get(
+    "/api/admin/scan-watchdog/status",
+    tags=["Admin"],
+    summary="Scan watchdog scheduler status",
+    description=(
+        "Whether the periodic orphaned-scan sweep (modules/scan_watchdog/scheduler.py) "
+        "is running in this process, its configured interval and staleness threshold, "
+        "when it last ran and how many scans it reaped, and its next scheduled run. "
+        "**Admin role required.**"
+    ),
+    responses={
+        200: {"description": "Scheduler status"},
+        403: {"description": "Admin role required", "model": ErrorResponse},
+    },
+)
+async def admin_scan_watchdog_status(user: User = Depends(web_user)):
+    require_admin(user)
+    from modules.scan_watchdog.scheduler import get_status
+    return JSONResponse(get_status())
 
 
 @app.get(
