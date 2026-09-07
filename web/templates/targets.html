@@ -12,6 +12,7 @@
       </div>
     </div>
     {% if user.role in ('admin', 'analyst') %}
+    <input type="hidden" id="csrf-token" value="{{ csrf_token }}" />
     <div class="form-group">
       <label>URL *</label>
       <input type="text" id="target-url" placeholder="https://example.com" />

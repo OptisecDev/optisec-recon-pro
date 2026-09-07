@@ -492,6 +492,7 @@ window.addTarget = async function() {
   fd.append('url', url);
   fd.append('name', name || '');
   fd.append('notes', notes || '');
+  fd.append('csrf_token', document.getElementById('csrf-token')?.value || '');
 
   const r = await fetch('/targets/add', { method: 'POST', body: fd });
   const data = await r.json();
@@ -499,13 +500,17 @@ window.addTarget = async function() {
     toast('Target added!');
     setTimeout(() => location.reload(), 800);
   } else {
-    toast('Failed to add target', 'error');
+    toast(data.error || 'Failed to add target', 'error');
   }
 };
 
 window.deleteTarget = async function(id) {
   if (!confirm('Remove this target?')) return;
-  const data = await API.delete(`/targets/${id}`);
+  const r = await fetch(`/targets/${id}`, {
+    method: 'DELETE',
+    headers: { 'X-CSRF-Token': document.getElementById('csrf-token')?.value || '' },
+  });
+  const data = await r.json();
   if (data.success) {
     document.getElementById(`target-row-${id}`)?.remove();
     toast('Target removed');

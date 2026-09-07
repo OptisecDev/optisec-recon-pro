@@ -1,8 +1,10 @@
 """Pydantic request/response schemas for OPTISEC API."""
 from __future__ import annotations
 from typing import Any, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from urllib.parse import urlparse
+import ipaddress
 import re
+from pydantic import BaseModel, Field, field_validator
 
 
 # ─── Generic ──────────────────────────────────────────────────────────────────
@@ -71,6 +73,30 @@ class UserDetail(BaseModel):
 
 # ─── Targets ──────────────────────────────────────────────────────────────────
 
+_SSRF_BLOCKED_HOSTNAMES = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
+
+
+def _is_ssrf_blocked_host(hostname: str) -> bool:
+    """Minimal SSRF guard for a user-supplied target host: literal loopback/
+    link-local/RFC1918-style addresses and the "localhost" family of names.
+    Deliberately does not resolve DNS for ordinary domain names -- that
+    would turn target creation into a network call and still wouldn't
+    catch DNS-rebinding, which is out of scope for this check (the scanner
+    modules are the actual line of defense against a malicious target
+    resolving to an internal address at scan time)."""
+    host = hostname.lower().rstrip(".")
+    if host in _SSRF_BLOCKED_HOSTNAMES or host.endswith(".localhost"):
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return (
+        ip.is_loopback or ip.is_link_local or ip.is_private
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    )
+
+
 class TargetCreate(BaseModel):
     url: str = Field(..., example="https://tesla.com",
                      description="Target URL or domain (required)")
@@ -84,6 +110,15 @@ class TargetCreate(BaseModel):
         v = v.strip()
         if not v:
             raise ValueError("URL is required")
+        parsed = urlparse(v if "://" in v else f"https://{v}")
+        hostname = parsed.hostname or ""
+        if not hostname:
+            raise ValueError("Invalid target URL")
+        if _is_ssrf_blocked_host(hostname):
+            raise ValueError(
+                "Target host is a local/internal address (localhost, loopback, "
+                "link-local, or private network range) and cannot be added"
+            )
         return v
 
 

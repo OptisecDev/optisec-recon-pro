@@ -49,7 +49,9 @@ from web.license import (
     get_license, reload_license, activate_license, deactivate_license,
     generate_license_key, FEATURE_LABELS, TIER_FEATURES,
 )
+from web.rate_limit import rate_limiter
 from web.shared_templates import register_template_globals
+from pydantic import ValidationError
 
 from modules.recon.subdomains import enumerate_subdomains
 from modules.recon.dns_lookup import dns_lookup
@@ -1467,17 +1469,34 @@ async def targets_page(request: Request, user: User = Depends(web_user), db: Asy
         select(Target).where(Target.user_id == user.id).order_by(Target.created_at.desc())
     )).scalars().all()
 
-    scan_counts = {}
-    for t in targets:
-        cnt = (await db.execute(
-            select(func.count()).select_from(Scan).where(Scan.target_id == t.id)
-        )).scalar()
-        scan_counts[t.id] = cnt
+    scan_counts = dict((await db.execute(
+        select(Scan.target_id, func.count())
+        .where(Scan.target_id.in_([t.id for t in targets]))
+        .group_by(Scan.target_id)
+    )).all()) if targets else {}
 
-    return templates.TemplateResponse(request, "targets.html", {
+    # CSRF token for the add-target form and delete-target requests -- same
+    # cookie-bound double-submit token as /license (see CSRF_COOKIE_NAME /
+    # _current_csrf_secret below), just also handed to a plain fetch/FormData
+    # caller instead of only an HTML <form>.
+    csrf_secret, is_new = _current_csrf_secret(request)
+    response = templates.TemplateResponse(request, "targets.html", {
         "app_name": APP_NAME, "active": "targets", "user": user,
         "targets": targets, "scan_counts": scan_counts,
+        "csrf_token": generate_csrf_token(csrf_secret),
     })
+    if is_new:
+        _set_csrf_cookie(response, csrf_secret)
+    return response
+
+
+# 10 req/min per IP is generous for a human adding targets one at a time
+# through the form, but caps a scripted loop hammering the endpoint.
+_targets_add_limiter = rate_limiter(
+    "targets_add",
+    lambda: int(os.environ.get("RATE_LIMIT_TARGETS_ADD", "10")),
+    60,
+)
 
 
 @app.post(
@@ -1485,20 +1504,50 @@ async def targets_page(request: Request, user: User = Depends(web_user), db: Asy
     tags=["Targets"],
     summary="Add a new target",
     description="Add a domain or URL to your target list. Requires **analyst** or **admin** role.",
+    dependencies=[Depends(_targets_add_limiter)],
     responses={
         200: {"description": "Target created", "model": TargetResponse},
-        403: {"description": "Insufficient role", "model": ErrorResponse},
+        400: {"description": "Invalid target URL", "model": ErrorResponse},
+        403: {"description": "Insufficient role, CSRF failure, or target limit reached", "model": ErrorResponse},
+        429: {"description": "Rate limited", "model": ErrorResponse},
     },
 )
 async def target_add(
+    request: Request,
     url: str = Form(...),
     name: str = Form(""),
     notes: str = Form(""),
+    csrf_token: str = Form(...),
     user: User = Depends(web_user),
     db: AsyncSession = Depends(get_db),
 ):
     require_analyst_or_admin(user)
-    t = Target(user_id=user.id, url=url.strip(), name=name.strip(), notes=notes.strip())
+
+    csrf_secret = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not verify_csrf_token(csrf_secret, csrf_token):
+        return JSONResponse(
+            {"success": False, "error": "Your session was refreshed for security. Please reload the page and try again."},
+            status_code=403,
+        )
+
+    try:
+        payload = TargetCreate(url=url, name=name, notes=notes)
+    except ValidationError as e:
+        return JSONResponse({"success": False, "error": e.errors()[0]["msg"]}, status_code=400)
+
+    lic = get_license()
+    if lic.max_targets >= 0:
+        target_count = (await db.execute(
+            select(func.count()).select_from(Target).where(Target.user_id == user.id)
+        )).scalar()
+        if target_count >= lic.max_targets:
+            return JSONResponse({
+                "success": False,
+                "error": f"Target limit reached ({lic.max_targets} targets on the {lic.tier_label} plan). "
+                         f"Upgrade your license to add more targets.",
+            }, status_code=403)
+
+    t = Target(user_id=user.id, url=payload.url.strip(), name=payload.name.strip(), notes=payload.notes.strip())
     db.add(t)
     await db.commit()
     await db.refresh(t)
@@ -1515,16 +1564,23 @@ async def target_add(
     description="Permanently remove a target. Only the owning user (or admin) can delete.",
     responses={
         200: {"description": "Target deleted"},
+        403: {"description": "Insufficient role or CSRF failure", "model": ErrorResponse},
         404: {"description": "Target not found", "model": ErrorResponse},
-        403: {"description": "Insufficient role", "model": ErrorResponse},
     },
 )
 async def target_delete(
+    request: Request,
     target_id: int,
     user: User = Depends(web_user),
     db: AsyncSession = Depends(get_db),
 ):
     require_analyst_or_admin(user)
+
+    csrf_secret = request.cookies.get(CSRF_COOKIE_NAME, "")
+    csrf_token = request.headers.get("X-CSRF-Token", "")
+    if not verify_csrf_token(csrf_secret, csrf_token):
+        raise HTTPException(403, "CSRF token missing or invalid")
+
     t = (await db.execute(
         select(Target).where(Target.id == target_id, Target.user_id == user.id)
     )).scalar_one_or_none()
