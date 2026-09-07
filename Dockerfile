@@ -63,4 +63,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # already trusts (see web/auth.py) -- as an explicit, narrow uvicorn-level
 # allowlist. Unset, it defaults to 127.0.0.1 (uvicorn's own safe default):
 # no forwarded header is trusted from anywhere until an operator opts in.
-CMD ["sh", "-c", "python -m uvicorn web.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2 --proxy-headers --forwarded-allow-ips=${TRUSTED_PROXY_IPS:-127.0.0.1}"]
+CMD ["sh", "-c", "python -m uvicorn web.app:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --proxy-headers --forwarded-allow-ips=${TRUSTED_PROXY_IPS:-127.0.0.1}"]
