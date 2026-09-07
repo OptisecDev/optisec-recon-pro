@@ -109,7 +109,25 @@ MAX_THREADS = 50
 # (used for lightweight DNS-only subdomain probing) since these are full
 # HTTP requests against a single live target — too high a value risks
 # looking like a request flood / tripping the target's own rate limiting.
-VULN_SCAN_CONCURRENCY = int(os.environ.get("VULN_SCAN_CONCURRENCY", "8"))
+#
+# Lowered from 8 to 4 after the 2026-09-07 04:41 OOM on Render's free tier
+# (512MB hard cap, 2 uvicorn workers per README's start command). Measured
+# locally against the same `--workers 2` command: each worker's baseline
+# import/startup footprint alone is ~155-160MB RSS (~310-320MB idle for both
+# workers, before a single request), leaving a thin ~190-200MB shared budget
+# for everything else. Each concurrent scanner thread fully buffers+decodes
+# one HTTP response body (`requests`' `r.text`, not streamed) — measured
+# transient cost is roughly 3x the target page's size per in-flight thread
+# (e.g. a ~3MB page cost ~9-10MB/thread at the moment of decode). Since scan
+# targets are arbitrary/unpredictable (this is a recon tool, not a fixed
+# internal API), a single scan hitting a large page at concurrency=8 could
+# transiently add 60-150MB+ on top of the ~310MB baseline. concurrency=4
+# halves that worst case while keeping most of the parallel speedup, and
+# keeps combined usage under 512MB with the requested 30%+ safety margin for
+# page sizes up to a few MB. Does not address the ~300MB fixed two-worker
+# baseline itself (would need --workers 1 or a paid plan — out of scope here,
+# both deliberately deferred).
+VULN_SCAN_CONCURRENCY = int(os.environ.get("VULN_SCAN_CONCURRENCY", "4"))
 NMAP_DEFAULT_FLAGS = "-sV -sC --open"
 WORDLIST_PATH = DATA_DIR / "wordlists" / "subdomains.txt"
 TARGETS_FILE = DATA_DIR / "targets.json"
