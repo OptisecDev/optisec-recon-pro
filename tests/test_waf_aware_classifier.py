@@ -187,6 +187,68 @@ def test_encoded_safe_quote_payload():
     assert result.should_report is False
 
 
+# ── POSSIBLE (raw match, but not a verified executable context) ─────────
+# Regression coverage for the google.com false-positive: a payload can be
+# reflected byte-for-byte in the response yet never actually execute
+# (inert attribute text, a JSON API body, an HTML comment). Before this
+# fix, classify() treated any raw substring match on HTTP 200 with no WAF
+# as CONFIRMED/High regardless of context — these are exactly the cases
+# that must now downgrade to POSSIBLE/Medium instead.
+
+def test_possible_when_payload_trapped_in_attribute_value():
+    """Mirrors the real google.com false positive: the search query is
+    echoed back verbatim into a quoted attribute (e.g. the search box's
+    value=), never becoming a real <script>/event-handler element."""
+    body = f'<html><body><input type="text" name="q" value="{PAYLOAD}"></body></html>'
+    resp = _mock_response(200, {}, body)
+    result = classify_response(resp, PAYLOAD)
+
+    assert result.verdict == "POSSIBLE"
+    assert result.severity == "Medium"
+    assert result.should_report is False
+
+
+def test_possible_when_payload_in_json_response():
+    body = json.dumps({"query": PAYLOAD, "results": []})
+    resp = _mock_response(200, {"content-type": "application/json"}, body)
+    result = classify_response(resp, PAYLOAD)
+
+    assert result.verdict == "POSSIBLE"
+    assert result.should_report is False
+
+
+def test_possible_when_payload_in_json_body_without_content_type_header():
+    """Guards against relying on Content-Type alone — the body itself
+    parsing as a whole JSON document is enough to withhold CONFIRMED."""
+    body = json.dumps({"echo": PAYLOAD})
+    resp = _mock_response(200, {}, body)
+    result = classify_response(resp, PAYLOAD)
+
+    assert result.verdict == "POSSIBLE"
+    assert result.should_report is False
+
+
+def test_possible_when_payload_only_in_html_comment():
+    body = f"<html><body><!-- debug: {PAYLOAD} --></body></html>"
+    resp = _mock_response(200, {}, body)
+    result = classify_response(resp, PAYLOAD)
+
+    assert result.verdict == "POSSIBLE"
+    assert result.should_report is False
+
+
+def test_possible_still_reports_waf_detected_like_inconclusive():
+    body = f'<html><body><input value="{PAYLOAD}"></body></html>'
+    resp = _mock_response(200, {"cf-ray": "abc-DFW"}, body)
+    result = classify_response(resp, PAYLOAD)
+
+    # WAF present takes priority in should_report=False either way, but the
+    # verdict itself should not become POSSIBLE here — no-WAF is a
+    # precondition for even reaching the raw-reflection branch.
+    assert result.verdict != "CONFIRMED"
+    assert result.should_report is False
+
+
 # ── INCONCLUSIVE (safety-net fallback) ───────────────────────────────────
 
 def test_inconclusive_no_reflection_at_all():

@@ -224,34 +224,38 @@ def _test_form(session: requests.Session, form_url: str, method: str, inputs: di
     return findings
 
 
-def _scan_forms(session: requests.Session, base_url: str) -> list:
-    """Scan HTML form fields for SQLi (each form tested concurrently)."""
-    try:
-        r = session.get(base_url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
-        soup = BeautifulSoup(r.text, "html.parser")
-    except Exception:
-        return []
+def _scan_forms(session: requests.Session, base_url: str, forms_override: list = None) -> list:
+    """Scan HTML form fields for SQLi (each form tested concurrently).
+    `forms_override` — (form_url, method, inputs) tuples from a prior
+    crawl() across every discovered page — is used when given; otherwise
+    falls back to fetching just `base_url` and parsing its own forms."""
+    if forms_override is not None:
+        form_specs = forms_override[:15]
+    else:
+        try:
+            r = session.get(base_url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
+            soup = BeautifulSoup(r.text, "html.parser")
+        except Exception:
+            return []
 
-    forms = soup.find_all("form")[:3]
-    tasks = []
-    for form in forms:
-        action = form.get("action", "")
-        method = form.get("method", "get").lower()
-        form_url = urljoin(base_url, action) if action else base_url
-        inputs = {}
-        for inp in form.find_all(["input", "textarea"]):
-            name = inp.get("name", "")
-            if name:
-                inputs[name] = inp.get("value", "1")
-        if not inputs:
-            continue
-        tasks.append((form_url, method, inputs))
+        form_specs = []
+        for form in soup.find_all("form")[:3]:
+            action = form.get("action", "")
+            method = form.get("method", "get").lower()
+            form_url = urljoin(base_url, action) if action else base_url
+            inputs = {}
+            for inp in form.find_all(["input", "textarea"]):
+                name = inp.get("name", "")
+                if name:
+                    inputs[name] = inp.get("value", "1")
+            if inputs:
+                form_specs.append((form_url, method, inputs))
 
-    return run_concurrent_scan(tasks, lambda t: _test_form(session, *t))
+    return run_concurrent_scan(form_specs, lambda t: _test_form(session, *t))
 
 
-def scan_sqli(url: str) -> list:
-    parsed = urlparse(url)
+def _scan_one_url(session: requests.Session, target_url: str) -> list:
+    parsed = urlparse(target_url)
     params = parse_qs(parsed.query)
 
     if not params:
@@ -260,9 +264,6 @@ def scan_sqli(url: str) -> list:
         # names correspond to an actual endpoint parameter anyway, so testing
         # 3 of them was mostly wasted request volume on a bare-domain scan.
         params = {"id": ["1"]}
-
-    session = requests.Session()
-    session.headers["User-Agent"] = "OPTISEC-ReconPro/1.0 (Security Testing)"
 
     findings = []
     seen = set()
@@ -284,7 +285,30 @@ def scan_sqli(url: str) -> list:
                 seen.add(key)
                 findings.append(f)
 
-    for f in _scan_forms(session, url):
+    return findings
+
+
+def scan_sqli(url: str, crawled_urls: list = None, crawled_forms: list = None) -> list:
+    """`crawled_urls`/`crawled_forms` — from modules.vuln.crawler.crawl(url)
+    — let the caller hand this scanner real attack surface discovered
+    across every page reachable from `url`, not just `url` itself. Both
+    default to None so existing single-URL callers are unaffected."""
+    session = requests.Session()
+    session.headers["User-Agent"] = "OPTISEC-ReconPro/1.0 (Security Testing)"
+
+    findings = []
+    seen = set()
+
+    urls_to_test = [url] + [u for u in (crawled_urls or []) if u != url]
+    for target_url in urls_to_test:
+        for f in _scan_one_url(session, target_url):
+            key = (f["url"], f["parameter"])
+            if key not in seen:
+                seen.add(key)
+                findings.append(f)
+
+    forms_override = [(cf.url, cf.method, cf.inputs) for cf in crawled_forms] if crawled_forms else None
+    for f in _scan_forms(session, url, forms_override=forms_override):
         key = (f["url"], f["parameter"])
         if key not in seen:
             seen.add(key)

@@ -1933,10 +1933,27 @@ async def _run_scan_task(
             results["ports"] = d
             await push("ports", _STEP_PROGRESS["ports"], d)
 
+        _vuln_scan_types = {"xss", "sqli", "ssrf", "lfi", "redirect"}
+        crawled_urls, crawled_forms = [], []
+        if run_all or (_vuln_scan_types & set(scan_types or [])):
+            # One bounded, same-origin crawl feeds every vuln scanner below
+            # real params/forms discovered across the target's linked pages
+            # instead of each scanner guessing off `url` alone — see
+            # modules/vuln/crawler.py. Any failure/timeout here must never
+            # block the scan: scanners fall back to their url-only behavior.
+            try:
+                from modules.vuln.crawler import crawl
+                crawl_result = await asyncio.wait_for(asyncio.to_thread(crawl, url), timeout=30)
+                crawled_urls, crawled_forms = crawl_result.urls, crawl_result.forms
+            except Exception as e:
+                logger.warning("[scan %s] crawl step failed/timed out: %s", scan_id, e)
+
         if run_all or "xss" in scan_types:
             await push_start("xss")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(scan_xss, url), timeout=75)
+                d = await asyncio.wait_for(
+                    asyncio.to_thread(scan_xss, url, crawled_urls, crawled_forms), timeout=75
+                )
                 all_vulns.extend(d)
                 await push("xss", _STEP_PROGRESS["xss"])
             except asyncio.TimeoutError:
@@ -1946,7 +1963,9 @@ async def _run_scan_task(
         if run_all or "sqli" in scan_types:
             await push_start("sqli")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(scan_sqli, url), timeout=75)
+                d = await asyncio.wait_for(
+                    asyncio.to_thread(scan_sqli, url, crawled_urls, crawled_forms), timeout=75
+                )
                 all_vulns.extend(d)
                 await push("sqli", _STEP_PROGRESS["sqli"])
             except asyncio.TimeoutError:
@@ -1956,7 +1975,9 @@ async def _run_scan_task(
         if run_all or "ssrf" in scan_types:
             await push_start("ssrf")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(scan_ssrf, url), timeout=75)
+                d = await asyncio.wait_for(
+                    asyncio.to_thread(scan_ssrf, url, crawled_urls, crawled_forms), timeout=75
+                )
                 all_vulns.extend(d)
                 await push("ssrf", _STEP_PROGRESS["ssrf"])
             except asyncio.TimeoutError:
@@ -1966,7 +1987,9 @@ async def _run_scan_task(
         if run_all or "lfi" in scan_types:
             await push_start("lfi")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(scan_lfi, url), timeout=75)
+                d = await asyncio.wait_for(
+                    asyncio.to_thread(scan_lfi, url, crawled_urls, crawled_forms), timeout=75
+                )
                 all_vulns.extend(d)
                 await push("lfi", _STEP_PROGRESS["lfi"])
             except asyncio.TimeoutError:
@@ -1976,7 +1999,9 @@ async def _run_scan_task(
         if run_all or "redirect" in scan_types:
             await push_start("redirect")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(scan_open_redirect, url), timeout=75)
+                d = await asyncio.wait_for(
+                    asyncio.to_thread(scan_open_redirect, url, crawled_urls, crawled_forms), timeout=75
+                )
                 all_vulns.extend(d)
                 await push("redirect", _STEP_PROGRESS["redirect"])
             except asyncio.TimeoutError:

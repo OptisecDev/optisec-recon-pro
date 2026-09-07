@@ -66,8 +66,8 @@ def _test_param(session: requests.Session, parsed, params: dict, param: str) -> 
     return [pending] if pending is not None else []
 
 
-def scan_open_redirect(url: str) -> list:
-    parsed = urlparse(url)
+def _scan_one_url(session: requests.Session, target_url: str) -> list:
+    parsed = urlparse(target_url)
     params = parse_qs(parsed.query)
 
     redirect_params = [k for k in params if any(kw in k.lower() for kw in
@@ -76,7 +76,27 @@ def scan_open_redirect(url: str) -> list:
     if not redirect_params:
         redirect_params = list(params.keys())[:5]
 
+    return run_concurrent_scan(redirect_params, lambda param: _test_param(session, parsed, params, param))
+
+
+def scan_open_redirect(url: str, crawled_urls: list = None, crawled_forms: list = None) -> list:
+    """`crawled_urls` — from modules.vuln.crawler.crawl(url) — lets the
+    caller hand this scanner real query-string params discovered across
+    every page reachable from `url`, not just `url` itself. Defaults to
+    None so existing single-URL callers are unaffected. `crawled_forms` is
+    accepted for interface parity with the other scan_*() functions but
+    unused — open-redirect testing here only ever targets URL query
+    params, never form fields."""
     session = requests.Session()
     session.headers["User-Agent"] = "OPTISEC-ReconPro/1.0 (Security Testing)"
 
-    return run_concurrent_scan(redirect_params, lambda param: _test_param(session, parsed, params, param))
+    urls_to_test = [url] + [u for u in (crawled_urls or []) if u != url]
+    findings = []
+    seen = set()
+    for target_url in urls_to_test:
+        for f in _scan_one_url(session, target_url):
+            key = (f["url"], f["parameter"])
+            if key not in seen:
+                seen.add(key)
+                findings.append(f)
+    return findings

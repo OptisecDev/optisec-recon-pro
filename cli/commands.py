@@ -16,6 +16,7 @@ from modules.vuln.sqli import scan_sqli
 from modules.vuln.ssrf import scan_ssrf
 from modules.vuln.lfi import scan_lfi
 from modules.vuln.open_redirect import scan_open_redirect
+from modules.vuln.crawler import crawl
 from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.target.manager import add_target, list_targets, remove_target
@@ -145,13 +146,27 @@ def cmd_vuln_scan(url: str, scan_types: list = None, **kwargs):
         "redirect": (scan_open_redirect, "Open Redirect"),
     }
 
+    # One bounded, same-origin crawl feeds every vuln scanner below real
+    # params/forms discovered across the target's linked pages instead of
+    # each scanner guessing off `url` alone — see modules/vuln/crawler.py.
+    # A failed/slow crawl must never block the scan.
+    crawled_urls, crawled_forms = [], []
+    console.print("[bold green]Crawling target for links/forms...[/bold green]")
+    with _spinner("Crawling") as p:
+        p.add_task("crawl")
+        try:
+            crawl_result = crawl(url)
+            crawled_urls, crawled_forms = crawl_result.urls, crawl_result.forms
+        except Exception as e:
+            console.print(f"[yellow]Crawl failed, falling back to single-URL scan: {e}[/yellow]")
+
     for stype in scan_types:
         if stype in scanners:
             fn, name = scanners[stype]
             console.print(f"[bold green]Scanning for {name}...[/bold green]")
             with _spinner(f"Testing {name}") as p:
                 p.add_task("scan")
-                findings = fn(url)
+                findings = fn(url, crawled_urls, crawled_forms)
             all_findings.extend(findings)
 
     if all_findings:

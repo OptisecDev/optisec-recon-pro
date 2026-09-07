@@ -5,8 +5,15 @@ treating every reflection/error/timing signal as an exploitable
 vulnerability outright. Two families of checks share the same WAF-detection
 core (detect_waf/WAF_SIGNATURES/BLOCKING_STATUS_CODES/INVALID_STATUS_CODES):
 
-XSS reflection — classify()/classify_response(), four verdicts:
-  CONFIRMED        raw (unencoded) payload reflected, HTTP 200, no WAF seen
+XSS reflection — classify()/classify_response(), five verdicts:
+  CONFIRMED        raw payload reflected in a genuinely executable HTML
+                   context (real <script>/event-handler sink, verified by
+                   parsing the response — not just a body-wide substring
+                   match), HTTP 200, no WAF seen
+  POSSIBLE          raw payload reflected verbatim, but it landed somewhere
+                   a browser would not execute it (inert attribute text,
+                   HTML comment, a JSON response body, ...) — needs manual
+                   review, never auto-reported
   WAF_BLOCKED       known WAF signature + a blocking status code
   ENDPOINT_INVALID  HTTP 404/400 — nothing was actually tested
   ENCODED_SAFE      payload present only in HTML-entity-encoded form
@@ -31,6 +38,8 @@ import json
 from dataclasses import dataclass
 from html import escape
 from typing import Optional
+
+from bs4 import BeautifulSoup
 
 BLOCKING_STATUS_CODES = {403, 406, 429}
 INVALID_STATUS_CODES = {404, 400}
@@ -102,24 +111,27 @@ class ClassificationResult:
 
       CONFIRMED
         waf_detected is ALWAYS forced to None, unconditionally. A CONFIRMED
-        verdict means the technical signal itself (raw XSS reflection, DB
-        error string, blind boolean/timing differential, off-site redirect
-        Location) proved the vulnerability directly — it has nothing to do
-        with WAF detection, so there is nothing WAF-related to record here.
+        verdict means the technical signal itself (raw XSS reflection
+        verified to sit in an executable HTML context, DB error string,
+        blind boolean/timing differential, off-site redirect Location)
+        proved the vulnerability directly — it has nothing to do with WAF
+        detection, so there is nothing WAF-related to record here.
 
       WAF_BLOCKED
         waf_detected is ALWAYS a vendor name, NEVER None — reaching this
         verdict requires detect_waf() to have already matched a vendor
         (see the `waf_vendor` truthiness check gating this branch).
 
-      ENDPOINT_INVALID / ENCODED_SAFE / INCONCLUSIVE
+      POSSIBLE / ENDPOINT_INVALID / ENCODED_SAFE / INCONCLUSIVE
         waf_detected is whatever detect_waf() returned for that response:
         a vendor name if a known WAF/CDN signature happened to be present,
         or None if it simply didn't match any signature in WAF_SIGNATURES
         (the common case for targets with no recognized WAF). None here
         means "no WAF signature matched", not "detection failed".
 
-    Only CONFIRMED sets should_report=True.
+    Only CONFIRMED sets should_report=True. POSSIBLE is a raw-text match
+    that failed context verification — it is persisted for analyst review
+    (like every other verdict) but is never auto-reported as confirmed.
     """
     verdict: str
     severity: Optional[str]
@@ -166,6 +178,93 @@ def _reflected_raw(body: str, payload: str) -> bool:
     return bool(payload_lower) and payload_lower in body_lower
 
 
+def _looks_like_json_response(headers: dict, body: str) -> bool:
+    """True if this response is a JSON document rather than an HTML page.
+
+    html.parser scans the byte stream for `<tag>` patterns with no idea
+    that it is actually looking at a JSON string value — so a payload like
+    ``<script>alert(1)</script>`` sitting inside a JSON field (e.g.
+    ``{"query": "<script>alert(1)</script>"}``) would otherwise get
+    "parsed" into a real-looking <script> element and wrongly pass the
+    executable-context check below. A JSON response never gets rendered as
+    HTML by a browser on its own, so raw reflection here can never be
+    CONFIRMED by this signal alone.
+    """
+    for k, v in (headers or {}).items():
+        if str(k).lower() == "content-type" and "json" in str(v).lower():
+            return True
+    stripped = (body or "").strip()
+    if stripped[:1] in ("{", "["):
+        try:
+            json.loads(stripped)
+            return True
+        except (TypeError, ValueError):
+            return False
+    return False
+
+
+def _fragment_correlates(found: str, payload: str) -> bool:
+    """True if `found` (real script text / event-handler attribute value
+    pulled from the parsed DOM) is meaningfully the same content as the
+    injected `payload` — either direction, since a payload that creates a
+    new tag embeds a short fragment (e.g. attribute value "alert(1)") as a
+    substring of the full payload, while a payload that breaks out of an
+    existing inline <script> string (e.g. ``';alert(1)//``) ends up fully
+    embedded inside that script's (longer) text content instead."""
+    found = (found or "").strip().lower()
+    payload = (payload or "").lower()
+    if len(found) < 3:
+        return False
+    return found in payload or payload in found
+
+
+def _raw_reflection_is_executable(status_code: int, headers: dict, body: str, payload: str) -> bool:
+    """True only if the raw-reflected payload actually landed somewhere a
+    browser would execute it, verified by parsing the response — not just
+    because the exact payload string happens to appear anywhere in the raw
+    body text.
+
+    Guards against the false-CONFIRMED class of bug where a payload was
+    merely echoed back with zero relation to any real sink: inert text
+    inside a quoted HTML attribute value, inside an HTML comment, or inside
+    a JSON API response body. Real browsers never execute any of those, so
+    a raw substring match alone was never sufficient evidence.
+    """
+    if not payload:
+        return False
+    if _looks_like_json_response(headers, body):
+        return False
+
+    try:
+        soup = BeautifulSoup(body or "", "html.parser")
+    except Exception:
+        return False
+
+    for script in soup.find_all("script"):
+        if _fragment_correlates(script.get_text(), payload):
+            return True
+
+    for tag in soup.find_all(True):
+        for attr, value in tag.attrs.items():
+            if not str(attr).lower().startswith("on"):
+                continue
+            value_str = value if isinstance(value, str) else " ".join(value or [])
+            if _fragment_correlates(value_str, payload):
+                return True
+            # The attribute existing at all with the payload as its exact
+            # value (parser may leave multi-token payloads unsplit in some
+            # malformed-HTML edge cases) is also sufficient.
+            if _fragment_correlates(payload, value_str):
+                return True
+
+        href = tag.attrs.get("src") or tag.attrs.get("href") or ""
+        href_str = href if isinstance(href, str) else " ".join(href or [])
+        if href_str.lower().startswith("javascript:") and _fragment_correlates(href_str, payload):
+            return True
+
+    return False
+
+
 def _reflected_encoded(body: str, payload: str) -> bool:
     body_lower = (body or "").lower()
     encoded = escape(payload or "", quote=True).lower()
@@ -206,15 +305,24 @@ def classify(status_code: int, headers: dict, body: str, payload: str) -> Classi
 
     raw = _reflected_raw(body, payload)
     if raw and status_code == 200 and not waf_vendor:
+        if _raw_reflection_is_executable(status_code, headers, body, payload):
+            return ClassificationResult(
+                verdict="CONFIRMED",
+                severity="High",
+                should_report=True,
+                # Intentionally None, not a bug: CONFIRMED already means "no
+                # WAF was in the way" (see `not waf_vendor` above) — see
+                # ClassificationResult docstring for the full verdict/None
+                # table.
+                waf_detected=None,
+                reason="Raw payload reflected in an executable HTML context (real <script>/event-handler sink), HTTP 200, no WAF detected",
+            )
         return ClassificationResult(
-            verdict="CONFIRMED",
-            severity="High",
-            should_report=True,
-            # Intentionally None, not a bug: CONFIRMED already means "no WAF
-            # was in the way" (see `not waf_vendor` above) — see
-            # ClassificationResult docstring for the full verdict/None table.
-            waf_detected=None,
-            reason="Raw payload reflected unencoded, HTTP 200, no WAF detected",
+            verdict="POSSIBLE",
+            severity="Medium",
+            should_report=False,
+            waf_detected=waf_vendor,
+            reason="Raw payload reflected verbatim, but not in a verified executable context (may be inert attribute text, a comment, or a JSON body) — needs manual review",
         )
 
     encoded = _reflected_encoded(body, payload)
