@@ -365,6 +365,16 @@ def user_tier_color(user) -> str:
     return TIER_LABELS[user_tier(user)][1]
 
 
+def user_max_targets(user) -> int:
+    """Max targets allowed for `user`'s own subscription_tier (-1 =
+    unlimited). Use this instead of get_license().max_targets for any
+    user-facing limit -- the instance-wide license reflects the
+    installation's own activation, not what this specific account is
+    entitled to. See the module-level note above on per-user vs
+    instance-wide gates."""
+    return TIER_LIMITS[user_tier(user)]["max_targets"]
+
+
 def user_has_feature(user, feature: str) -> bool:
     """True if `user`'s own subscription_tier includes `feature`. Shared by
     require_feature_or_402() and the template layer (base.html, license.html)

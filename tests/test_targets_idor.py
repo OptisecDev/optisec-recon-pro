@@ -80,13 +80,13 @@ def client():
     _run(engine.dispose())
 
 
-def _seed_user_token(session_factory, username: str, role: str = "analyst") -> tuple:
+def _seed_user_token(session_factory, username: str, role: str = "analyst", subscription_tier: str = "enterprise") -> tuple:
     async def go():
         async with session_factory() as db:
             user = User(
                 username=username, email=f"{username}@example.com",
                 password_hash=hash_password("Passw0rd!1"),
-                role=role, subscription_tier="enterprise", is_active=True,
+                role=role, subscription_tier=subscription_tier, is_active=True,
             )
             db.add(user)
             await db.commit()
@@ -203,47 +203,65 @@ def test_add_target_allows_ordinary_public_host(client):
     assert resp.json()["success"] is True
 
 
-def test_add_target_rejects_over_max_targets_limit(client, monkeypatch):
-    """S1: max_targets from the active license must be enforced -- a user
-    at their limit gets a clear 403, not an unlimited add."""
+def test_add_target_rejects_over_max_targets_limit(client):
+    """S1: max_targets must come from the requesting user's own
+    subscription_tier (web.license.TIER_LIMITS, free=3) -- a free-tier
+    user at their limit gets a clear 403, not an unlimited add."""
     c, session_factory = client
-    owner_id, owner_token = _seed_user_token(session_factory, "capped")
+    owner_id, owner_token = _seed_user_token(session_factory, "capped", subscription_tier="free")
     _seed_target(session_factory, owner_id, url="https://one.example")
     _seed_target(session_factory, owner_id, url="https://two.example")
+    _seed_target(session_factory, owner_id, url="https://three.example")
 
-    from datetime import datetime, timedelta
-    from web.license import License
-    capped_lic = License(
-        tier="free", issued_to="t", email="", issued_at=datetime.utcnow().isoformat(),
-        expires_at=(datetime.utcnow() + timedelta(days=1)).isoformat(), key="FREE",
-        features=[], max_targets=2, max_scans_day=10, max_users=1,
-    )
-    monkeypatch.setattr(app_module, "get_license", lambda: capped_lic)
-
-    resp = _add_target(c, owner_token, "https://three.example")
+    resp = _add_target(c, owner_token, "https://four.example")
 
     assert resp.status_code == 403
     assert resp.json()["success"] is False
 
 
-def test_add_target_unlimited_tier_bypasses_max_targets_check(client, monkeypatch):
+def test_add_target_unlimited_tier_bypasses_max_targets_check(client):
     c, session_factory = client
-    owner_id, owner_token = _seed_user_token(session_factory, "unlimited")
+    owner_id, owner_token = _seed_user_token(session_factory, "unlimited", subscription_tier="enterprise")
     for i in range(5):
         _seed_target(session_factory, owner_id, url=f"https://existing-{i}.example")
-
-    from datetime import datetime, timedelta
-    from web.license import License
-    unlimited_lic = License(
-        tier="enterprise", issued_to="t", email="", issued_at=datetime.utcnow().isoformat(),
-        expires_at=(datetime.utcnow() + timedelta(days=1)).isoformat(), key="FREE",
-        features=["*"], max_targets=-1, max_scans_day=-1, max_users=-1,
-    )
-    monkeypatch.setattr(app_module, "get_license", lambda: unlimited_lic)
 
     resp = _add_target(c, owner_token, "https://sixth.example")
 
     assert resp.status_code == 200, resp.text[:300]
+
+
+def test_add_target_instance_wide_license_does_not_override_per_user_free_limit(client, monkeypatch):
+    """S1 regression: an active instance-wide PRO/enterprise license (e.g.
+    data/license.json, activated via /license for the installation) must
+    NOT let a free-tier account exceed its own plan's target cap -- this
+    mirrors the exact per-user-vs-instance-wide bug already fixed for
+    require_feature_or_402 (see web/license.py's module docstring). Before
+    the fix, /targets/add read get_license() (instance-wide) instead of
+    the requesting user's own subscription_tier, so every user on an
+    installation with an active PRO license got the 50-target PRO cap
+    regardless of their individual tier."""
+    c, session_factory = client
+    owner_id, owner_token = _seed_user_token(session_factory, "freeuser", subscription_tier="free")
+    _seed_target(session_factory, owner_id, url="https://one.example")
+    _seed_target(session_factory, owner_id, url="https://two.example")
+    _seed_target(session_factory, owner_id, url="https://three.example")
+
+    from datetime import datetime, timedelta
+    from web.license import License
+    instance_pro_lic = License(
+        tier="pro", issued_to="t", email="", issued_at=datetime.utcnow().isoformat(),
+        expires_at=(datetime.utcnow() + timedelta(days=1)).isoformat(), key="OPS4-PRO-x",
+        features=[], max_targets=50, max_scans_day=500, max_users=5,
+    )
+    monkeypatch.setattr(app_module, "get_license", lambda: instance_pro_lic)
+
+    resp = _add_target(c, owner_token, "https://four.example")
+
+    assert resp.status_code == 403, (
+        "free-tier user was allowed past their own limit because the instance-wide "
+        f"license is PRO -- got {resp.status_code}: {resp.text[:300]}"
+    )
+    assert resp.json()["success"] is False
 
 
 def test_add_target_is_rate_limited(client):

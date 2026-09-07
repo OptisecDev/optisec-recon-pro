@@ -48,6 +48,7 @@ from web.websocket_manager import ws_manager
 from web.license import (
     get_license, reload_license, activate_license, deactivate_license,
     generate_license_key, FEATURE_LABELS, TIER_FEATURES,
+    user_max_targets, user_tier_label,
 )
 from web.rate_limit import rate_limiter
 from web.shared_templates import register_template_globals
@@ -1535,15 +1536,15 @@ async def target_add(
     except ValidationError as e:
         return JSONResponse({"success": False, "error": e.errors()[0]["msg"]}, status_code=400)
 
-    lic = get_license()
-    if lic.max_targets >= 0:
+    max_targets = user_max_targets(user)
+    if max_targets >= 0:
         target_count = (await db.execute(
             select(func.count()).select_from(Target).where(Target.user_id == user.id)
         )).scalar()
-        if target_count >= lic.max_targets:
+        if target_count >= max_targets:
             return JSONResponse({
                 "success": False,
-                "error": f"Target limit reached ({lic.max_targets} targets on the {lic.tier_label} plan). "
+                "error": f"Target limit reached ({max_targets} targets on the {user_tier_label(user)} plan). "
                          f"Upgrade your license to add more targets.",
             }, status_code=403)
 
