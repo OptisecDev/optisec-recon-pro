@@ -1,6 +1,5 @@
 import re
-import requests
-from bs4 import BeautifulSoup
+import aiohttp
 from config import DEFAULT_TIMEOUT
 
 SOCIAL_PATTERNS = {
@@ -14,11 +13,12 @@ SOCIAL_PATTERNS = {
     "discord": r"discord\.(?:gg|com/invite)/([A-Za-z0-9]+)",
 }
 
+_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; OPTISEC/1.0)"}
 
-def find_social_profiles(domain: str) -> dict:
+
+async def find_social_profiles(domain: str) -> dict:
     results = {platform: [] for platform in SOCIAL_PATTERNS}
-    session = requests.Session()
-    session.headers["User-Agent"] = "Mozilla/5.0 (compatible; OPTISEC/1.0)"
+    timeout = aiohttp.ClientTimeout(total=DEFAULT_TIMEOUT)
 
     urls = [
         f"https://{domain}",
@@ -28,12 +28,13 @@ def find_social_profiles(domain: str) -> dict:
     ]
 
     all_text = ""
-    for url in urls:
-        try:
-            r = session.get(url, timeout=DEFAULT_TIMEOUT, allow_redirects=True)
-            all_text += r.text + " "
-        except Exception:
-            continue
+    async with aiohttp.ClientSession(headers=_HEADERS, timeout=timeout) as session:
+        for url in urls:
+            try:
+                async with session.get(url, allow_redirects=True) as r:
+                    all_text += await r.text() + " "
+            except Exception:
+                continue
 
     for platform, pattern in SOCIAL_PATTERNS.items():
         matches = re.findall(pattern, all_text, re.IGNORECASE)

@@ -1987,8 +1987,8 @@ async def _run_scan_task(
             await push_start("osint")
 
             async def _run_osint():
-                emails = await asyncio.to_thread(find_emails, domain)
-                social = await asyncio.to_thread(find_social_profiles, domain)
+                emails = await find_emails(domain)
+                social = await find_social_profiles(domain)
                 return emails, social
 
             try:
@@ -2278,8 +2278,8 @@ async def run_osint(request: Request, user: User = Depends(web_user)):
         raise HTTPException(400, "Domain is required")
 
     # Run all OSINT tasks concurrently
-    emails_task = asyncio.to_thread(find_emails, domain)
-    social_task = asyncio.to_thread(find_social_profiles, domain)
+    emails_task = find_emails(domain)
+    social_task = find_social_profiles(domain)
     dns_task = asyncio.to_thread(dns_lookup, domain)
     whois_task = asyncio.to_thread(whois_lookup, domain)
     subs_task = asyncio.to_thread(enumerate_subdomains, domain)

@@ -183,8 +183,8 @@ async def osint_domain(request: Request, user: User = Depends(_user)):
     from modules.recon.subdomains import enumerate_subdomains
     from modules.osint.geo_intel import geolocate_ip
 
-    emails_t = asyncio.to_thread(find_emails, domain)
-    social_t = asyncio.to_thread(find_social_profiles, domain)
+    emails_t = find_emails(domain)
+    social_t = find_social_profiles(domain)
     dns_t = asyncio.to_thread(dns_lookup, domain)
     whois_t = asyncio.to_thread(whois_lookup, domain)
     subs_t = asyncio.to_thread(enumerate_subdomains, domain)

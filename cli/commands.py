@@ -1,5 +1,6 @@
 import sys
 import json
+import asyncio
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -179,11 +180,11 @@ def cmd_osint(domain: str, **kwargs):
 
     with _spinner("Finding emails") as p:
         p.add_task("scan")
-        email_data = find_emails(domain)
+        email_data = asyncio.run(find_emails(domain))
 
     with _spinner("Finding social profiles") as p:
         p.add_task("scan")
-        social_data = find_social_profiles(domain)
+        social_data = asyncio.run(find_social_profiles(domain))
 
     if email_data.get("emails"):
         t = Table(title="Emails Found", style="green")
