@@ -14,6 +14,17 @@ import httpx
 FEDERATION_DB = Path("data/federation.json")
 NODE_KEY_FILE = Path("data/federation_node.key")
 
+# dispatch_scan()/_local_fallback_scan() used to append to fed["tasks"]
+# forever -- every ping/dispatch/register also does a full read-modify-write
+# of the whole federation.json, so an unbounded tasks list makes every
+# federation operation slower over time. Same cap shape as
+# modules/ai_advanced/{zero_day,red_team}.py's prediction/engagement history.
+MAX_STORED_TASKS = 200
+
+
+def _trim_tasks(fed: dict) -> None:
+    fed["tasks"] = fed["tasks"][-MAX_STORED_TASKS:]
+
 
 def _load_federation() -> dict:
     FEDERATION_DB.parent.mkdir(parents=True, exist_ok=True)
@@ -168,6 +179,7 @@ async def dispatch_scan(
     }
 
     fed["tasks"].append(task)
+    _trim_tasks(fed)
     _save_federation(fed)
 
     # Dispatch to nodes
@@ -277,6 +289,7 @@ async def _local_fallback_scan(task_id: str, target: str, scan_types: list, fed:
         "assignments": [{"node_id": "local", "node_name": "This Node", "scan_types": scan_types}],
     }
     fed["tasks"].append(task)
+    _trim_tasks(fed)
     _save_federation(fed)
     return task
 
