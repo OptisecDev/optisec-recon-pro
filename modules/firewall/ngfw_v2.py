@@ -261,6 +261,7 @@ def deep_inspect(
     src_ip: str,
     dst_port: int = 80,
     protocol: str = "HTTP",
+    user_id: Optional[int] = None,
 ) -> dict:
     """Full DPI + ML analysis of an incoming request/packet."""
     combined = f"{method} {path} {body}"
@@ -331,6 +332,7 @@ def deep_inspect(
         "port_suspicious": port_suspicious,
         "blocked": action == "BLOCK",
         "top_threat": sig_hits[0]["name"] if sig_hits else ml_category,
+        "user_id": user_id,
     }
 
     # Persist
@@ -347,7 +349,15 @@ def deep_inspect(
     return result
 
 
-def get_traffic_stats() -> dict:
+def get_traffic_stats(user_id: Optional[int] = None, is_admin: bool = False) -> dict:
+    """`totals`/`category_breakdown`/`top_source_ips`/`geo_distribution`/
+    `blocked_ips` stay computed from every account's traffic (install-wide
+    firewall telemetry, same category as honeypot/threat-feed's global
+    stores). `recent_log`, though, is the raw path/body/user-agent content
+    a specific account submitted to POST /api/inspect -- scoped to
+    `user_id`'s own entries (admin sees every account's -- same
+    admin-sees-all convention used elsewhere in this audit series), so one
+    customer's test payloads aren't visible to another."""
     state = _load_state()
     log = state["traffic_log"]
     stats = state["stats"]
@@ -370,9 +380,11 @@ def get_traffic_stats() -> dict:
         cc = entry.get("geo", {}).get("country_code", "??")
         geo_counts[cc] += 1
 
+    own_log = log if (is_admin or user_id is None) else [e for e in log if e.get("user_id") == user_id]
+
     return {
         "totals": stats,
-        "recent_log": log[:20],
+        "recent_log": own_log[:20],
         "category_breakdown": dict(categories),
         "top_source_ips": [{"ip": ip, "count": cnt} for ip, cnt in top_ips],
         "geo_distribution": dict(geo_counts),

@@ -23,7 +23,7 @@ async def ngfw_home(request: Request, user: User = Depends(_user)):
     from modules.firewall.ngfw_v2 import get_traffic_stats, get_geo_block_list, DPI_SIGNATURES
     return templates.TemplateResponse(request, "ngfw.html", {
         "app_name": APP_NAME, "user": user, "active": "ngfw",
-        "stats": get_traffic_stats(),
+        "stats": get_traffic_stats(user_id=user.id, is_admin=user.role == "admin"),
         "geo_blocks": get_geo_block_list(),
         "dpi_rules": DPI_SIGNATURES[:10],
     })
@@ -42,6 +42,7 @@ async def inspect(request: Request, user: User = Depends(_user)):
         src_ip=data.get("src_ip", "127.0.0.1"),
         dst_port=int(data.get("dst_port", 80)),
         protocol=data.get("protocol", "HTTP"),
+        user_id=user.id,
     )
 
 
@@ -49,7 +50,7 @@ async def inspect(request: Request, user: User = Depends(_user)):
 async def traffic_stats(user: User = Depends(_user)):
     require_feature_or_402("ngfw", user)
     from modules.firewall.ngfw_v2 import get_traffic_stats
-    return get_traffic_stats()
+    return get_traffic_stats(user_id=user.id, is_admin=user.role == "admin")
 
 
 @router.post("/api/simulate-traffic")
