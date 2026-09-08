@@ -1,4 +1,6 @@
 """Autonomous Red Team Engine router."""
+import os
+
 from fastapi import APIRouter, Request, Depends, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
@@ -8,10 +10,22 @@ from web.database import get_db
 from web.models import User, Target
 from web.auth import get_current_user, require_analyst_or_admin
 from web.license import require_feature_or_402
+from web.rate_limit import rate_limiter
 from web.shared_templates import templates
 from config import APP_NAME
 
 router = APIRouter(prefix="/autonomous-redteam", tags=["autonomous_redteam"])
+
+# start_autonomous_simulation() calls Groq under GROQ_API_KEY -- one
+# instance-wide credential, not per-user (same shape as the fixes in
+# web/routers/{bug_bounty,ai_security,osint}.py) -- and also runs real,
+# expensive scanners (nmap, port scan, XSS/SQLi/SSRF) for Phases 1/3.
+# Target ownership is already enforced, so this can't be pointed at
+# someone else's infrastructure, but a single account could still flood
+# the scan pipeline and the shared Groq quota with repeat calls.
+_start_simulation_limiter = rate_limiter(
+    "autonomous_rt_start", lambda: int(os.environ.get("RATE_LIMIT_AUTONOMOUS_RT_START", "5")), 60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -49,7 +63,7 @@ async def art_home(request: Request, user: User = Depends(_user), db: AsyncSessi
     })
 
 
-@router.post("/api/start")
+@router.post("/api/start", dependencies=[Depends(_start_simulation_limiter)])
 async def start_simulation(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("autonomous_redteam", user)
     data = await request.json()
