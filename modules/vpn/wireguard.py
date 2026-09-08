@@ -2,6 +2,7 @@
 
 import os
 import json
+import re
 import asyncio
 import ipaddress
 import subprocess
@@ -15,6 +16,19 @@ SERVER_SUBNET = "10.13.37.0/24"
 SERVER_IP = "10.13.37.1"
 DEFAULT_DNS = "1.1.1.1, 8.8.8.8"
 DEFAULT_PORT = 51820
+
+# Peer names are interpolated straight into a filesystem path
+# (WG_CONFIG_DIR / f"{name}.conf") in add_peer/remove_peer/
+# generate_qr_code and web/routers/vpn.py's peer_config handler, with no
+# sandboxing -- an unvalidated name like "../../etc/cron.d/evil" lets an
+# (already-admin-only) caller write/delete/read outside WG_CONFIG_DIR.
+# Restricted to the same safe charset a WireGuard device name needs
+# anyway (vpn.html's own placeholder: "laptop, phone, office...").
+_PEER_NAME_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def is_safe_peer_name(name: str) -> bool:
+    return bool(_PEER_NAME_RE.match(name or ""))
 
 
 def _load_peers() -> list:
@@ -135,6 +149,9 @@ PostDown = {post_down_rule}
 
 
 def add_peer(name: str, endpoint: str = "YOUR_SERVER_IP", port: int = DEFAULT_PORT) -> dict:
+    if not is_safe_peer_name(name):
+        return {"error": "Peer name must be 1-64 characters, letters/digits/-/_ only"}
+
     peers = _load_peers()
 
     if any(p["name"] == name for p in peers):
@@ -190,6 +207,9 @@ PersistentKeepalive = 25
 
 
 def remove_peer(name: str) -> dict:
+    if not is_safe_peer_name(name):
+        return {"error": "Peer name must be 1-64 characters, letters/digits/-/_ only"}
+
     peers = _load_peers()
     before = len(peers)
     peers = [p for p in peers if p["name"] != name]
@@ -275,6 +295,8 @@ def _parse_wg_dump(output: str) -> dict:
 
 def generate_qr_code(peer_name: str) -> Optional[str]:
     """Return base64-encoded QR code PNG for peer config."""
+    if not is_safe_peer_name(peer_name):
+        return None
     config_path = WG_CONFIG_DIR / f"{peer_name}.conf"
     if not config_path.exists():
         return None

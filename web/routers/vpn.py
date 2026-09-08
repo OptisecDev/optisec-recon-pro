@@ -73,10 +73,13 @@ async def remove_peer_api(name: str, user: User = Depends(_admin)):
 @router.get("/api/peers/{name}/config")
 async def peer_config(name: str, user: User = Depends(_admin)):
     require_feature_or_402("vpn", user)
+    from fastapi import HTTPException
+    from modules.vpn.wireguard import is_safe_peer_name
+    if not is_safe_peer_name(name):
+        raise HTTPException(404, "Peer config not found")
     from pathlib import Path
     config_path = Path(f"data/wireguard/{name}.conf")
     if not config_path.exists():
-        from fastapi import HTTPException
         raise HTTPException(404, "Peer config not found")
     return PlainTextResponse(config_path.read_text(), media_type="text/plain")
 
