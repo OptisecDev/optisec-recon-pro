@@ -530,16 +530,35 @@ def _find_technique(tech_id: str) -> dict:
     return {"name": tech_id}
 
 
-def add_detection(technique_id: str, confidence: int, source: str, details: str = "") -> dict:
+_MAX_SOURCE_LEN = 100
+_MAX_DETAILS_LEN = 2000
+
+
+def add_detection(technique_id: str, confidence: int, source: str, details: str = "",
+                   user_id: Optional[int] = None) -> dict:
+    """Record a detection, owned by `user_id`.
+
+    technique_id must name a real MITRE technique -- _find_technique()
+    used to fall back to echoing back whatever string was passed for an
+    unrecognized id, which (combined with web/templates/attack_navigator.html
+    rendering technique_id/technique_name/source unescaped -- now fixed
+    separately) let an unvalidated technique_id or source double as a
+    stored-XSS payload for every other viewer of the Detections tab.
+    """
+    tech = _find_technique(technique_id)
+    if "id" not in tech:  # _find_technique()'s not-found fallback is {"name": technique_id}
+        raise ValueError(f"Unknown technique_id: {technique_id}")
+
     state = _load_state()
     detection = {
         "id": hashlib.md5(f"{technique_id}{datetime.utcnow().isoformat()}".encode()).hexdigest()[:8],
         "technique_id": technique_id,
-        "technique_name": _find_technique(technique_id).get("name", technique_id),
+        "technique_name": tech["name"],
         "confidence": min(100, max(0, confidence)),
-        "source": source,
-        "details": details,
+        "source": (source or "manual").strip()[:_MAX_SOURCE_LEN],
+        "details": (details or "").strip()[:_MAX_DETAILS_LEN],
         "timestamp": datetime.utcnow().isoformat(),
+        "user_id": user_id,
     }
     state["detections"].insert(0, detection)
     state["detections"] = state["detections"][:500]
@@ -547,8 +566,17 @@ def add_detection(technique_id: str, confidence: int, source: str, details: str 
     return detection
 
 
-def get_detections(limit: int = 50) -> List[dict]:
-    return _load_state()["detections"][:limit]
+def get_detections(limit: int = 50, user_id: Optional[int] = None, is_admin: bool = False) -> List[dict]:
+    """Detections owned by `user_id` (admin sees every account's -- same
+    admin-sees-all convention as modules/ai_advanced/{zero_day,red_team}.py,
+    modules/darkweb/intelligence.py, modules/quantum/encryption.py).
+    Defaults (user_id=None, is_admin=False) return everything, for any
+    other internal caller; web/routers/attack_navigator.py always passes
+    explicit values."""
+    detections = _load_state()["detections"]
+    if not (is_admin or user_id is None):
+        detections = [d for d in detections if d.get("user_id") == user_id]
+    return detections[:limit]
 
 
 def get_matrix_coverage(detections: List[dict]) -> dict:

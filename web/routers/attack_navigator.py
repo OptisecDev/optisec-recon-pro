@@ -1,5 +1,5 @@
 """MITRE ATT&CK Navigator router."""
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -56,19 +56,23 @@ async def add_detection(request: Request, user: User = Depends(_user)):
     require_feature_or_402("attack_navigator", user)
     data = await request.json()
     from modules.threat_intel.attack_navigator import add_detection
-    return add_detection(
-        technique_id=data.get("technique_id", ""),
-        confidence=int(data.get("confidence", 75)),
-        source=data.get("source", "manual"),
-        details=data.get("details", ""),
-    )
+    try:
+        return add_detection(
+            technique_id=data.get("technique_id", ""),
+            confidence=int(data.get("confidence", 75)),
+            source=data.get("source", "manual"),
+            details=data.get("details", ""),
+            user_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.get("/api/detections")
 async def get_detections(user: User = Depends(_user)):
     require_feature_or_402("attack_navigator", user)
-    from modules.threat_intel.attack_navigator import get_detections, get_detections, get_matrix_coverage
-    detections = get_detections(100)
+    from modules.threat_intel.attack_navigator import get_detections, get_matrix_coverage
+    detections = get_detections(100, user_id=user.id, is_admin=user.role == "admin")
     coverage = get_matrix_coverage(detections)
     return {"detections": detections, "coverage": coverage}
 
