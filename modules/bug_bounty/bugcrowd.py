@@ -1,13 +1,22 @@
 """Bugcrowd + Intigriti API integration."""
 
+import logging
 import os
 import asyncio
 from typing import Optional
 import httpx
 
+logger = logging.getLogger("bug_bounty.bugcrowd")
+
 BUGCROWD_API_BASE = "https://api.bugcrowd.com"
 BUGCROWD_PUBLIC_URL = "https://bugcrowd.com/engagements.json"
 INTIGRITI_API_BASE = "https://api.intigriti.com/core/public/program"
+
+# Generic, user-facing messages -- raw exception text (auth errors, response
+# bodies, connection details) is logged server-side instead of being echoed
+# back to the caller.
+_BC_ERROR_MESSAGE = "Bugcrowd API request failed. Check server logs for details."
+_IG_ERROR_MESSAGE = "Intigriti API request failed. Check server logs for details."
 
 _PUBLIC_HEADERS = {
     "Accept": "application/json",
@@ -94,7 +103,8 @@ async def bc_list_programs(limit: int = 24) -> dict:
                     })
                 return {"programs": programs, "total": len(programs), "source": "api"}
             except Exception as e:
-                return {"error": str(e), "programs": _bc_demo_programs()["programs"], "source": "demo"}
+                logger.exception("Bugcrowd authenticated program list failed")
+                return {"error": _BC_ERROR_MESSAGE, "programs": _bc_demo_programs()["programs"], "source": "demo"}
 
     return _bc_demo_programs()
 
@@ -124,7 +134,8 @@ async def bc_get_targets(program_code: str) -> dict:
                 })
             return {"targets": targets, "program": program_code, "source": "api"}
         except Exception as e:
-            return {"error": str(e), "targets": [], "source": "api"}
+            logger.exception("Bugcrowd bc_get_targets failed for program=%s", program_code)
+            return {"error": _BC_ERROR_MESSAGE, "targets": [], "source": "api"}
 
 
 async def bc_submit_report(
@@ -167,7 +178,8 @@ async def bc_submit_report(
                 "url": f"https://bugcrowd.com/submissions/{data.get('id')}",
             }
         except Exception as e:
-            return {"status": "error", "error": str(e)}
+            logger.exception("Bugcrowd bc_submit_report failed for program=%s", program_code)
+            return {"status": "error", "error": _BC_ERROR_MESSAGE}
 
 
 # ── Intigriti ─────────────────────────────────────────────────────────────────
@@ -209,7 +221,8 @@ async def ig_list_programs(limit: int = 20) -> dict:
                 })
             return {"programs": programs, "total": len(programs), "source": "api"}
         except Exception as e:
-            return {"error": str(e), "programs": _ig_curated_programs()["programs"], "source": "demo"}
+            logger.exception("Intigriti ig_list_programs failed")
+            return {"error": _IG_ERROR_MESSAGE, "programs": _ig_curated_programs()["programs"], "source": "demo"}
 
 
 async def ig_get_program(handle: str) -> dict:
@@ -234,7 +247,8 @@ async def ig_get_program(handle: str) -> dict:
                 "source": "api",
             }
         except Exception as e:
-            return {"error": str(e), "handle": handle, "scopes": [], "source": "api"}
+            logger.exception("Intigriti ig_get_program failed for handle=%s", handle)
+            return {"error": _IG_ERROR_MESSAGE, "handle": handle, "scopes": [], "source": "api"}
 
 
 def _bc_demo_programs() -> dict:

@@ -1,13 +1,21 @@
 """HackerOne API integration — program discovery, report submission, bounty tracking."""
 
+import logging
 import os
 import asyncio
 from datetime import datetime
 from typing import Optional
 import httpx
 
+logger = logging.getLogger("bug_bounty.hackerone")
+
 HACKERONE_API_BASE = "https://api.hackerone.com/v1"
 H1_PUBLIC_SEARCH = "https://hackerone.com/programs/search"
+
+# Generic, user-facing message for any HackerOne API failure -- the raw
+# exception text (auth errors, response bodies, connection details) is
+# logged server-side instead of being echoed back to the caller.
+_H1_ERROR_MESSAGE = "HackerOne API request failed. Check server logs for details."
 
 
 def _get_creds() -> tuple[str, str]:
@@ -113,7 +121,8 @@ async def search_programs(keyword: str = "", limit: int = 20) -> dict:
                     })
                 return {"programs": programs, "total": len(programs), "source": "api"}
             except Exception as e:
-                return {"error": str(e), "programs": [], "source": "api"}
+                logger.exception("HackerOne authenticated program search failed")
+                return {"error": _H1_ERROR_MESSAGE, "programs": [], "source": "api"}
 
     return _demo_programs(keyword, limit)
 
@@ -163,7 +172,8 @@ async def get_program_scope(handle: str) -> dict:
                 "source": "api",
             }
         except Exception as e:
-            return {"error": str(e), "handle": handle, "in_scope": [], "out_of_scope": [], "scopes": [], "source": "api"}
+            logger.exception("HackerOne get_program_scope failed for handle=%s", handle)
+            return {"error": _H1_ERROR_MESSAGE, "handle": handle, "in_scope": [], "out_of_scope": [], "scopes": [], "source": "api"}
 
 
 async def submit_report(
@@ -217,7 +227,8 @@ async def submit_report(
                 "created_at": data.get("attributes", {}).get("created_at"),
             }
         except Exception as e:
-            return {"status": "error", "error": str(e)}
+            logger.exception("HackerOne submit_report failed for program=%s", program_handle)
+            return {"status": "error", "error": _H1_ERROR_MESSAGE}
 
 
 async def get_my_reports(state: str = "all", limit: int = 25) -> dict:
@@ -252,7 +263,8 @@ async def get_my_reports(state: str = "all", limit: int = 25) -> dict:
                 })
             return {"reports": reports, "total": len(reports), "source": "api"}
         except Exception as e:
-            return {"error": str(e), "reports": [], "source": "api"}
+            logger.exception("HackerOne get_my_reports failed")
+            return {"error": _H1_ERROR_MESSAGE, "reports": [], "source": "api"}
 
 
 def _demo_programs(keyword: str, limit: int) -> dict:
