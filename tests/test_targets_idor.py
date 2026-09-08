@@ -155,6 +155,34 @@ def test_delete_own_target_succeeds(client):
     assert not _target_still_exists(session_factory, target_id)
 
 
+def test_delete_own_target_rejects_missing_or_invalid_csrf(client):
+    """S2: DELETE /targets/{id} must enforce the same CSRF check as POST
+    /targets/add, independent of ownership -- a valid owner with no/forged
+    X-CSRF-Token must still be rejected."""
+    c, session_factory = client
+    owner_id, owner_token = _seed_user_token(session_factory, "csrflessdeleter")
+    target_id = _seed_target(session_factory, owner_id)
+
+    # No X-CSRF-Token header at all.
+    resp_missing = c.delete(
+        f"/targets/{target_id}",
+        cookies={"access_token": owner_token, "csrf_secret": FAKE_CSRF_SECRET},
+    )
+    assert resp_missing.status_code == 403, resp_missing.text[:300]
+
+    # Wrong X-CSRF-Token header.
+    resp_wrong = c.delete(
+        f"/targets/{target_id}",
+        cookies={"access_token": owner_token, "csrf_secret": FAKE_CSRF_SECRET},
+        headers={"X-CSRF-Token": "not-the-real-token"},
+    )
+    assert resp_wrong.status_code == 403, resp_wrong.text[:300]
+
+    assert _target_still_exists(session_factory, target_id), (
+        "target was deleted despite a missing/invalid CSRF token"
+    )
+
+
 def _add_target(c, token, url, csrf_token=VALID_CSRF_TOKEN, csrf_secret=FAKE_CSRF_SECRET):
     return c.post(
         "/targets/add",
