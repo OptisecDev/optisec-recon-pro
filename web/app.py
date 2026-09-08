@@ -48,7 +48,7 @@ from web.websocket_manager import ws_manager
 from web.license import (
     get_license, reload_license, activate_license, deactivate_license,
     generate_license_key, FEATURE_LABELS, TIER_FEATURES,
-    user_max_targets, user_tier_label,
+    user_max_targets, user_tier_label, require_feature_or_402,
 )
 from web.rate_limit import rate_limiter
 from web.shared_templates import register_template_globals
@@ -2840,7 +2840,18 @@ async def api_license_status(user: User = Depends(web_user)):
 
 # ── IOC Correlation Engine ────────────────────────────────────────────────────
 
-@app.get("/api/correlations")
+# ?refresh=true forces a fresh run_correlation() -- collect_iocs() +
+# correlate_iocs() clustering work every time, plus (when OTX_API_KEY is
+# set) a fetch_otx_pulses() call, an instance-wide shared credential (same
+# shape as the other fixes in this audit series). otx_feed.py's own 5min
+# cache bounds the actual OTX network cost, but the clustering CPU work
+# runs unconditionally on every refresh=true call -- capped per IP.
+_correlations_refresh_limiter = rate_limiter(
+    "correlations_refresh", lambda: int(os.environ.get("RATE_LIMIT_CORRELATIONS_REFRESH", "10")), 60,
+)
+
+
+@app.get("/api/correlations", dependencies=[Depends(_correlations_refresh_limiter)])
 async def get_ioc_correlations(
     refresh: bool = False,
     user: User = Depends(web_user),
@@ -2848,8 +2859,11 @@ async def get_ioc_correlations(
     """
     Return IOC correlation clusters.
     Uses cached results unless ?refresh=true triggers a fresh run.
-    Requires authentication (any role).
+    Requires authentication (any role) and the ioc_correlations entitlement
+    -- same gate the /correlations page (web/routers/correlations.py)
+    already applies to itself.
     """
+    require_feature_or_402("ioc_correlations", user)
     if not refresh:
         cached = load_cached()
         if cached:
@@ -2870,6 +2884,7 @@ async def get_correlation_cluster(
     user: User = Depends(web_user),
 ):
     """Return full details for a single correlation cluster by its cluster_id."""
+    require_feature_or_402("ioc_correlations", user)
     data = load_cached()
     if not data:
         raise HTTPException(404, "No correlation data found — run GET /api/correlations?refresh=true first")
