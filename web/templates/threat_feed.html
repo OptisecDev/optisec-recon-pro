@@ -359,7 +359,7 @@ async function loadSharingStatus() {
   el.style.borderColor = data.enabled ? '#00ff88' : '#8b949e';
   el.innerHTML = `<div class="ie76122bf0">
     <div><strong data-dyn-style="color:${data.enabled ? '#00ff88' : '#8b949e'}">${data.enabled ? '✓ مفعّلة / Enabled' : '✕ معطّلة / Disabled'}</strong>
-      — ${data.message_ar}</div>
+      — ${escHtml(data.message_ar)}</div>
     <div class="ied605eae1">OTX: ${data.otx_configured ? 'configured' : 'not configured'}</div>
   </div>`;
   optisecApplyDynStyles(el);
@@ -372,10 +372,10 @@ async function loadLocalIocs() {
   if (!data.iocs.length) { el.innerHTML = 'لا توجد مؤشرات محلية بعد. / No local IOCs yet.'; return; }
   el.innerHTML = data.iocs.map(ioc => `
     <div class="ioc-row">
-      <span class="iee4c5ea65">${ioc.type}</span>
-      <code class="ieda163dc1" title="${ioc.value}">${ioc.value}</code>
-      <span class="ie074bd2cc">${ioc.source_module}</span>
-      <span class="ie71d85aaa">${ioc.severity||''}</span>
+      <span class="iee4c5ea65">${escHtml(ioc.type)}</span>
+      <code class="ieda163dc1" title="${escHtml(ioc.value)}">${escHtml(ioc.value)}</code>
+      <span class="ie074bd2cc">${escHtml(ioc.source_module)}</span>
+      <span class="ie71d85aaa">${escHtml(ioc.severity||'')}</span>
       ${ioc.already_shared
         ? '<span class="ie0c72d844">✓ shared</span>'
         : `<button class="btn btn-primary btn-sm" data-onclick="shareIoc" data-onclick-args="${optisecArgs([ioc])}">مشاركة</button>`}
@@ -392,8 +392,8 @@ async function shareIoc(ioc) {
   const ok = data.status === 'success';
   const shareResultEl = document.getElementById('share-result');
   shareResultEl.innerHTML = `<div class="tf-card" data-dyn-style="border-color:${ok?'#00ff88':'#FF6B6B'};margin-top:12px">
-    <div data-dyn-style="color:${ok?'#00ff88':'#FF6B6B'};font-weight:700;font-size:12px">${ok?'✓':'✕'} ${data.message_ar}</div>
-    <div class="iedf7f0ac0">${data.message_en||''}</div>
+    <div data-dyn-style="color:${ok?'#00ff88':'#FF6B6B'};font-weight:700;font-size:12px">${ok?'✓':'✕'} ${escHtml(data.message_ar)}</div>
+    <div class="iedf7f0ac0">${escHtml(data.message_en||'')}</div>
   </div>`;
   optisecApplyDynStyles(shareResultEl);
   loadLocalIocs();
@@ -408,8 +408,8 @@ async function loadShareHistory() {
   const statusColor = s => s==='success'?'#00ff88':s==='disabled'?'#8b949e':'#FF6B6B';
   el.innerHTML = data.shares.map(s => `
     <div class="ie75c631ee">
-      <code class="ie98fbf8e3">${s.ioc_type}:${s.ioc_value}</code>
-      <span data-dyn-style="color:${statusColor(s.status)};font-size:10px;font-weight:700">${s.status}</span>
+      <code class="ie98fbf8e3">${escHtml(s.ioc_type)}:${escHtml(s.ioc_value)}</code>
+      <span data-dyn-style="color:${statusColor(s.status)};font-size:10px;font-weight:700">${escHtml(s.status)}</span>
     </div>`).join('');
   optisecApplyDynStyles(el);
 }
@@ -445,14 +445,14 @@ async function refreshFeed() {
   const scoreColors = s => s>=80?'#FF6B6B':s>=60?'#FFA726':s>=40?'#FFCA28':'#66BB6A';
   const iocFeedListEl = document.getElementById('ioc-feed-list');
   iocFeedListEl.innerHTML = data.iocs.map(ioc => `
-    <div class="ioc-row" data-type="${ioc.type}" data-value="${ioc.value.toLowerCase()}">
+    <div class="ioc-row" data-type="${escHtml(ioc.type)}" data-value="${escHtml(ioc.value.toLowerCase())}">
       <div class="ioc-score" data-dyn-style="color:${scoreColors(ioc.threat_score)}">${ioc.threat_score}</div>
       <div class="score-bar"><div class="score-fill" data-dyn-style="width:${ioc.threat_score}%;background:${scoreColors(ioc.threat_score)}"></div></div>
-      <span class="ie3578a396">${ioc.type}</span>
-      <code class="ie61804484">${ioc.value.slice(0,60)}${ioc.value.length>60?'…':''}</code>
-      <span class="ie3173424d">${(ioc.malware||'').slice(0,20)}</span>
-      <span class="tlp-${(ioc.tlp||'white').toLowerCase()} iee70db8d2"  title="${ioc.tlp_source==='estimated'?(ioc.note||'Estimated locally'):''}">TLP:${ioc.tlp||'WHITE'}${ioc.tlp_source==='estimated'?'<sup class="ie72cd8085">*</sup>':''}</span>
-      <span class="ie9298272b">${ioc.source||''}</span>
+      <span class="ie3578a396">${escHtml(ioc.type)}</span>
+      <code class="ie61804484">${escHtml(ioc.value.slice(0,60))}${ioc.value.length>60?'…':''}</code>
+      <span class="ie3173424d">${escHtml((ioc.malware||'').slice(0,20))}</span>
+      <span class="tlp-${escHtml((ioc.tlp||'white').toLowerCase())} iee70db8d2"  title="${ioc.tlp_source==='estimated'?escHtml(ioc.note||'Estimated locally'):''}">TLP:${escHtml(ioc.tlp||'WHITE')}${ioc.tlp_source==='estimated'?'<sup class="ie72cd8085">*</sup>':''}</span>
+      <span class="ie9298272b">${escHtml(ioc.source||'')}</span>
     </div>`).join('');
   optisecApplyDynStyles(iocFeedListEl);
 }
@@ -505,6 +505,10 @@ async function correlateIOCs() {
     ${data.campaign_matches?.length ? data.campaign_matches.map(m=>`<div class="ie97d94fe4"><strong>${m.campaign}</strong> — <span class="ie78539534">${m.actor}</span> (${m.confidence}%)</div>`).join('') : '<div class="ie5b3cc826">No campaign matches found.</div>'}
     ${data.pattern_analysis?.likely_ttps?.length ? `<div class="ie5371db16"><div class="ie4fd68982">Likely TTPs:</div>${data.pattern_analysis.likely_ttps.map(t=>`<div class="ie31f9f0ad">${t}</div>`).join('')}</div>` : ''}
   </div>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 </script>
 {% endblock %}
