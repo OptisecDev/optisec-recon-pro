@@ -361,8 +361,36 @@ def _fake_date(delta_days: int) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def submit_ioc(ioc_type: str, value: str, malware: str, confidence: int, tlp: str = "AMBER") -> dict:
-    """Submit a new IOC to the shared feed."""
+_VALID_IOC_TYPES = {"ip", "domain", "url", "hash_md5", "hash_sha1", "hash_sha256", "email", "cve"}
+_VALID_TLP = {"WHITE", "GREEN", "AMBER", "RED"}
+_MAX_IOC_VALUE_LEN = 300
+_MAX_IOC_MALWARE_LEN = 100
+
+
+def submit_ioc(
+    ioc_type: str, value: str, malware: str, confidence: int, tlp: str = "AMBER",
+    user_id: Optional[int] = None,
+) -> dict:
+    """Submit a new IOC to the shared feed.
+
+    This feed is rendered to every account with the threat_feed
+    entitlement (GET /api/feed), so a submission is effectively public
+    within the platform -- type/tlp are restricted to known enums, value/
+    malware are length-capped, and every submission is stamped with
+    user_id so an abusive one can be traced back to the account that sent
+    it (the response never included that stamp before this fix).
+    """
+    ioc_type = (ioc_type or "").strip().lower()
+    if ioc_type not in _VALID_IOC_TYPES:
+        raise ValueError(f"ioc_type must be one of: {', '.join(sorted(_VALID_IOC_TYPES))}")
+    value = (value or "").strip()[:_MAX_IOC_VALUE_LEN]
+    if not value:
+        raise ValueError("value is required")
+    malware = (malware or "unknown").strip()[:_MAX_IOC_MALWARE_LEN]
+    tlp = (tlp or "AMBER").strip().upper()
+    if tlp not in _VALID_TLP:
+        tlp = "AMBER"
+
     data = _load_data()
     ioc = {
         "id": hashlib.md5(f"{ioc_type}:{value}:{datetime.utcnow().isoformat()}".encode()).hexdigest()[:10],
@@ -374,6 +402,7 @@ def submit_ioc(ioc_type: str, value: str, malware: str, confidence: int, tlp: st
         "tlp": tlp,
         "submitted_at": datetime.utcnow().isoformat(),
         "threat_score": min(100, int(confidence * 0.95)),
+        "submitted_by": user_id,
     }
     data["shared_iocs"].insert(0, ioc)
     data["shared_iocs"] = data["shared_iocs"][:200]

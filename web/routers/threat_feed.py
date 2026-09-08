@@ -1,9 +1,10 @@
 """Global Threat Intelligence Feed router — with live AlienVault OTX integration."""
 import asyncio
 import logging
+import os
 from datetime import datetime
 
-from fastapi import APIRouter, Request, Depends
+from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,11 +12,20 @@ from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
 from web.license import require_feature_or_402
+from web.rate_limit import rate_limiter
 from web.shared_templates import templates
 from config import APP_NAME, OTX_API_KEY
 
 router = APIRouter(prefix="/threat-feed", tags=["threat_feed"])
 logger = logging.getLogger(__name__)
+
+# submit_ioc() writes into a feed rendered to every account with the
+# threat_feed entitlement -- unlimited submissions would let one account
+# flood the shared feed. Per-IP, same rate_limiter() factory used
+# elsewhere in this audit series.
+_submit_ioc_limiter = rate_limiter(
+    "threat_feed_submit_ioc", lambda: int(os.environ.get("RATE_LIMIT_THREAT_FEED_SUBMIT", "10")), 60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -144,18 +154,22 @@ async def get_campaigns(user: User = Depends(_user)):
     return {"campaigns": get_campaigns()}
 
 
-@router.post("/api/submit-ioc")
+@router.post("/api/submit-ioc", dependencies=[Depends(_submit_ioc_limiter)])
 async def submit_ioc(request: Request, user: User = Depends(_user)):
     require_feature_or_402("threat_feed", user)
     data = await request.json()
     from modules.threat_intel.global_feed import submit_ioc
-    return submit_ioc(
-        ioc_type=data.get("type", "ip"),
-        value=data.get("value", ""),
-        malware=data.get("malware", "unknown"),
-        confidence=int(data.get("confidence", 70)),
-        tlp=data.get("tlp", "AMBER"),
-    )
+    try:
+        return submit_ioc(
+            ioc_type=data.get("type", "ip"),
+            value=data.get("value", ""),
+            malware=data.get("malware", "unknown"),
+            confidence=int(data.get("confidence", 70)),
+            tlp=data.get("tlp", "AMBER"),
+            user_id=user.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @router.post("/api/correlate")
