@@ -142,7 +142,7 @@ def _save_data(data: dict) -> None:
     DATA_FILE.write_text(json.dumps(data, indent=2, default=str))
 
 
-def check_domain_breach(domain: str) -> dict:
+def check_domain_breach(domain: str, user_id: Optional[int] = None) -> dict:
     """Check if a domain appears in known breach databases."""
     domain = domain.lower().strip()
     results = []
@@ -181,6 +181,7 @@ def check_domain_breach(domain: str) -> dict:
         "simulated": True,
         "note": SIMULATED_NOTE_EN,
         "note_ar": SIMULATED_NOTE_AR,
+        "user_id": user_id,
     }
     data["breach_checks"].insert(0, check)
     data["breach_checks"] = data["breach_checks"][:100]
@@ -270,26 +271,44 @@ def scan_paste_content(content: str) -> dict:
     return scan
 
 
-def add_keyword_alert(keyword: str, category: str = "general") -> dict:
-    """Add a keyword for dark web monitoring."""
+def add_keyword_alert(keyword: str, category: str = "general", user_id: Optional[int] = None) -> dict:
+    """Add a keyword for dark web monitoring, owned by `user_id`.
+
+    monitored_keywords is one shared on-disk list across every account --
+    a keyword name is only deduplicated against this same user_id's own
+    prior entries, so two different customers monitoring the same word
+    (e.g. a common brand name) no longer silently overwrite each other.
+    """
     data = _load_data()
     alert = {
-        "id": hashlib.md5(keyword.encode()).hexdigest()[:8],
+        "id": hashlib.md5(f"{user_id}:{keyword}".encode()).hexdigest()[:8],
         "keyword": keyword,
         "category": category,
         "added_at": datetime.utcnow().isoformat(),
         "hits": 0,
         "last_hit": None,
+        "user_id": user_id,
     }
-    existing = [k for k in data["monitored_keywords"] if k["keyword"].lower() != keyword.lower()]
+    existing = [
+        k for k in data["monitored_keywords"]
+        if not (k.get("user_id") == user_id and k["keyword"].lower() == keyword.lower())
+    ]
     existing.insert(0, alert)
-    data["monitored_keywords"] = existing[:50]
+    data["monitored_keywords"] = existing[:200]
     _save_data(data)
     return alert
 
 
-def get_monitored_keywords() -> list:
-    return _load_data()["monitored_keywords"]
+def get_monitored_keywords(user_id: Optional[int] = None, is_admin: bool = False) -> list:
+    """Keywords owned by `user_id` (admin sees every account's keywords --
+    same admin-sees-all convention as modules/ai_advanced/{zero_day,red_team}.py).
+    Passing user_id=None and is_admin=False (the defaults) returns
+    everything, for any other internal caller that predates per-user
+    scoping; web/routers/darkweb.py always passes explicit values."""
+    keywords = _load_data()["monitored_keywords"]
+    if is_admin or user_id is None:
+        return keywords
+    return [k for k in keywords if k.get("user_id") == user_id]
 
 
 def simulate_tor_monitor() -> dict:
@@ -314,7 +333,14 @@ def simulate_tor_monitor() -> dict:
     }
 
 
-def get_breach_intelligence() -> dict:
+def get_breach_intelligence(user_id: Optional[int] = None, is_admin: bool = False) -> dict:
+    """`recent_checks` is scoped to `user_id`'s own domain checks (admin
+    sees every account's) -- otherwise any enterprise user could see what
+    domains other customers have been investigating. Same defaults/
+    convention as get_monitored_keywords()."""
+    checks = _load_data()["breach_checks"]
+    if not (is_admin or user_id is None):
+        checks = [c for c in checks if c.get("user_id") == user_id]
     return {
         "total_known_breaches": len(_KNOWN_BREACH_DOMAINS),
         "total_records_in_db": sum(v["records"] for v in _KNOWN_BREACH_DOMAINS.values()),
@@ -324,16 +350,15 @@ def get_breach_intelligence() -> dict:
                 key=lambda x: x[1]["records"], reverse=True
             )
         ],
-        "recent_checks": _load_data()["breach_checks"][:10],
+        "recent_checks": checks[:10],
     }
 
 
-def generate_threat_report(domain: str) -> dict:
+def generate_threat_report(domain: str, user_id: Optional[int] = None, is_admin: bool = False) -> dict:
     """Generate a comprehensive dark web threat report for a domain."""
-    breach_check = check_domain_breach(domain)
+    breach_check = check_domain_breach(domain, user_id=user_id)
     keyword_hits = []
-    data = _load_data()
-    for kw in data["monitored_keywords"]:
+    for kw in get_monitored_keywords(user_id=user_id, is_admin=is_admin):
         seed = int(hashlib.md5(f"{domain}{kw['keyword']}".encode()).hexdigest(), 16) % 100
         if seed < 20:
             keyword_hits.append({

@@ -34,11 +34,12 @@ async def darkweb_home(request: Request, user: User = Depends(_user), db: AsyncS
         .limit(20)
     )).all()
 
+    is_admin = user.role == "admin"
     return templates.TemplateResponse(request, "darkweb.html", {
         "app_name": APP_NAME, "user": user, "active": "darkweb",
         "tor_monitor": simulate_tor_monitor(),
-        "keywords": get_monitored_keywords(),
-        "breach_intel": get_breach_intelligence(),
+        "keywords": get_monitored_keywords(user_id=user.id, is_admin=is_admin),
+        "breach_intel": get_breach_intelligence(user_id=user.id, is_admin=is_admin),
         "monitors": monitors,
         "recent_alerts": recent_alert_rows,
     })
@@ -49,7 +50,7 @@ async def check_domain(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import check_domain_breach
-    return check_domain_breach(data.get("domain", ""))
+    return check_domain_breach(data.get("domain", ""), user_id=user.id)
 
 
 @router.post("/api/check-email")
@@ -79,6 +80,7 @@ async def add_keyword(request: Request, user: User = Depends(_user)):
     return add_keyword_alert(
         keyword=data.get("keyword", ""),
         category=data.get("category", "general"),
+        user_id=user.id,
     )
 
 
@@ -86,7 +88,7 @@ async def add_keyword(request: Request, user: User = Depends(_user)):
 async def get_keywords(user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     from modules.darkweb.intelligence import get_monitored_keywords
-    return {"keywords": get_monitored_keywords()}
+    return {"keywords": get_monitored_keywords(user_id=user.id, is_admin=user.role == "admin")}
 
 
 @router.post("/api/threat-report")
@@ -94,7 +96,7 @@ async def threat_report(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import generate_threat_report
-    return generate_threat_report(data.get("domain", ""))
+    return generate_threat_report(data.get("domain", ""), user_id=user.id, is_admin=user.role == "admin")
 
 
 @router.get("/api/tor-monitor")
@@ -108,4 +110,4 @@ async def tor_monitor(user: User = Depends(_user)):
 async def breach_intel(user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     from modules.darkweb.intelligence import get_breach_intelligence
-    return get_breach_intelligence()
+    return get_breach_intelligence(user_id=user.id, is_admin=user.role == "admin")
