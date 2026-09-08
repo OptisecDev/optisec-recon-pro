@@ -19,6 +19,7 @@ them directly against an isolated DB session.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -31,9 +32,19 @@ from web.database import get_db
 from web.models import User, Finding, Scan, CveDraft
 from web.auth import get_current_user
 from web.license import require_feature_or_402
+from web.rate_limit import rate_limiter
 from modules.bug_bounty import cve_pipeline
 
 router = APIRouter(prefix="/api/cve", tags=["cve-pipeline"])
+
+# search_nvd() hits the public NVD API -- free, no cost/reputation risk
+# unlike this audit series' other shared-credential fixes, but still a
+# resource this installation shares with itself (predict_zero_days() in
+# web/routers/ai_security.py also calls NVD) -- capped mainly to avoid
+# this installation's own IP/key getting rate-limited by NVD under load.
+_search_nvd_limiter = rate_limiter(
+    "cve_search_nvd", lambda: int(os.environ.get("RATE_LIMIT_CVE_SEARCH_NVD", "10")), 60,
+)
 
 DISCLAIMER_EN = (
     "This is a drafting assistant only. Actual submission to MITRE requires "
@@ -173,6 +184,7 @@ async def get_draft(db: AsyncSession, *, draft_id: int, user_id: int) -> Optiona
     "/search",
     summary="Search NVD for existing CVEs",
     description="Read-only lookup against the public NVD API — use it to check for an existing/duplicate CVE before drafting a new one. Never sends anything.",
+    dependencies=[Depends(_search_nvd_limiter)],
 )
 async def cve_search(keyword: str = "", cve_id: str = "", user: User = Depends(_user)):
     require_feature_or_402("bug_bounty", user)
