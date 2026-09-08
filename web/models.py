@@ -353,6 +353,31 @@ class CveDraft(Base):
     finding = relationship("Finding")
 
 
+class BugBountySubmission(Base):
+    """Audit trail of every report submitted through web/routers/bug_bounty.py
+    to HackerOne or Bugcrowd. HACKERONE_API_TOKEN/BUGCROWD_API_TOKEN are a
+    single instance-wide credential (os.environ), not per-user, so this is
+    what lets an abusive or mistaken submission be traced back to the
+    OPTISEC account that triggered it. Its row count within the trailing
+    window is also what enforces the per-user submission quota in
+    bug_bounty.py (see RATE_LIMIT_BUG_BOUNTY_SUBMIT) -- a DB-backed count
+    survives process restarts and stays correct across the 2 Render
+    workers, unlike the in-memory per-IP rate_limiter() used elsewhere."""
+    __tablename__ = "bug_bounty_submissions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    platform = Column(String(20), nullable=False)   # hackerone | bugcrowd
+    program = Column(String(200))
+    title = Column(String(300))
+    severity = Column(String(20))
+    status = Column(String(20))          # submitted | demo | error
+    external_ref = Column(String(200))   # report id/url the platform returned, if any
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    user = relationship("User")
+
+
 class SchedulerLock(Base):
     """Single-row-per-job lock so periodic tasks (e.g. the dark web scan
     sweep in modules/darkweb/scheduler.py) never run concurrently across
