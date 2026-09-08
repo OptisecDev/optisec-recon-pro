@@ -1,9 +1,40 @@
 """Compliance Checker — ISO 27001, NIST CSF, GDPR, PCI-DSS frameworks."""
 
 import asyncio
+import ipaddress
+import socket
 import httpx
 from datetime import datetime
 from typing import Optional
+from urllib.parse import urlparse
+
+# auto_probe_target() below makes a real outbound HTTP request to whatever
+# target_url the caller supplies -- refuses to send it to an internal/
+# private/reserved address. Same check (and the same reasoning) as
+# modules/osint/network_intelligence.py's _is_ssrf_blocked_ip(); modules/
+# never imports from web/, so web/schemas.py's _is_ssrf_blocked_host isn't
+# reusable here, hence the local copy.
+_SSRF_BLOCKED_HOSTNAMES = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
+
+
+def _is_ssrf_blocked_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+        host = (parsed.hostname or "").lower()
+        if not host:
+            return True
+        if host in _SSRF_BLOCKED_HOSTNAMES or host.endswith(".localhost"):
+            return True
+        try:
+            ip = ipaddress.ip_address(host)
+        except ValueError:
+            ip = ipaddress.ip_address(socket.gethostbyname(host))
+        return (
+            ip.is_loopback or ip.is_link_local or ip.is_private
+            or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+        )
+    except Exception:
+        return True  # unparseable/unresolvable -- fail closed
 
 
 FRAMEWORKS = {
@@ -283,12 +314,35 @@ async def assess_target(target_url: str, framework: str, answers: dict) -> dict:
     }
 
 
+_MAX_PROBE_REDIRECTS = 5
+
+
+async def _get_validating_each_redirect(client: httpx.AsyncClient, url: str):
+    """GET `url`, manually following redirects one hop at a time so each
+    Location is re-validated by _is_ssrf_blocked_url() before being
+    followed. httpx's own follow_redirects=True would happily walk into an
+    internal address a legitimate-looking public target_url redirects to,
+    bypassing the check on the original URL alone."""
+    for _ in range(_MAX_PROBE_REDIRECTS + 1):
+        if _is_ssrf_blocked_url(url):
+            raise ValueError(f"'{url}' resolves to a private/internal address — refusing to probe it")
+        r = await client.get(url, follow_redirects=False)
+        if r.is_redirect and "location" in r.headers:
+            url = str(r.next_request.url) if r.next_request else r.headers["location"]
+            continue
+        return r
+    raise ValueError(f"too many redirects (>{_MAX_PROBE_REDIRECTS})")
+
+
 async def auto_probe_target(target_url: str) -> dict:
     """Probe target to auto-detect some compliance signals."""
+    if _is_ssrf_blocked_url(target_url):
+        return {"probe_error": f"'{target_url}' resolves to a private/internal address — refusing to probe it"}
+
     signals = {}
-    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=15) as client:
         try:
-            r = await client.get(target_url)
+            r = await _get_validating_each_redirect(client, target_url)
             headers = {k.lower(): v for k, v in r.headers.items()}
 
             signals["https_in_use"] = target_url.startswith("https://")
