@@ -13,6 +13,15 @@ from config import APP_NAME
 
 router = APIRouter(prefix="/firewall", tags=["firewall"])
 
+# inspect_request() regex-matches path/body/headers against 81 WAF
+# signatures with no length limit of its own -- these cap the per-request
+# work to a sane ceiling regardless of input size (no ReDoS found in the
+# signature set itself, this is resource hygiene, same shape as
+# web/routers/ai_security.py's _MAX_ANALYZE_*_CHARS).
+_MAX_INSPECT_PATH_LEN = 2_000
+_MAX_INSPECT_BODY_LEN = 20_000
+_MAX_INSPECT_HEADER_VALUE_LEN = 2_000
+
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     return await get_current_user(request, db)
@@ -32,12 +41,13 @@ async def firewall_home(request: Request, user: User = Depends(_user)):
 async def inspect_request_api(request: Request, user: User = Depends(_user)):
     require_feature_or_402("firewall", user)
     data = await request.json()
+    headers = data.get("headers", {}) or {}
     from modules.firewall.ai_firewall import inspect_request
     return inspect_request(
         method=data.get("method", "GET"),
-        path=data.get("path", "/"),
-        headers=data.get("headers", {}),
-        body=data.get("request_body", ""),
+        path=(data.get("path", "/") or "/")[:_MAX_INSPECT_PATH_LEN],
+        headers={k: str(v)[:_MAX_INSPECT_HEADER_VALUE_LEN] for k, v in headers.items()},
+        body=(data.get("request_body", "") or "")[:_MAX_INSPECT_BODY_LEN],
         ip=data.get("ip", ""),
     )
 
