@@ -185,13 +185,17 @@ renderHeatmap();
 function eventRowHtml(e) {
   return `<tr>
     <td>${e.created_at ? new Date(e.created_at).toLocaleString() : ''}</td>
-    <td>${e.service_ar}</td>
-    <td>${e.source_ip}</td>
-    <td>${e.country || '—'}</td>
-    <td><span class="risk-badge risk-${e.risk_level}">${e.risk_level}</span></td>
+    <td>${escHtml(e.service_ar)}</td>
+    <td>${escHtml(e.source_ip)}</td>
+    <td>${escHtml(e.country || '—')}</td>
+    <td><span class="risk-badge risk-${escHtml(e.risk_level)}">${escHtml(e.risk_level)}</span></td>
     <td>${e.abuse_score}</td>
-    <td class="ief5293d41" title="${e.payload || ''}">${e.payload || ''}</td>
+    <td class="ief5293d41" title="${escHtml(e.payload || '')}">${escHtml(e.payload || '')}</td>
   </tr>`;
+}
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 async function reloadEvents() {
