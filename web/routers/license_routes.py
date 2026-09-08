@@ -9,17 +9,19 @@ web/app.py.
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.database import get_db
 from web.models import User, LicenseKey
 from web.auth import get_current_user
+from web.rate_limit import rate_limiter
 from web.shared_templates import templates
 from config import APP_NAME, GA_MEASUREMENT_ID
 from license_utils import hash_license_key
@@ -28,6 +30,15 @@ router = APIRouter(prefix="/api/subscription", tags=["subscription"])
 page_router = APIRouter(tags=["subscription"])
 
 _REDEEM_ERROR = "Invalid or already-redeemed license key"
+
+# Consistent with /api/license/activate's rate limiting (web/app.py) -- the
+# key space here (36^16, license_utils.py) makes brute-forcing a valid key
+# impractical either way, this just caps scripted abuse of the endpoint.
+_redeem_limiter = rate_limiter(
+    "subscription_redeem",
+    lambda: int(os.environ.get("RATE_LIMIT_SUBSCRIPTION_REDEEM", "10")),
+    60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -58,7 +69,7 @@ class StatusResponse(BaseModel):
     subscription_tier: str
 
 
-@router.post("/redeem", response_model=RedeemResponse)
+@router.post("/redeem", response_model=RedeemResponse, dependencies=[Depends(_redeem_limiter)])
 async def redeem_license(
     body: RedeemRequest,
     user: User = Depends(_user),
@@ -66,16 +77,24 @@ async def redeem_license(
 ):
     key_hash = hash_license_key(body.license_key.strip())
 
+    # Atomic conditional UPDATE -- same pattern as SchedulerLock's
+    # _acquire_lock (modules/darkweb/scheduler.py) -- instead of SELECT
+    # then mutate-and-commit. Two concurrent redemptions of the same
+    # not-yet-redeemed key could otherwise both pass a plain SELECT check
+    # before either commits, each granting its own account the tier while
+    # only the last commit's redeemed_by survives in the row.
     result = await db.execute(
-        select(LicenseKey).where(LicenseKey.key_hash == key_hash)
+        update(LicenseKey)
+        .where(LicenseKey.key_hash == key_hash, LicenseKey.redeemed_by.is_(None))
+        .values(redeemed_by=user.id, redeemed_at=datetime.utcnow())
     )
-    license_key = result.scalar_one_or_none()
-
-    if license_key is None or license_key.redeemed_by is not None:
+    if result.rowcount != 1:
+        await db.rollback()
         raise HTTPException(status_code=400, detail=_REDEEM_ERROR)
 
-    license_key.redeemed_by = user.id
-    license_key.redeemed_at = datetime.utcnow()
+    license_key = (await db.execute(
+        select(LicenseKey).where(LicenseKey.key_hash == key_hash)
+    )).scalar_one()
     user.subscription_tier = license_key.tier
     await db.commit()
 
