@@ -3,6 +3,7 @@
 import os
 import json
 import asyncio
+import time
 import httpx
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,15 @@ from config import GROQ_MODEL
 from modules.ai.groq_client_utils import call_groq_async_with_retry
 
 PREDICTIONS_FILE = Path("data/zero_day_predictions.json")
+
+# Shared by _fetch_cisa_kev() and trending_threats() -- both previously
+# fetched the full CISA KEV feed on every single call with no caching.
+# Same in-memory cache shape as modules/threat_intel/otx_feed.py; a 15min
+# TTL is generous for a feed CISA updates roughly daily, and means every
+# user's /api/zero-day/predict call no longer adds its own hit against
+# CISA's endpoint.
+_KEV_CACHE: dict = {"ts": 0.0, "data": None}
+_KEV_CACHE_TTL = 900  # 15 minutes
 
 
 def _load_predictions() -> list:
@@ -130,28 +140,45 @@ async def _fetch_nvd_context(software: str, version: str) -> dict:
             return {"recent_cves": [], "total": 0, "error": str(e)}
 
 
-async def _fetch_cisa_kev(software: str) -> dict:
+async def _fetch_kev_feed() -> Optional[dict]:
+    """Raw CISA KEV feed (the full `{"vulnerabilities": [...]}` payload),
+    cached for _KEV_CACHE_TTL and shared by _fetch_cisa_kev() and
+    trending_threats() -- both used to independently re-fetch this same
+    URL on every call. Returns None on fetch failure (callers already
+    handle a missing/empty feed)."""
+    now = time.time()
+    if _KEV_CACHE["data"] is not None and now - _KEV_CACHE["ts"] < _KEV_CACHE_TTL:
+        return _KEV_CACHE["data"]
+
     async with httpx.AsyncClient(timeout=20) as client:
-        try:
-            r = await client.get(CISA_KEV_URL)
-            r.raise_for_status()
-            data = r.json()
-            vulns = data.get("vulnerabilities", [])
-            keyword = software.lower()
-            matches = [
-                {
-                    "cve_id": v.get("cveID"),
-                    "product": v.get("product"),
-                    "vendor": v.get("vendorProject"),
-                    "date_added": v.get("dateAdded"),
-                    "required_action": v.get("requiredAction"),
-                }
-                for v in vulns
-                if keyword in (v.get("product", "") + v.get("vendorProject", "")).lower()
-            ]
-            return {"found": len(matches) > 0, "entries": matches[:5], "total": len(matches)}
-        except Exception as e:
-            return {"found": False, "entries": [], "error": str(e)}
+        r = await client.get(CISA_KEV_URL)
+        r.raise_for_status()
+        data = r.json()
+
+    _KEV_CACHE["data"] = data
+    _KEV_CACHE["ts"] = now
+    return data
+
+
+async def _fetch_cisa_kev(software: str) -> dict:
+    try:
+        data = await _fetch_kev_feed()
+        vulns = (data or {}).get("vulnerabilities", [])
+        keyword = software.lower()
+        matches = [
+            {
+                "cve_id": v.get("cveID"),
+                "product": v.get("product"),
+                "vendor": v.get("vendorProject"),
+                "date_added": v.get("dateAdded"),
+                "required_action": v.get("requiredAction"),
+            }
+            for v in vulns
+            if keyword in (v.get("product", "") + v.get("vendorProject", "")).lower()
+        ]
+        return {"found": len(matches) > 0, "entries": matches[:5], "total": len(matches)}
+    except Exception as e:
+        return {"found": False, "entries": [], "error": str(e)}
 
 
 async def _ai_zero_day_analysis(
@@ -272,28 +299,25 @@ def list_predictions() -> list:
 
 async def trending_threats() -> dict:
     """Fetch trending threats from CISA KEV."""
-    async with httpx.AsyncClient(timeout=20) as client:
-        try:
-            r = await client.get(CISA_KEV_URL)
-            r.raise_for_status()
-            data = r.json()
-            vulns = data.get("vulnerabilities", [])
-            recent = sorted(vulns, key=lambda v: v.get("dateAdded", ""), reverse=True)[:10]
-            return {
-                "trending": [
-                    {
-                        "cve_id": v.get("cveID"),
-                        "product": v.get("product"),
-                        "vendor": v.get("vendorProject"),
-                        "date_added": v.get("dateAdded"),
-                        "short_description": v.get("shortDescription", "")[:200],
-                        "required_action": v.get("requiredAction"),
-                        "due_date": v.get("dueDate"),
-                    }
-                    for v in recent
-                ],
-                "total_kev": len(vulns),
-                "fetched_at": datetime.utcnow().isoformat(),
-            }
-        except Exception as e:
-            return {"error": str(e), "trending": []}
+    try:
+        data = await _fetch_kev_feed()
+        vulns = (data or {}).get("vulnerabilities", [])
+        recent = sorted(vulns, key=lambda v: v.get("dateAdded", ""), reverse=True)[:10]
+        return {
+            "trending": [
+                {
+                    "cve_id": v.get("cveID"),
+                    "product": v.get("product"),
+                    "vendor": v.get("vendorProject"),
+                    "date_added": v.get("dateAdded"),
+                    "short_description": v.get("shortDescription", "")[:200],
+                    "required_action": v.get("requiredAction"),
+                    "due_date": v.get("dueDate"),
+                }
+                for v in recent
+            ],
+            "total_kev": len(vulns),
+            "fetched_at": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        return {"error": str(e), "trending": []}
