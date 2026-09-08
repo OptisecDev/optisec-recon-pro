@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, Query
@@ -33,11 +34,21 @@ from web.database import get_db
 from web.models import User, ThreatShare
 from web.auth import get_current_user
 from web.license import require_feature_or_402
+from web.rate_limit import rate_limiter
 from config import OTX_API_KEY, ENABLE_THREAT_SHARING
 from modules.threat_intel import threat_sharing as sharing
 
 router = APIRouter(prefix="/api/threat-feed", tags=["threat_sharing"])
 logger = logging.getLogger(__name__)
+
+# TLP:RED is rejected outright and GREEN/AMBER always share privately
+# (commit 2d44363), but WHITE/CLEAR still publishes a real public pulse
+# to the platform's actual OTX account -- the same account a prior
+# incident (commit aa530cb) accidentally created 3 public pulses on.
+# Unbounded calls could still flood it with public pulses one at a time.
+_share_ioc_limiter = rate_limiter(
+    "threat_sharing_share_ioc", lambda: int(os.environ.get("RATE_LIMIT_THREAT_SHARING_SHARE", "10")), 60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -188,6 +199,7 @@ async def share_history(limit: int = 50, user: User = Depends(_user), db: AsyncS
         "IP/domain/hash/CVE/URL (see validate_ioc()). Every attempt — success, "
         "failure, disabled, or invalid — is recorded in the audit trail."
     ),
+    dependencies=[Depends(_share_ioc_limiter)],
 )
 async def share_ioc_endpoint(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("threat_sharing", user)
