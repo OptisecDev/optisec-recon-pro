@@ -1,5 +1,7 @@
 """AI Security router — Behavioral Analysis, Zero-Day Prediction, Attack Patterns, Red Team."""
 
+import os
+
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,10 +10,30 @@ from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
 from web.license import require_feature_or_402
+from web.rate_limit import rate_limiter
 from web.shared_templates import templates
 from config import APP_NAME
 
 router = APIRouter(prefix="/ai-security", tags=["ai-security"])
+
+# /api/zero-day/predict and /api/red-team/engagements both call Groq under
+# GROQ_API_KEY -- one instance-wide credential, not per-user (same shape as
+# HACKERONE_API_TOKEN in web/routers/bug_bounty.py) -- with no cap. Any
+# PRO/ENTERPRISE user could loop either endpoint and run up real Groq
+# usage on the platform's own account. Per-IP is enough here (unlike
+# bug_bounty's redeem quota, there's no external identity to protect or
+# audit trail to keep, just cost) -- reuses the same rate_limiter()
+# factory as /targets/add and /api/subscription/redeem.
+_zero_day_predict_limiter = rate_limiter(
+    "ai_security_zero_day_predict",
+    lambda: int(os.environ.get("RATE_LIMIT_ZERO_DAY_PREDICT", "10")),
+    60,
+)
+_red_team_create_limiter = rate_limiter(
+    "ai_security_red_team_create",
+    lambda: int(os.environ.get("RATE_LIMIT_RED_TEAM_CREATE", "10")),
+    60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -89,7 +111,7 @@ def _own_predictions(predictions: list, user: User) -> list:
     return [p for p in predictions if p.get("user_id") == user.id]
 
 
-@router.post("/api/zero-day/predict")
+@router.post("/api/zero-day/predict", dependencies=[Depends(_zero_day_predict_limiter)])
 async def predict(request: Request, user: User = Depends(_user)):
     require_feature_or_402("zero_day_predict", user)
     data = await request.json()
@@ -128,12 +150,21 @@ async def attack_patterns_home(request: Request, user: User = Depends(_user)):
     })
 
 
+# analyze_events() runs every event string through ~12 patterns' worth of
+# regexes -- unbounded text/events let a single request drive an
+# arbitrarily large amount of CPU work with no external cost signal to
+# notice it by (unlike the Groq-backed endpoints above).
+_MAX_ANALYZE_TEXT_CHARS = 200_000
+_MAX_ANALYZE_EVENTS = 5_000
+_MAX_ANALYZE_EVENT_CHARS = 2_000
+
+
 @router.post("/api/attack-patterns/analyze")
 async def analyze_patterns(request: Request, user: User = Depends(_user)):
     require_feature_or_402("attack_patterns", user)
     data = await request.json()
-    text = data.get("text", "")
-    events = data.get("events", [])
+    text = (data.get("text", "") or "")[:_MAX_ANALYZE_TEXT_CHARS]
+    events = [str(e)[:_MAX_ANALYZE_EVENT_CHARS] for e in (data.get("events", []) or [])[:_MAX_ANALYZE_EVENTS]]
     from modules.ai_advanced.attack_patterns import analyze_text, analyze_events
     if text:
         return analyze_text(text)
@@ -173,7 +204,7 @@ async def red_team_home(request: Request, user: User = Depends(_user)):
     })
 
 
-@router.post("/api/red-team/engagements")
+@router.post("/api/red-team/engagements", dependencies=[Depends(_red_team_create_limiter)])
 async def create_engagement(request: Request, user: User = Depends(_user)):
     require_feature_or_402("ai_red_team", user)
     data = await request.json()
