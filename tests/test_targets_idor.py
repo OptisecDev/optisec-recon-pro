@@ -193,6 +193,23 @@ def test_add_target_rejects_ssrf_local_and_private_hosts(client):
         assert resp.json()["success"] is False
 
 
+def test_add_target_rejects_disallowed_url_schemes(client):
+    """S3: only http:// and https:// target URLs may be added -- file://
+    and other schemes must be rejected even when the hostname itself
+    isn't a local/private address."""
+    c, session_factory = client
+    _, token = _seed_user_token(session_factory, "schemetest")
+
+    for bad_url in [
+        "file:///etc/passwd",
+        "file://attacker.example/x",
+        "ftp://attacker.example/",
+    ]:
+        resp = _add_target(c, token, bad_url)
+        assert resp.status_code == 400, f"{bad_url!r} should be rejected, got {resp.status_code}: {resp.text[:200]}"
+        assert resp.json()["success"] is False
+
+
 def test_add_target_allows_ordinary_public_host(client):
     c, session_factory = client
     _, token = _seed_user_token(session_factory, "normaladd")

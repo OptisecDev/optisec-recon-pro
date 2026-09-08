@@ -111,6 +111,8 @@ class TargetCreate(BaseModel):
         if not v:
             raise ValueError("URL is required")
         parsed = urlparse(v if "://" in v else f"https://{v}")
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("Only http:// and https:// target URLs are allowed")
         hostname = parsed.hostname or ""
         if not hostname:
             raise ValueError("Invalid target URL")
