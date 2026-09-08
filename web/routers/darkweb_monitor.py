@@ -10,6 +10,7 @@ surfaced as alerts, each with a discovery timestamp.
 """
 
 import logging
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, HTTPException
@@ -21,9 +22,20 @@ from web.database import get_db
 from web.models import User, DarkWebMonitor, DarkWebAlert
 from web.auth import get_current_user
 from web.license import require_feature_or_402
+from web.rate_limit import rate_limiter
 
 logger = logging.getLogger("darkweb.monitor.router")
 router = APIRouter(prefix="/api/darkweb", tags=["darkweb-monitor"])
+
+# run_check_and_persist() -> run_monitor_check() calls the exact same
+# gather_darkweb_intelligence() as POST /api/osint/darkweb-scan (already
+# rate-limited, see web/routers/osint.py's _darkweb_scan_limiter) plus
+# LeakCheck -- multiple shared, instance-wide-keyed external APIs. Without
+# its own limit, this endpoint was a second, unprotected path to the same
+# calls, bypassing that earlier fix entirely.
+_check_monitor_limiter = rate_limiter(
+    "darkweb_monitor_check", lambda: int(os.environ.get("RATE_LIMIT_DARKWEB_MONITOR_CHECK", "10")), 60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -170,6 +182,7 @@ async def delete_monitor(monitor_id: int, request: Request, user: User = Depends
         "against previously-stored alerts (deduped by fingerprint), and persist "
         "only the newly-discovered leak events with a discovery timestamp."
     ),
+    dependencies=[Depends(_check_monitor_limiter)],
 )
 async def check_monitor(monitor_id: int, request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("darkweb_intel", user)
