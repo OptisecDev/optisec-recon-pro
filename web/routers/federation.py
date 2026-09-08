@@ -27,15 +27,26 @@ async def _admin(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     return user
 
 
+def _without_api_key(node: Optional[dict]) -> Optional[dict]:
+    """Strip the federation shared secret (`api_key` on a registered peer,
+    or this node's own key -- both are the X-Federation-Key value a caller
+    would need to authenticate as that node) before returning a node to
+    any non-admin-only endpoint. POST /api/initialize already did this
+    inline; GET /api/nodes and GET /api/this-node did not."""
+    if node is None:
+        return None
+    return {k: v for k, v in node.items() if k != "api_key"}
+
+
 @router.get("", response_class=HTMLResponse)
 async def federation_home(request: Request, user: User = Depends(_user)):
     require_feature_or_402("federation", user)
     from modules.federation.federated_scan import list_nodes, list_tasks, get_this_node
     return templates.TemplateResponse(request, "federation.html", {
         "app_name": APP_NAME, "user": user, "active": "federation",
-        "nodes": list_nodes(),
+        "nodes": [_without_api_key(n) for n in list_nodes()],
         "tasks": list_tasks()[:20],
-        "this_node": get_this_node(),
+        "this_node": _without_api_key(get_this_node()),
     })
 
 
@@ -43,7 +54,7 @@ async def federation_home(request: Request, user: User = Depends(_user)):
 async def this_node(user: User = Depends(_user)):
     require_feature_or_402("federation", user)
     from modules.federation.federated_scan import get_this_node
-    return get_this_node() or {"status": "not_initialized"}
+    return _without_api_key(get_this_node()) or {"status": "not_initialized"}
 
 
 @router.post("/api/initialize")
@@ -66,7 +77,7 @@ async def initialize_node(request: Request, user: User = Depends(_admin)):
 async def list_nodes_api(user: User = Depends(_user)):
     require_feature_or_402("federation", user)
     from modules.federation.federated_scan import list_nodes
-    return {"nodes": list_nodes()}
+    return {"nodes": [_without_api_key(n) for n in list_nodes()]}
 
 
 @router.post("/api/nodes")
