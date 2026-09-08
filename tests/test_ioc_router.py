@@ -209,6 +209,37 @@ class TestSyncIocsEndpoint:
         _run(go())
         assert calls == [17]
 
+    def test_oversized_limit_is_clamped(self, db_factory, monkeypatch):
+        """sync_from_otx() forwards `limit` straight to the OTX client with
+        no cap of its own (unlike IOCRepository.list_active()/search(),
+        which already clamp to 200) -- the router now clamps it instead."""
+        calls = []
+
+        def fake_client(limit):
+            calls.append(limit)
+            return []
+        monkeypatch.setattr("modules.ioc.ioc_engine._default_otx_pulses_client", fake_client)
+
+        async def go():
+            async with db_factory() as db:
+                return await ioc_router.sync_iocs(limit=999_999, user=_fake_user(), db=db)
+        _run(go())
+        assert calls == [ioc_router._MAX_SYNC_LIMIT]
+
+    def test_non_positive_limit_is_clamped_up_to_one(self, db_factory, monkeypatch):
+        calls = []
+
+        def fake_client(limit):
+            calls.append(limit)
+            return []
+        monkeypatch.setattr("modules.ioc.ioc_engine._default_otx_pulses_client", fake_client)
+
+        async def go():
+            async with db_factory() as db:
+                return await ioc_router.sync_iocs(limit=0, user=_fake_user(), db=db)
+        _run(go())
+        assert calls == [1]
+
 
 class TestSyncIocsUrlhausEndpoint:
     def test_no_api_key_configured_is_a_safe_no_op(self, db_factory, monkeypatch):
@@ -252,6 +283,20 @@ class TestSyncIocsUrlhausEndpoint:
                 return await ioc_router.sync_iocs_urlhaus(limit=17, user=_fake_user(), db=db)
         _run(go())
         assert calls == [17]
+
+    def test_oversized_limit_is_clamped(self, db_factory, monkeypatch):
+        calls = []
+
+        def fake_client(limit):
+            calls.append(limit)
+            return []
+        monkeypatch.setattr("modules.ioc.ioc_engine._default_urlhaus_recent_client", fake_client)
+
+        async def go():
+            async with db_factory() as db:
+                return await ioc_router.sync_iocs_urlhaus(limit=999_999, user=_fake_user(), db=db)
+        _run(go())
+        assert calls == [ioc_router._MAX_SYNC_LIMIT]
 
 
 class TestScanIocMatchesEndpoint:

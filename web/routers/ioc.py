@@ -11,6 +11,8 @@ global threat-feed IOCs against each other and never touches this table.
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -19,9 +21,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User, Ioc, Scan, Finding
 from web.auth import get_current_user
+from web.rate_limit import rate_limiter
 from modules.ioc.ioc_engine import IOCEngine, IOCRepository, IOC_TYPES
 
 router = APIRouter(prefix="/api/iocs", tags=["ioc"])
+
+# sync_from_otx()/sync_from_urlhaus() call out to shared, instance-wide-keyed
+# external feeds (OTX_API_KEY / URLHAUS_API_KEY) with no cap of their own --
+# unlike list_active()/search() (modules/ioc/ioc_engine.py), which already
+# clamp `limit` to 200, these two forwarded it straight through unbounded.
+# Per-IP rate limit + the same clamp, matching the pattern already applied
+# to every other shared-credential endpoint in this audit series.
+_MAX_SYNC_LIMIT = 200
+_sync_otx_limiter = rate_limiter(
+    "ioc_sync_otx", lambda: int(os.environ.get("RATE_LIMIT_IOC_SYNC_OTX", "10")), 60,
+)
+_sync_urlhaus_limiter = rate_limiter(
+    "ioc_sync_urlhaus", lambda: int(os.environ.get("RATE_LIMIT_IOC_SYNC_URLHAUS", "10")), 60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -115,6 +132,7 @@ async def search_iocs(
         "logic as the periodic background sync (modules/ioc/scheduler.py) — use this "
         "to refresh on demand instead of waiting for the next scheduled sweep."
     ),
+    dependencies=[Depends(_sync_otx_limiter)],
 )
 async def sync_iocs(
     limit: int = 100,
@@ -122,7 +140,7 @@ async def sync_iocs(
     db: AsyncSession = Depends(get_db),
 ):
     engine = IOCEngine(repository=IOCRepository(db))
-    summary = await engine.sync_from_otx(limit=limit)
+    summary = await engine.sync_from_otx(limit=min(max(1, limit), _MAX_SYNC_LIMIT))
     await db.commit()
     return JSONResponse(summary)
 
@@ -137,6 +155,7 @@ async def sync_iocs(
         "(modules/ioc/scheduler.py) — use this to refresh on demand instead of "
         "waiting for the next scheduled sweep."
     ),
+    dependencies=[Depends(_sync_urlhaus_limiter)],
 )
 async def sync_iocs_urlhaus(
     limit: int = 100,
@@ -144,7 +163,7 @@ async def sync_iocs_urlhaus(
     db: AsyncSession = Depends(get_db),
 ):
     engine = IOCEngine(repository=IOCRepository(db))
-    summary = await engine.sync_from_urlhaus(limit=limit)
+    summary = await engine.sync_from_urlhaus(limit=min(max(1, limit), _MAX_SYNC_LIMIT))
     await db.commit()
     return JSONResponse(summary)
 
