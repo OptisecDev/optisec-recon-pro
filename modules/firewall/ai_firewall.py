@@ -4,7 +4,7 @@ import re
 import math
 import asyncio
 from datetime import datetime
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from urllib.parse import unquote, urlparse
 
 
@@ -1007,16 +1007,27 @@ def _top_threat_categories(results: list) -> list:
 
 
 # ── Rate Limiting ─────────────────────────────────────────────────────────────
-
-_rate_tracker: dict[str, list] = defaultdict(list)
+#
+# `ip` here is caller-supplied free text from the POST /api/rate-check body,
+# not derived from the actual request's network layer (unlike
+# web/rate_limit.py's rate_limiter(), keyed by get_client_ip()) -- a single
+# authenticated user can call this with a different `ip` value every time
+# and grow _rate_tracker without bound. Capped via LRU eviction: the entry
+# least recently touched is dropped once the tracker holds more than
+# _MAX_TRACKED_IPS distinct keys.
+_MAX_TRACKED_IPS = 10_000
+_rate_tracker: "OrderedDict[str, list]" = OrderedDict()
 
 
 def check_rate_limit(ip: str, window_seconds: int = 60, max_requests: int = 100) -> dict:
     now = datetime.utcnow().timestamp()
-    requests = _rate_tracker[ip]
+    requests = _rate_tracker.get(ip, [])
     requests = [t for t in requests if now - t < window_seconds]
     requests.append(now)
     _rate_tracker[ip] = requests
+    _rate_tracker.move_to_end(ip)
+    while len(_rate_tracker) > _MAX_TRACKED_IPS:
+        _rate_tracker.popitem(last=False)
 
     count = len(requests)
     limited = count > max_requests
