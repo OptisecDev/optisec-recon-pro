@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -511,6 +511,85 @@ class TestWebhookFinishedGeneratesLicenseOnce:
 
         keys = _run(fetch_keys())
         assert len(keys) == 1
+
+
+class TestWebhookFinishedConcurrentDeliveryRace:
+    """The fast-path idempotency check above (`if pending.license_key_hash:
+    return "already_processed"`) is SELECT-then-check-then-write, and is
+    racy on its own: two near-simultaneous webhook deliveries for the same
+    order_id -- exactly what NOWPayments' documented IPN retries produce --
+    could both read license_key_hash as NULL before either commits, each
+    then generating and emailing its own real LicenseKey for one payment.
+    Same root cause and fix shape as the license-redemption race (commit
+    10e72df): the "finished" branch now claims the row with an atomic
+    conditional UPDATE (... WHERE license_key_hash IS NULL) before ever
+    inserting a LicenseKey or sending an email.
+
+    A sequential TestClient replay (see TestWebhookFinishedGeneratesLicenseOnce
+    above) proves retries don't double-issue in practice, but it can't
+    isolate *why*: the second call's SELECT always sees the first call's
+    already-committed write, so it never actually exercises the atomic
+    UPDATE's WHERE clause against a genuinely stale read. This test drives
+    two sessions by hand -- both read license_key_hash as NULL first
+    (simulating two deliveries that raced past the fast-path check before
+    either committed), then A claims and commits, then B attempts to claim
+    -- proving the UPDATE re-checks the row's *current* state at write
+    time rather than trusting what B read earlier. (A true
+    asyncio.gather()-driven concurrency test was tried and discarded: this
+    engine's StaticPool wraps a single shared SQLite connection, which
+    doesn't model two independent concurrent transactions the way
+    production Postgres does, and produced unreliable results.)
+    """
+
+    def test_second_claim_after_first_commits_is_rejected_despite_its_own_stale_read(self, client):
+        _, session_factory = client
+        order_id = _seed_pending_payment(session_factory)
+
+        async def go():
+            async with session_factory() as db_a, session_factory() as db_b:
+                pending_a = (await db_a.execute(
+                    select(PendingPayment).where(PendingPayment.order_id == order_id)
+                )).scalar_one()
+                pending_b = (await db_b.execute(
+                    select(PendingPayment).where(PendingPayment.order_id == order_id)
+                )).scalar_one()
+                assert pending_a.license_key_hash is None
+                assert pending_b.license_key_hash is None  # B's stale read, same as A's
+
+                claim_a = await db_a.execute(
+                    update(PendingPayment)
+                    .where(PendingPayment.order_id == order_id, PendingPayment.license_key_hash.is_(None))
+                    .values(license_key_hash="hash-a", status="completed")
+                )
+                assert claim_a.rowcount == 1
+                db_a.add(LicenseKey(key_hash="hash-a", tier="pro", note="delivery A"))
+                await db_a.commit()
+
+                # B still thinks (from its stale read) that the row is
+                # unclaimed -- but the UPDATE's WHERE clause is evaluated
+                # against the row's real state right now, not B's read.
+                claim_b = await db_b.execute(
+                    update(PendingPayment)
+                    .where(PendingPayment.order_id == order_id, PendingPayment.license_key_hash.is_(None))
+                    .values(license_key_hash="hash-b", status="completed")
+                )
+                assert claim_b.rowcount == 0
+                await db_b.rollback()
+
+        _run(go())
+
+        async def fetch():
+            async with session_factory() as db:
+                pending = (await db.execute(
+                    select(PendingPayment).where(PendingPayment.order_id == order_id)
+                )).scalar_one()
+                keys = (await db.execute(select(LicenseKey))).scalars().all()
+                return pending, keys
+
+        pending, keys = _run(fetch())
+        assert len(keys) == 1, f"expected exactly one LicenseKey issued for one payment, got {len(keys)}"
+        assert keys[0].key_hash == "hash-a"
+        assert pending.license_key_hash == "hash-a"
 
 
 class TestWebhookNonFinishedStatuses:

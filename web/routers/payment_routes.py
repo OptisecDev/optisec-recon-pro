@@ -229,10 +229,12 @@ async def nowpayments_webhook(request: Request, db: AsyncSession = Depends(get_d
         logger.warning(f"NOWPayments webhook: unknown order_id={order_id}")
         return {"status": "ignored"}
 
-    # Idempotency: a LicenseKey was already generated for this order — never
-    # generate a second one no matter how many times NOWPayments retries
-    # this notification (retries are the documented reason the same
-    # "finished" status can arrive more than once for one payment_id).
+    # Idempotency fast path: a LicenseKey was already generated for this
+    # order — never generate a second one no matter how many times
+    # NOWPayments retries this notification (retries are the documented
+    # reason the same "finished" status can arrive more than once for one
+    # payment_id). This check alone is NOT enough on its own — see the
+    # atomic claim below for why.
     if pending.license_key_hash:
         return {"status": "already_processed"}
 
@@ -240,15 +242,40 @@ async def nowpayments_webhook(request: Request, db: AsyncSession = Depends(get_d
     pending.updated_at = datetime.utcnow()
 
     if payment_status == "finished":
+        # SELECT-then-check-then-write (the fast path above) is racy: two
+        # near-simultaneous webhook deliveries for the same order_id --
+        # exactly what NOWPayments' documented retries produce -- could
+        # both see license_key_hash as NULL before either commits, each
+        # then generating and emailing its own real LicenseKey for one
+        # $399 payment. Same root cause and fix shape as the license-
+        # redemption race (commit 10e72df): generate the key locally
+        # first, then claim the row with an atomic conditional UPDATE:
+        # only insert the LicenseKey / send the email if this request
+        # actually won the race.
         raw_key = generate_license_key()
         key_hash = hash_license_key(raw_key)
+
+        claim = await db.execute(
+            update(PendingPayment)
+            .where(PendingPayment.order_id == order_id, PendingPayment.license_key_hash.is_(None))
+            .values(
+                license_key_hash=key_hash, status="completed", updated_at=datetime.utcnow(),
+                payment_id=str(payment_id) if payment_id else pending.payment_id,
+            )
+        )
+        if claim.rowcount != 1:
+            # Lost the race -- another delivery already claimed this order.
+            # Discard the locally-generated key: never insert it, never
+            # email it.
+            await db.rollback()
+            logger.info(f"NOWPayments webhook: order_id={order_id} already claimed by a concurrent delivery")
+            return {"status": "already_processed"}
+
         db.add(LicenseKey(
             key_hash=key_hash,
             tier=pending.tier,
             note=f"NOWPayments order={order_id} email={pending.email}",
         ))
-        pending.license_key_hash = key_hash
-        pending.status = "completed"
         await db.commit()
 
         await send_license_key_email(pending.email, raw_key, pending.tier, order_id)
