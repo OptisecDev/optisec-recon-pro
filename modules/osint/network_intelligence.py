@@ -25,6 +25,7 @@ Design notes:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import os
 import re
@@ -64,6 +65,30 @@ _RE_IP = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
 
 
 # ── Target resolution ─────────────────────────────────────────────────────────
+
+def _is_ssrf_blocked_ip(ip_str: str) -> bool:
+    """Refuses to actively probe an internal/private/reserved address.
+
+    _analyze_ssl() and _fingerprint_services() below open real outbound
+    TCP/TLS sockets straight at whatever `target` resolves to -- by design
+    (see the module docstring: it deliberately reaches hosts Shodan hasn't
+    indexed), so unlike the passive Shodan/Censys/BGP lookups, nothing
+    upstream stops a caller from pointing this at the platform's own
+    internal network. Same check web/schemas.py's _is_ssrf_blocked_host
+    applies at Target creation time -- that check's own docstring says the
+    scanner modules are the real line of defense against a
+    resolved-at-scan-time internal address; this is that defense for
+    gather_network_intelligence()'s direct socket connections.
+    """
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return True  # unparseable -- fail closed
+    return (
+        ip.is_loopback or ip.is_link_local or ip.is_private
+        or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+    )
+
 
 def _resolve_ip(target: str) -> str | None:
     """Resolve a domain/URL/IP string to a bare IPv4 address, or None."""
@@ -864,6 +889,16 @@ async def gather_network_intelligence(target: str, deep_scan: bool = False) -> d
         }
         empty["attack_surface"] = calculate_attack_surface_score({})
         return empty
+
+    if _is_ssrf_blocked_ip(ip):
+        blocked = {
+            "target": target, "ip": ip,
+            "error": f"'{target}' resolves to a private/internal address ({ip}) — refusing to probe it",
+            "shodan": None, "censys": None, "bgp": None, "ssl": None,
+            "services": None, "ip_ranges": None,
+        }
+        blocked["attack_surface"] = calculate_attack_surface_score({})
+        return blocked
 
     sni_host = target if not _RE_IP.match(target.strip()) else ip
 

@@ -19,6 +19,7 @@ import pytest
 
 from modules.osint.network_intelligence import (
     _resolve_ip,
+    _is_ssrf_blocked_ip,
     _query_bgp,
     _get_ip_ranges,
     _query_shodan,
@@ -449,6 +450,68 @@ class TestGatherNetworkIntelligence:
         assert result["ip"] is None
         assert "error" in result
         assert result["attack_surface"]["score"] == 0
+
+
+# ── SSRF guard ────────────────────────────────────────────────────────────────
+#
+# _analyze_ssl() (always run) and _fingerprint_services() (deep_scan=True)
+# open real outbound sockets straight at whatever `target` resolves to, by
+# design -- unlike Shodan/Censys/BGP, which only ever pass the IP as a query
+# parameter to a fixed external API host. Without a guard, any caller could
+# point network-scan at the platform's own internal network (127.0.0.1,
+# 169.254.169.254, an internal Docker/RFC1918 address, ...) and get back
+# port-open/closed/TLS-handshake details for it. Mirrors web/schemas.py's
+# _is_ssrf_blocked_host, applied here as the "scanner module" layer that
+# docstring says is the real defense at scan time.
+
+class TestIsSsrfBlockedIP:
+    def test_loopback_is_blocked(self):
+        assert _is_ssrf_blocked_ip("127.0.0.1") is True
+
+    def test_link_local_is_blocked(self):
+        assert _is_ssrf_blocked_ip("169.254.169.254") is True  # cloud metadata range
+
+    def test_rfc1918_private_is_blocked(self):
+        assert _is_ssrf_blocked_ip("10.0.0.5") is True
+        assert _is_ssrf_blocked_ip("192.168.1.1") is True
+        assert _is_ssrf_blocked_ip("172.16.0.1") is True
+
+    def test_unspecified_is_blocked(self):
+        assert _is_ssrf_blocked_ip("0.0.0.0") is True
+
+    def test_multicast_is_blocked(self):
+        assert _is_ssrf_blocked_ip("224.0.0.1") is True
+
+    def test_unparseable_fails_closed(self):
+        assert _is_ssrf_blocked_ip("not-an-ip") is True
+
+    def test_public_ip_is_allowed(self):
+        assert _is_ssrf_blocked_ip("8.8.8.8") is False
+        assert _is_ssrf_blocked_ip("1.1.1.1") is False
+
+
+class TestGatherNetworkIntelligenceSSRFGuard:
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def test_loopback_target_is_refused_without_probing(self):
+        result = self._run(gather_network_intelligence("127.0.0.1", deep_scan=True))
+        assert result["ip"] == "127.0.0.1"
+        assert "error" in result and "private/internal" in result["error"]
+        # Refused before any active probe ran -- not just an empty result.
+        assert result["shodan"] is None
+        assert result["censys"] is None
+        assert result["ssl"] is None
+        assert result["services"] is None
+
+    def test_link_local_metadata_target_is_refused(self):
+        result = self._run(gather_network_intelligence("169.254.169.254"))
+        assert "error" in result and "private/internal" in result["error"]
+
+    def test_private_hostname_via_literal_ip_is_refused(self):
+        result = self._run(gather_network_intelligence("192.168.0.1", deep_scan=True))
+        assert "error" in result and "private/internal" in result["error"]
+        assert result["services"] is None
 
 
 if __name__ == "__main__":
