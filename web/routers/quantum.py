@@ -26,7 +26,7 @@ async def quantum_home(request: Request, user: User = Depends(_user)):
         "app_name": APP_NAME, "user": user, "active": "quantum",
         "algorithms": get_algorithms(),
         "hybrid_schemes": get_hybrid_schemes(),
-        "keys": list_keys(),
+        "keys": list_keys(user_id=user.id, is_admin=user.role == "admin"),
     })
 
 
@@ -42,7 +42,7 @@ async def generate_keypair(request: Request, user: User = Depends(_user)):
     require_feature_or_402("quantum", user)
     data = await request.json()
     from modules.quantum.encryption import generate_keypair
-    result = generate_keypair(algorithm=data.get("algorithm", "kyber768"))
+    result = generate_keypair(algorithm=data.get("algorithm", "kyber768"), user_id=user.id)
     # Never expose private key via API
     result.pop("private_key", None)
     return result
@@ -53,10 +53,7 @@ async def encapsulate(request: Request, user: User = Depends(_user)):
     require_feature_or_402("quantum", user)
     data = await request.json()
     from modules.quantum.encryption import encapsulate as _enc
-    return await _enc(
-        public_key_b64=data.get("public_key", ""),
-        algorithm=data.get("algorithm", "kyber768"),
-    ) if False else _enc(
+    return _enc(
         public_key_b64=data.get("public_key", ""),
         algorithm=data.get("algorithm", "kyber768"),
     )
@@ -88,4 +85,4 @@ async def assess_algorithm(request: Request, user: User = Depends(_user)):
 async def list_keys_api(user: User = Depends(_user)):
     require_feature_or_402("quantum", user)
     from modules.quantum.encryption import list_keys
-    return {"keys": list_keys()}
+    return {"keys": list_keys(user_id=user.id, is_admin=user.role == "admin")}

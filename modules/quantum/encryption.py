@@ -98,7 +98,7 @@ def _try_pqc_lib():
         return None
 
 
-def generate_keypair(algorithm: str = "kyber768") -> dict:
+def generate_keypair(algorithm: str = "kyber768", user_id: Optional[int] = None) -> dict:
     """Generate a PQC keypair. Uses liboqs if available, else simulates."""
     if algorithm not in PQC_ALGORITHMS:
         return {"error": f"Unknown algorithm: {algorithm}. Available: {list(PQC_ALGORITHMS.keys())}"}
@@ -113,17 +113,18 @@ def generate_keypair(algorithm: str = "kyber768") -> dict:
                     else oqs.Signature(kem_name) as obj:
                 pub_key = obj.generate_keypair()
                 priv_key = obj.export_secret_key()
-                return _format_keypair(algorithm, algo_info, pub_key, priv_key, "liboqs")
+                return _format_keypair(algorithm, algo_info, pub_key, priv_key, "liboqs", user_id)
         except Exception:
             pass
 
     # Simulation mode: generate deterministic-length random keys
     pub_key = secrets.token_bytes(algo_info.get("public_key_size", 32))
     priv_key = secrets.token_bytes(algo_info.get("private_key_size", 64))
-    return _format_keypair(algorithm, algo_info, pub_key, priv_key, "simulated")
+    return _format_keypair(algorithm, algo_info, pub_key, priv_key, "simulated", user_id)
 
 
-def _format_keypair(algorithm: str, info: dict, pub: bytes, priv: bytes, mode: str) -> dict:
+def _format_keypair(algorithm: str, info: dict, pub: bytes, priv: bytes, mode: str,
+                     user_id: Optional[int] = None) -> dict:
     key_id = f"pqc-{algorithm}-{secrets.token_hex(6)}"
     now = datetime.utcnow().isoformat()
     result = {
@@ -138,6 +139,7 @@ def _format_keypair(algorithm: str, info: dict, pub: bytes, priv: bytes, mode: s
         "created_at": now,
         "mode": mode,
         "note": "Install liboqs-python for real PQC key generation" if mode == "simulated" else "",
+        "user_id": user_id,
     }
     _save_key(key_id, result)
     return result
@@ -283,7 +285,16 @@ def _save_key(key_id: str, data: dict) -> None:
     key_file.write_text(json.dumps(safe, indent=2))
 
 
-def list_keys() -> list:
+def list_keys(user_id: Optional[int] = None, is_admin: bool = False) -> list:
+    """Keys owned by `user_id` (admin sees every account's -- same
+    admin-sees-all convention as modules/ai_advanced/{zero_day,red_team}.py
+    and modules/darkweb/intelligence.py). private_key is never persisted
+    (_save_key strips it), so this is metadata-only either way; still,
+    which algorithm/how many keys another tenant generated and when is
+    account activity that shouldn't be visible cross-tenant. Passing
+    user_id=None and is_admin=False (the defaults) returns everything, for
+    any other internal caller; web/routers/quantum.py always passes
+    explicit values."""
     KEYS_DIR.mkdir(parents=True, exist_ok=True)
     keys = []
     for f in KEYS_DIR.glob("*.json"):
@@ -291,6 +302,8 @@ def list_keys() -> list:
             keys.append(json.loads(f.read_text()))
         except Exception:
             pass
+    if not (is_admin or user_id is None):
+        keys = [k for k in keys if k.get("user_id") == user_id]
     return sorted(keys, key=lambda x: x.get("created_at", ""), reverse=True)
 
 
