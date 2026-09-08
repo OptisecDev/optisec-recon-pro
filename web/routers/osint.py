@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from fastapi import APIRouter, Request, Depends, HTTPException
 from fastapi.responses import JSONResponse, HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,11 +11,29 @@ from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
 from web.license import require_feature_or_402
+from web.rate_limit import rate_limiter
 from web.shared_templates import templates
 from config import APP_NAME
 
 logger = logging.getLogger("osint.router")
 router = APIRouter(tags=["osint"])
+
+# /api/osint/unified-search already rate-limits per user (rate_key=f"user:{user.id}")
+# via modules/osint/unified_engine.py's own _check_rate(). network-scan,
+# darkweb-scan and threat-analysis (include_ai=True) each call multiple
+# shared, instance-wide-keyed external APIs -- Shodan/Censys, HIBP/
+# IntelligenceX/RapidAPI/LeakLookup/GitHub/OTX, Groq -- with no cap at all.
+# Per-IP here for consistency with the same fix already applied to
+# web/routers/bug_bounty.py and web/routers/ai_security.py.
+_network_scan_limiter = rate_limiter(
+    "osint_network_scan", lambda: int(os.environ.get("RATE_LIMIT_OSINT_NETWORK_SCAN", "10")), 60,
+)
+_darkweb_scan_limiter = rate_limiter(
+    "osint_darkweb_scan", lambda: int(os.environ.get("RATE_LIMIT_OSINT_DARKWEB_SCAN", "10")), 60,
+)
+_threat_analysis_limiter = rate_limiter(
+    "osint_threat_analysis", lambda: int(os.environ.get("RATE_LIMIT_OSINT_THREAT_ANALYSIS", "10")), 60,
+)
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -379,6 +398,7 @@ async def osint_unified_search(request: Request, user: User = Depends(_user)):
         "actively banner-grab the ports Shodan/Censys reported open — "
         "only do this against hosts you are authorized to test."
     ),
+    dependencies=[Depends(_network_scan_limiter)],
 )
 async def osint_network_scan(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_advanced", user)
@@ -414,6 +434,7 @@ async def osint_network_scan(request: Request, user: User = Depends(_user)):
         "`target` may be an email or a domain — set `include_pastes`/"
         "`include_github` to false to skip those sources."
     ),
+    dependencies=[Depends(_darkweb_scan_limiter)],
 )
 async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
@@ -466,6 +487,7 @@ async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
         "generate a Groq-authored bilingual executive narrative — requires "
         "GROQ_API_KEY; degrades to `ai_narrative.available: false` otherwise."
     ),
+    dependencies=[Depends(_threat_analysis_limiter)],
 )
 async def osint_threat_analysis(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_advanced", user)
