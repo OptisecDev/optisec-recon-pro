@@ -324,7 +324,7 @@ async function detectIOCs() {
   const container = document.getElementById('ioc-results');
   if (!data.technique_hits?.length) { container.innerHTML = '<p class="ie77593361">No technique mappings found.</p>'; return; }
   container.innerHTML = `<div class="iefc4c1fec">${data.total_hits} techniques mapped from ${data.iocs_processed} IOCs</div>` +
-    data.technique_hits.map(h => `<div class="ie9fbc7856"><strong>${h.technique_id}</strong> — ${h.technique_name} <span class="ied605eae1">(${h.ioc_count} IOC hits)</span></div>`).join('');
+    data.technique_hits.map(h => `<div class="ie9fbc7856"><strong>${escHtml(h.technique_id)}</strong> — ${escHtml(h.technique_name)} <span class="ied605eae1">(${h.ioc_count} IOC hits)</span></div>`).join('');
   data.technique_hits.forEach(h => {
     const el = document.querySelector(`[data-id="${h.technique_id}"]`);
     if (el) el.classList.add('detected');
@@ -356,7 +356,7 @@ async function loadDetections() {
     container.innerHTML = '<p class="ie50df17a4">No detections recorded yet.</p>';
   } else {
     container.innerHTML = '<table class="table ie8b685211" ><thead><tr><th>Technique</th><th>Name</th><th>Confidence</th><th>Source</th><th>Time</th></tr></thead><tbody>' +
-      data.detections.slice(0,20).map(d => `<tr><td><code>${d.technique_id}</code></td><td>${d.technique_name}</td><td><span class="badge badge-${d.confidence>=80?'critical':d.confidence>=60?'high':'medium'}">${d.confidence}%</span></td><td>${d.source}</td><td class="ied605eae1">${new Date(d.timestamp).toLocaleString()}</td></tr>`).join('') +
+      data.detections.slice(0,20).map(d => `<tr><td><code>${escHtml(d.technique_id)}</code></td><td>${escHtml(d.technique_name)}</td><td><span class="badge badge-${d.confidence>=80?'critical':d.confidence>=60?'high':'medium'}">${d.confidence}%</span></td><td>${escHtml(d.source)}</td><td class="ied605eae1">${new Date(d.timestamp).toLocaleString()}</td></tr>`).join('') +
       '</tbody></table>';
   }
   // Coverage bars
@@ -381,5 +381,9 @@ function showAptDetail(id) {
 }
 
 window.addEventListener('click', e => { if (e.target.id === 'detail-modal') closeModal(); });
+
+function escHtml(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 </script>
 {% endblock %}
