@@ -1920,7 +1920,9 @@ async def _run_scan_task(
         if run_all or "subdomain" in scan_types:
             await push_start("subdomain")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(enumerate_subdomains, domain), timeout=40)
+                sub_result = await asyncio.wait_for(asyncio.to_thread(enumerate_subdomains, domain), timeout=40)
+                d = sub_result["subdomains"]
+                results["subdomains_unconfirmed"] = sub_result["unconfirmed"]
             except asyncio.TimeoutError:
                 d = {"error": "module_timeout", "timeout_seconds": 40}
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "subdomain", 40)
@@ -2371,12 +2373,14 @@ async def run_osint(request: Request, user: User = Depends(web_user)):
         return_exceptions=True,
     )
 
+    subs_ok = subs if not isinstance(subs, Exception) else {"subdomains": [], "unconfirmed": []}
     return JSONResponse({
         "emails": emails if not isinstance(emails, Exception) else {},
         "social": social if not isinstance(social, Exception) else {},
         "dns": dns_data if not isinstance(dns_data, Exception) else {},
         "whois": whois_data if not isinstance(whois_data, Exception) else {},
-        "subdomains": subs if not isinstance(subs, Exception) else [],
+        "subdomains": subs_ok["subdomains"],
+        "subdomains_unconfirmed": subs_ok["unconfirmed"],
     })
 
 

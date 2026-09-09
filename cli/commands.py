@@ -51,14 +51,22 @@ def _spinner(msg: str):
 
 def cmd_subdomain(domain: str, **kwargs):
     console.print(f"\n[bold green]Enumerating subdomains for {domain}...[/bold green]")
-    found = []
+    result = {"subdomains": [], "unconfirmed": []}
     with _spinner(f"Scanning subdomains of {domain}") as p:
         p.add_task("scan")
-        found = enumerate_subdomains(domain)
+        result = enumerate_subdomains(domain)
+
+    found = result["subdomains"]
+    unconfirmed = result["unconfirmed"]
 
     if not found:
         console.print("[yellow]No subdomains found.[/yellow]")
-        return {"subdomains": []}
+        if unconfirmed:
+            console.print(
+                f"[dim]({len(unconfirmed)} DNS record(s) resolved but failed live-host "
+                f"verification — likely wildcard DNS, not real subdomains.)[/dim]"
+            )
+        return {"subdomains": [], "unconfirmed": unconfirmed}
 
     t = Table(title=f"Subdomains of {domain}", style="green")
     t.add_column("Subdomain", style="cyan")
@@ -67,7 +75,12 @@ def cmd_subdomain(domain: str, **kwargs):
         t.add_row(sub["subdomain"], sub["ip"])
     console.print(t)
     console.print(f"\n[bold green]Found {len(found)} subdomains.[/bold green]")
-    return {"subdomains": found}
+    if unconfirmed:
+        console.print(
+            f"[dim]({len(unconfirmed)} additional DNS record(s) resolved but were not "
+            f"confirmed as live hosts — omitted.)[/dim]"
+        )
+    return {"subdomains": found, "unconfirmed": unconfirmed}
 
 
 def cmd_dns(domain: str, **kwargs):

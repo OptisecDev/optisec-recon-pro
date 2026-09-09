@@ -84,7 +84,7 @@ def _patch_recon(monkeypatch):
     monkeypatch.setattr(ports_mod, "scan_ports", lambda *a, **k: FAKE_PORTS)
     monkeypatch.setattr(ssl_mod, "analyze_ssl", lambda *a, **k: FAKE_SSL)
     monkeypatch.setattr(headers_mod, "check_security_headers", lambda *a, **k: FAKE_HEADERS)
-    monkeypatch.setattr(art, "enumerate_subdomains", lambda *a, **k: [])
+    monkeypatch.setattr(art, "enumerate_subdomains", lambda *a, **k: {"subdomains": [], "unconfirmed": []})
     monkeypatch.setattr(art, "whois_lookup", lambda *a, **k: {"emails": []})
     monkeypatch.setattr(art, "dns_lookup", lambda *a, **k: {"TXT": []})
     monkeypatch.setattr(art, "nmap_scan", lambda *a, **k: {"ports": []})

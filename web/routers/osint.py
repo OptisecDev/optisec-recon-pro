@@ -195,6 +195,7 @@ async def osint_domain(request: Request, user: User = Depends(_user)):
         return_exceptions=True,
     )
     emails, social, dns_data, whois_data, subs, geo = results
+    subs_ok = subs if not isinstance(subs, Exception) else {"subdomains": [], "unconfirmed": []}
 
     return JSONResponse({
         "domain": domain,
@@ -202,7 +203,8 @@ async def osint_domain(request: Request, user: User = Depends(_user)):
         "social": social if not isinstance(social, Exception) else {"error": str(social)},
         "dns": dns_data if not isinstance(dns_data, Exception) else {"error": str(dns_data)},
         "whois": whois_data if not isinstance(whois_data, Exception) else {"error": str(whois_data)},
-        "subdomains": subs if not isinstance(subs, Exception) else [],
+        "subdomains": subs_ok["subdomains"],
+        "subdomains_unconfirmed": subs_ok["unconfirmed"],
         "geolocation": geo if not isinstance(geo, Exception) else {"error": str(geo)},
     })
 

@@ -68,10 +68,15 @@ FAKE_HEADERS = {
     "risk_score": 80, "risk_label": "HIGH",
 }
 
-FAKE_SUBDOMAINS = [
-    {"subdomain": "admin.evil.example.com", "ip": "203.0.113.6"},
-    {"subdomain": "vpn.evil.example.com", "ip": "203.0.113.7"},
-]
+FAKE_SUBDOMAINS = {
+    "subdomains": [
+        {"subdomain": "admin.evil.example.com", "ip": "203.0.113.6", "verified_via": "tls_san"},
+        {"subdomain": "vpn.evil.example.com", "ip": "203.0.113.7", "verified_via": "http"},
+    ],
+    "unconfirmed": [
+        {"subdomain": "wiki.evil.example.com", "ip": "203.0.113.8", "reason": "tls_san_mismatch"},
+    ],
+}
 
 FAKE_WHOIS = {"domain_name": "evil.example.com", "emails": ["registrant@evil.example.com"]}
 FAKE_DNS = {"A": ["203.0.113.5"], "AAAA": [], "MX": [], "NS": [], "TXT": ["v=spf1 -all"],

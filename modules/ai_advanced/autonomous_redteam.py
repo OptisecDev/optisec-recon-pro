@@ -326,7 +326,9 @@ async def _run_recon_phase(domain: str, url: str) -> dict:
 
     recon: dict = {}
     recon["ports"] = await asyncio.to_thread(scan_ports, domain)
-    recon["subdomains"] = await asyncio.to_thread(enumerate_subdomains, domain)
+    sub_result = await asyncio.to_thread(enumerate_subdomains, domain)
+    recon["subdomains"] = sub_result["subdomains"]
+    recon["subdomains_unconfirmed"] = sub_result["unconfirmed"]
     recon["ssl"] = await asyncio.to_thread(analyze_ssl, domain)
     recon["headers"] = await asyncio.to_thread(check_security_headers, url)
     recon["whois"] = await asyncio.to_thread(whois_lookup, domain)
