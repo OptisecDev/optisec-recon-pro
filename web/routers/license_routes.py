@@ -75,7 +75,7 @@ async def redeem_license(
     user: User = Depends(_user),
     db: AsyncSession = Depends(get_db),
 ):
-    key_hash = hash_license_key(body.license_key.strip())
+    key_hash = hash_license_key(body.license_key.strip().upper())
 
     # Atomic conditional UPDATE -- same pattern as SchedulerLock's
     # _acquire_lock (modules/darkweb/scheduler.py) -- instead of SELECT

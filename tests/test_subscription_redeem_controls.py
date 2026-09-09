@@ -157,6 +157,34 @@ def test_redeeming_unknown_key_is_rejected(env):
     assert resp.status_code == 400
 
 
+# ─── Case-insensitive key matching ──────────────────────────────────────────
+# generate_licenses_admin.py only ever generates keys from an all-uppercase
+# alphabet (license_utils.ALPHABET = string.ascii_uppercase + string.digits),
+# so every key_hash stored in license_keys is a hash of an all-uppercase
+# string. redeem_license() used to only .strip() the submitted key before
+# hashing -- any lowercase character (copy/paste mangling, manual retyping
+# by support, email client auto-formatting) produced a hash that could never
+# match, and the endpoint raised the *same* generic 400 as an
+# already-redeemed key, with no exception and no traceback logged.
+
+def test_redeeming_a_lowercased_key_still_succeeds(env):
+    SessionLocal, user1_id, user2_id, make_override = env
+    client = _client_as(env, user1_id)
+    resp = client.post("/api/subscription/redeem",
+                        json={"license_key": "optisec-recon-aaaa-bbbb-cccc-dddd"})
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True, "tier": "pro"}
+
+
+def test_redeeming_a_mixed_case_key_with_stray_whitespace_still_succeeds(env):
+    SessionLocal, user1_id, user2_id, make_override = env
+    client = _client_as(env, user1_id)
+    resp = client.post("/api/subscription/redeem",
+                        json={"license_key": "  Optisec-Recon-aaaa-BBBB-cccc-DDDD  "})
+    assert resp.status_code == 200
+    assert resp.json() == {"success": True, "tier": "pro"}
+
+
 # ─── Rate limiting ──────────────────────────────────────────────────────────
 
 def test_redeem_endpoint_is_rate_limited(env, monkeypatch):
