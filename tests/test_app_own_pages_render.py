@@ -50,7 +50,7 @@ APP_OWN_PAGES = {
     "/reports": None,
     "/cve-pipeline": None,
     "/api-docs": None,
-    "/license": None,
+    "/license": "admin",
     "/admin": "admin",
 }
 

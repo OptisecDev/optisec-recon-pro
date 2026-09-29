@@ -17,7 +17,7 @@
   <div class="sidebar-logo">
     <h1>🛡️ OPTISEC</h1>
     <div class="version ieab099171" >v4.0 SINGULARITY</div>
-    <a href="/license" class="lic-sidebar-badge lic-tier-{{ my_tier }}" title="License: {{ user_tier_label(user) }}">
+    <a href="{{ '/license' if user and user.role == 'admin' else '/redeem' }}" class="lic-sidebar-badge lic-tier-{{ my_tier }}" title="{{ 'License Management' if user and user.role == 'admin' else 'Your plan: ' + user_tier_label(user) }}">
       {{ user_tier_label(user) }}
     </a>
   </div>
@@ -178,7 +178,7 @@
     <div class="topbar-title">{% block page_title %}{% endblock %}</div>
     <div class="topbar-right">
       <!-- License status pill in topbar -->
-      <a href="/license" class="lic-topbar-pill lic-tier-{{ my_tier }}" title="License Management">
+      <a href="{{ '/license' if user and user.role == 'admin' else '/redeem' }}" class="lic-topbar-pill lic-tier-{{ my_tier }}" title="{{ 'License Management' if user and user.role == 'admin' else 'Your plan: ' + user_tier_label(user) }}">
         <span class="lic-tier-dot-sm"></span>
         {{ user_tier_label(user) }}
       </a>

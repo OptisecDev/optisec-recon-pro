@@ -38,7 +38,7 @@ from web.schemas import (
 from web.auth import (
     verify_password, hash_password, create_access_token,
     generate_api_key, hash_api_key, get_current_user, get_ws_user,
-    require_admin, require_analyst_or_admin, require_login,
+    require_admin, require_analyst_or_admin,
     check_rate_limit, record_failed_attempt, clear_attempts,
     log_auth_event, validate_password_strength, get_client_ip,
     generate_csrf_token, verify_csrf_token, generate_csrf_secret,
@@ -2654,6 +2654,7 @@ def _license_page_state(user: User) -> dict:
 @app.get("/license", response_class=HTMLResponse, include_in_schema=False)
 async def license_page(request: Request, user: User = Depends(web_user),
                        msg: str = "", msg_type: str = ""):
+    require_admin(user)
     csrf_secret, is_new = _current_csrf_secret(request)
     response = templates.TemplateResponse(request, "license.html", {
         **_license_page_state(user),
@@ -2695,7 +2696,7 @@ async def license_activate_form(
     csrf_token: str = Form(...),
     user: User = Depends(web_user),
 ):
-    require_login(user)
+    require_admin(user)
     ip = get_client_ip(request)
     csrf_secret, _ = _current_csrf_secret(request)
     if not verify_csrf_token(csrf_secret, csrf_token):
@@ -2736,7 +2737,7 @@ async def license_deactivate_form(
     csrf_token: str = Form(...),
     user: User = Depends(web_user),
 ):
-    require_login(user)
+    require_admin(user)
     ip = get_client_ip(request)
     csrf_secret, _ = _current_csrf_secret(request)
     if not verify_csrf_token(csrf_secret, csrf_token):
