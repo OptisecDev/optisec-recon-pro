@@ -101,7 +101,11 @@
     </div>
     <div class="info-list">
       <div class="info-row">
-        <span class="info-label">النوع</span>
+        <span class="info-label">حسابك الشخصي / Your account tier</span>
+        <span class="lic-badge lic-badge-{{ user_tier(user) }}">{{ user_tier_label(user) }}</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">النوع (ترخيص التثبيت) / Instance license</span>
         <span class="lic-badge lic-badge-{{ lic.tier }}">{{ lic.tier_label }}</span>
       </div>
       <div class="info-row">

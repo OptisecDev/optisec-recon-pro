@@ -8,7 +8,7 @@
 <div class="dash-welcome">
   <div class="dash-welcome-left">
     <div class="dash-greeting">مرحباً، <span class="accent">{{ user.username }}</span></div>
-    <div class="dash-subtitle">OPTISEC Enterprise — Bug Bounty &amp; Security Intelligence Platform</div>
+    <div class="dash-subtitle">OPTISEC {{ user_tier_label(user) }} — Bug Bounty &amp; Security Intelligence Platform</div>
   </div>
   <div class="dash-welcome-right">
     <div class="threat-gauge-wrap">
@@ -196,7 +196,7 @@
       ('/attack-navigator', '⚔️', 'ATT&CK',          'MITRE Navigator',    'orange'),
       ('/darkweb',          '🕸️', 'Dark Web',         'Intel Feed',         'red'),
       ('/autonomous-redteam','🤖','Auto RedTeam',     'Autonomous v4.0',   'red'),
-      ('/ngfw',             '🔥', 'NGFW v2',          'ML/DPI Firewall',    'orange'),
+      ('/ngfw',             '🔥', 'NGFW v2',          'Heuristic DPI Firewall', 'orange'),
       ('/threat-feed',      '🌍', 'Threat Feed',      'Global IOC Feed',    'blue'),
       ('/correlations',     '🔗', 'IOC Correlations', 'Threat Correlation', 'teal'),
       ('/quantum',          '⚛️', 'Quantum Crypto',   'Post-Quantum PQC',   'purple'),
@@ -285,7 +285,7 @@
           ('AI Engine', 'Groq LLaMA'),
           ('Database', 'SQLite/PG'),
           ('Bug Bounty', 'HackerOne'),
-          ('NGFW v2', 'ML/DPI'),
+          ('NGFW v2', 'Heuristic DPI'),
           ('Threat Feed', 'Global IOC'),
           ('Dark Web', 'Intelligence'),
           ('Quantum', 'PQC Kyber768'),

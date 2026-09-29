@@ -3,6 +3,10 @@
 {% block page_title %}AI Firewall — Deep Packet Inspection{% endblock %}
 
 {% block content %}
+<div class="alert alert-info">
+  ⚠️ التصنيف والتحليل هنا يعتمد على قواعد استدلالية ثابتة (patterns/signatures) — ليس تعلم آلي.
+  / Detection here is rule-based/heuristic (pattern &amp; signature matching) — not machine learning.
+</div>
 <div class="iec26f5e10">
   <button class="btn btn-primary" data-onclick="showTab" data-onclick-args='["inspector"]'>🔍 Request Inspector</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["log-analyzer"]'>📄 Log Analyzer</button>

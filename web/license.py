@@ -90,7 +90,7 @@ FEATURE_LABELS: dict[str, str] = {
     "ai_red_team":       "AI Red Team",
     "autonomous_redteam":"Autonomous RedTeam",
     "attack_navigator":  "ATT&CK Navigator",
-    "ngfw":              "NGFW v2 ML/DPI",
+    "ngfw":              "NGFW v2 (Heuristic DPI)",
     "firewall":          "AI Firewall",
     "honeypot":          "Honeypot Deception",
     "vpn":               "WireGuard VPN",

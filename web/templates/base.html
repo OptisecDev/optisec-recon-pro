@@ -54,11 +54,13 @@
     </a>
     <a href="/cve-pipeline" class="nav-item {% if active == 'cve' %}active{% endif %}">
       <span class="icon">📋</span><span>CVE Pipeline</span>
+      {% if not user_has_feature(user, 'bug_bounty') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
 
     <div class="nav-section">Compliance</div>
     <a href="/compliance" class="nav-item {% if active == 'compliance' %}active{% endif %}">
       <span class="icon">✅</span><span>Compliance Checker</span>
+      <span class="nav-beta-badge">Beta</span>
       {% if not user_has_feature(user, 'compliance') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
 
@@ -83,6 +85,7 @@
     <div class="nav-section ie38170337" >SINGULARITY v4.0</div>
     <a href="/attack-navigator" class="nav-item {% if active == 'attack_navigator' %}active{% endif %}">
       <span class="icon">🎯</span><span>ATT&CK Navigator</span>
+      <span class="nav-beta-badge">Beta</span>
       {% if not user_has_feature(user, 'attack_navigator') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/darkweb" class="nav-item {% if active == 'darkweb' %}active{% endif %}">
@@ -91,14 +94,17 @@
     </a>
     <a href="/autonomous-redteam" class="nav-item {% if active == 'autonomous_rt' %}active{% endif %}">
       <span class="icon">🤖</span><span>Autonomous RedTeam</span>
+      <span class="nav-beta-badge">Beta</span>
       {% if not user_has_feature(user, 'autonomous_redteam') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/ngfw" class="nav-item {% if active == 'ngfw' %}active{% endif %}">
-      <span class="icon">🔥</span><span>NGFW v2 (ML/DPI)</span>
+      <span class="icon">🔥</span><span>NGFW v2 (Heuristic DPI)</span>
+      <span class="nav-beta-badge">Beta</span>
       {% if not user_has_feature(user, 'ngfw') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/threat-feed" class="nav-item {% if active == 'threat_feed' %}active{% endif %}">
       <span class="icon">🌍</span><span>Global Threat Feed</span>
+      <span class="nav-beta-badge">Beta</span>
       {% if not user_has_feature(user, 'threat_feed') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/correlations" class="nav-item {% if active == 'correlations' %}active{% endif %}">
@@ -125,6 +131,7 @@
     </a>
     <a href="/quantum" class="nav-item {% if active == 'quantum' %}active{% endif %}">
       <span class="icon">⚛️</span><span>Quantum Crypto</span>
+      <span class="nav-beta-badge">Beta</span>
       {% if not user_has_feature(user, 'quantum') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
     <a href="/federation" class="nav-item {% if active == 'federation' %}active{% endif %}">

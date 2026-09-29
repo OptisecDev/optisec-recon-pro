@@ -1020,6 +1020,18 @@ textarea { resize: vertical; min-height: 80px; }
 /* Nav lock icon */
 .nav-lock { margin-left: auto; font-size: 11px; opacity: 0.5; }
 
+/* Nav "coming soon" beta badge */
+.nav-beta-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255,204,0,0.15);
+  color: var(--yellow);
+  border: 1px solid rgba(255,204,0,0.3);
+  letter-spacing: 0.3px;
+}
+
 /* License Hero */
 .lic-hero {
   display: flex;
