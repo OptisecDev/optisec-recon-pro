@@ -571,9 +571,14 @@ async function loadCVEQueue() {
 }
 
 // ── Submit Report ─────────────────────────────────────────────────────────
-async function submitReport() {
-  const platform = document.getElementById('submit-platform').value;
-  const payload = {
+// Real HackerOne/Bugcrowd submissions now require a server-verified preview
+// step before the real API call happens (web/routers/bug_bounty.py) -- a
+// bare POST to /submit is rejected with 400. So the UI has to preview first
+// and only fire the real submit once the reviewer explicitly confirms.
+let _pendingBountyConfirm = null; // {platform, payload, token} set by the preview step
+
+function _collectBountyReportForm() {
+  return {
     program_handle: document.getElementById('submit-program').value,
     program_code: document.getElementById('submit-program').value,
     title: document.getElementById('submit-title').value,
@@ -582,12 +587,56 @@ async function submitReport() {
     impact: document.getElementById('submit-impact').value,
     steps: document.getElementById('submit-steps').value,
   };
-  const url = platform === 'hackerone' ? '/bug-bounty/api/hackerone/submit'
-    : platform === 'bugcrowd' ? '/bug-bounty/api/bugcrowd/submit'
-    : '/bug-bounty/api/cve/draft';
-  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+}
+
+async function submitReport() {
+  const platform = document.getElementById('submit-platform').value;
+  const resultEl = document.getElementById('submit-result');
+  const payload = _collectBountyReportForm();
+
+  if (platform === 'cve') {
+    // CVE draft pipeline is unrelated to the HackerOne/Bugcrowd confirm gate
+    // -- it only ever produces a local draft, never a real submission.
+    const r = await fetch('/bug-bounty/api/cve/draft', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const data = await r.json();
+    resultEl.innerHTML = `<pre class="code-block">${escHtml(JSON.stringify(data, null, 2))}</pre>`;
+    return;
+  }
+
+  const previewUrl = platform === 'hackerone' ? '/bug-bounty/api/hackerone/submit/preview' : '/bug-bounty/api/bugcrowd/submit/preview';
+  const r = await fetch(previewUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const preview = await r.json();
+  if (!r.ok) {
+    resultEl.innerHTML = `<pre class="code-block">${escHtml(JSON.stringify(preview, null, 2))}</pre>`;
+    return;
+  }
+
+  _pendingBountyConfirm = {platform, payload, token: preview.confirm_token};
+  resultEl.innerHTML = `
+    <div class="submit-report-preview">
+      <strong>⚠️ ${escHtml(preview.warning || 'Review carefully — this will submit a real report.')}</strong>
+      <p><b>Program:</b> ${escHtml(preview.program_handle || preview.program_code || '')} &nbsp; <b>Severity:</b> ${escHtml(preview.severity || '')}</p>
+      <p><b>Title:</b> ${escHtml(preview.title || '')}</p>
+      <pre class="code-block">${escHtml(preview.body_preview || '')}</pre>
+      <button class="btn btn-primary btn-sm" data-onclick="confirmBountyReport">✅ Confirm & Submit</button>
+      <button class="btn btn-secondary btn-sm" data-onclick="cancelBountyReport">✕ Cancel</button>
+    </div>`;
+}
+
+async function confirmBountyReport() {
+  if (!_pendingBountyConfirm) return;
+  const { platform, payload, token } = _pendingBountyConfirm;
+  const url = platform === 'hackerone' ? '/bug-bounty/api/hackerone/submit' : '/bug-bounty/api/bugcrowd/submit';
+  const body = Object.assign({}, payload, { confirmed: true, confirm_token: token });
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
   const data = await r.json();
-  document.getElementById('submit-result').innerHTML = `<pre class="code-block">${JSON.stringify(data, null, 2)}</pre>`;
+  document.getElementById('submit-result').innerHTML = `<pre class="code-block">${escHtml(JSON.stringify(data, null, 2))}</pre>`;
+  _pendingBountyConfirm = null;
+}
+
+function cancelBountyReport() {
+  _pendingBountyConfirm = null;
+  document.getElementById('submit-result').innerHTML = '';
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

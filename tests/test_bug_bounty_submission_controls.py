@@ -16,6 +16,13 @@ Fixes covered:
     the router's hardcoded default.
   - Empty program/title fields are rejected with 400 before ever reaching
     the external API.
+  - Preview/confirm gate (_require_confirmation): /submit refuses to call
+    submit_report/bc_submit_report at all unless the caller first hit
+    /submit/preview for this *exact* report content and echoed back
+    'confirmed': true plus the resulting confirm_token. Missing, stale, or
+    content-mismatched tokens are rejected with 400 -- proving a real
+    HackerOne/Bugcrowd submission cannot happen without an explicit,
+    per-report human confirmation step.
 
 Same TestClient + dependency-override approach as
 tests/test_csrf_protection.py, adapted for bug_bounty.router's own local
@@ -102,6 +109,19 @@ def _submit_payload(**overrides):
     return payload
 
 
+def _preview_and_confirm(client, platform, payload):
+    """Hits /submit/preview for `platform` with `payload`, then returns a
+    submit-ready copy carrying 'confirmed': True plus the confirm_token that
+    call returned -- exercises the real preview-then-confirm flow instead of
+    forging a token by hand."""
+    resp = client.post(f"/bug-bounty/api/{platform}/submit/preview", json=payload)
+    assert resp.status_code == 200, resp.text
+    confirmed = dict(payload)
+    confirmed["confirmed"] = True
+    confirmed["confirm_token"] = resp.json()["confirm_token"]
+    return confirmed
+
+
 # ─── Audit trail ────────────────────────────────────────────────────────────
 
 def test_hackerone_submit_writes_audit_row(env, monkeypatch):
@@ -112,7 +132,8 @@ def test_hackerone_submit_writes_audit_row(env, monkeypatch):
 
     monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
 
-    resp = client.post("/bug-bounty/api/hackerone/submit", json=_submit_payload())
+    payload = _preview_and_confirm(client, "hackerone", _submit_payload())
+    resp = client.post("/bug-bounty/api/hackerone/submit", json=payload)
     assert resp.status_code == 200
 
     async def _fetch():
@@ -136,7 +157,8 @@ def test_bugcrowd_submit_writes_audit_row_even_on_demo_status(env, monkeypatch):
 
     monkeypatch.setattr(bugcrowd, "bc_submit_report", fake_bc_submit)
 
-    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=_submit_payload())
+    payload = _preview_and_confirm(client, "bugcrowd", _submit_payload())
+    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=payload)
     assert resp.status_code == 200
 
     async def _fetch():
@@ -162,9 +184,10 @@ def test_submission_quota_blocks_after_limit_reached(env, monkeypatch):
 
     monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
 
-    r1 = client.post("/bug-bounty/api/hackerone/submit", json=_submit_payload())
-    r2 = client.post("/bug-bounty/api/hackerone/submit", json=_submit_payload())
-    r3 = client.post("/bug-bounty/api/hackerone/submit", json=_submit_payload())
+    confirmed = _preview_and_confirm(client, "hackerone", _submit_payload())
+    r1 = client.post("/bug-bounty/api/hackerone/submit", json=confirmed)
+    r2 = client.post("/bug-bounty/api/hackerone/submit", json=confirmed)
+    r3 = client.post("/bug-bounty/api/hackerone/submit", json=confirmed)
 
     assert r1.status_code == 200
     assert r2.status_code == 200
@@ -190,8 +213,8 @@ def test_submission_quota_is_shared_across_platforms_per_user(env, monkeypatch):
     monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
     monkeypatch.setattr(bugcrowd, "bc_submit_report", fake_bc_submit)
 
-    r1 = client.post("/bug-bounty/api/hackerone/submit", json=_submit_payload())
-    r2 = client.post("/bug-bounty/api/bugcrowd/submit", json=_submit_payload())
+    r1 = client.post("/bug-bounty/api/hackerone/submit", json=_preview_and_confirm(client, "hackerone", _submit_payload()))
+    r2 = client.post("/bug-bounty/api/bugcrowd/submit", json=_preview_and_confirm(client, "bugcrowd", _submit_payload()))
 
     assert r1.status_code == 200
     assert r2.status_code == 429
@@ -216,7 +239,7 @@ def test_submission_quota_does_not_count_another_users_submissions(env, monkeypa
 
     _run(_seed_other_user_submission())
 
-    resp = client.post("/bug-bounty/api/hackerone/submit", json=_submit_payload())
+    resp = client.post("/bug-bounty/api/hackerone/submit", json=_preview_and_confirm(client, "hackerone", _submit_payload()))
     assert resp.status_code == 200  # this user's own quota is still fresh
 
 
@@ -232,10 +255,8 @@ def test_bugcrowd_submit_forwards_caller_supplied_vrt_id(env, monkeypatch):
 
     monkeypatch.setattr(bugcrowd, "bc_submit_report", fake_bc_submit)
 
-    resp = client.post(
-        "/bug-bounty/api/bugcrowd/submit",
-        json=_submit_payload(vrt_id="cross_site_scripting"),
-    )
+    payload = _preview_and_confirm(client, "bugcrowd", _submit_payload(vrt_id="cross_site_scripting"))
+    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=payload)
     assert resp.status_code == 200
     assert captured["vrt_id"] == "cross_site_scripting"
 
@@ -250,7 +271,8 @@ def test_bugcrowd_submit_falls_back_to_default_vrt_id_when_omitted(env, monkeypa
 
     monkeypatch.setattr(bugcrowd, "bc_submit_report", fake_bc_submit)
 
-    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=_submit_payload())
+    payload = _preview_and_confirm(client, "bugcrowd", _submit_payload())
+    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=payload)
     assert resp.status_code == 200
     assert captured["vrt_id"] == "server_security_misconfiguration"
 
@@ -285,3 +307,195 @@ def test_bugcrowd_submit_rejects_missing_program_code(env, monkeypatch):
     resp = client.post("/bug-bounty/api/bugcrowd/submit", json=_submit_payload(program_code=""))
     assert resp.status_code == 400
     assert not called
+
+
+# ─── Preview / confirm gate — submission impossible without confirmation ───
+
+def test_hackerone_submit_rejected_without_any_confirmation_fields(env, monkeypatch):
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_submit_report(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
+
+    resp = client.post("/bug-bounty/api/hackerone/submit", json=_submit_payload())
+    assert resp.status_code == 400
+    assert not called  # no real HackerOne call happens without confirmation
+
+
+def test_hackerone_submit_rejected_with_confirmed_true_but_no_token(env, monkeypatch):
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_submit_report(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
+
+    resp = client.post(
+        "/bug-bounty/api/hackerone/submit",
+        json=_submit_payload(confirmed=True),
+    )
+    assert resp.status_code == 400
+    assert not called  # setting confirmed=true alone is not enough
+
+
+def test_hackerone_submit_rejected_when_content_edited_after_preview(env, monkeypatch):
+    """A confirm_token is bound to the exact previewed content -- changing
+    so much as the title afterward must invalidate it and block submission,
+    otherwise a preview of one report could rubber-stamp a different one."""
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_submit_report(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
+
+    confirmed = _preview_and_confirm(client, "hackerone", _submit_payload())
+    confirmed["title"] = "A completely different report title"
+
+    resp = client.post("/bug-bounty/api/hackerone/submit", json=confirmed)
+    assert resp.status_code == 400
+    assert not called
+
+
+def test_hackerone_submit_rejected_with_another_users_confirm_token(env, monkeypatch):
+    """A confirm_token is bound to the confirming user_id too, so it can't
+    be replayed by a different account."""
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_submit_report(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
+
+    payload = _submit_payload()
+    canonical = bb_module._canonical_report(
+        "hackerone", user_id + 999, program_handle=payload["program_handle"],
+        title=payload["title"], severity=payload["severity"],
+        description=payload["description"], impact=payload["impact"], steps=payload["steps"],
+    )
+    forged = dict(payload)
+    forged["confirmed"] = True
+    forged["confirm_token"] = bb_module._make_confirm_token(canonical)
+
+    resp = client.post("/bug-bounty/api/hackerone/submit", json=forged)
+    assert resp.status_code == 400
+    assert not called
+
+
+def test_hackerone_submit_rejected_with_expired_confirm_token(env, monkeypatch):
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_submit_report(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
+
+    confirmed = _preview_and_confirm(client, "hackerone", _submit_payload())
+
+    # Jump the clock past the token's TTL before submitting.
+    real_time = bb_module.time.time
+    monkeypatch.setattr(
+        bb_module.time, "time",
+        lambda: real_time() + bb_module.CONFIRM_TOKEN_TTL_SECONDS + 30,
+    )
+
+    resp = client.post("/bug-bounty/api/hackerone/submit", json=confirmed)
+    assert resp.status_code == 400
+    assert not called
+
+
+def test_hackerone_submit_preview_never_calls_submit_report(env, monkeypatch):
+    """Hitting /submit/preview must only render a draft -- it must never
+    itself trigger the real HackerOne API call."""
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_submit_report(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
+
+    resp = client.post("/bug-bounty/api/hackerone/submit/preview", json=_submit_payload())
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "confirm_token" in body and body["confirm_token"]
+    assert "**Impact**" in body["body_preview"]
+    assert not called
+
+
+def test_hackerone_submit_succeeds_with_valid_preview_confirmation(env, monkeypatch):
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_submit_report(**kwargs):
+        called.append(1)
+        return {"status": "submitted", "report_id": "R9"}
+
+    monkeypatch.setattr(hackerone, "submit_report", fake_submit_report)
+
+    confirmed = _preview_and_confirm(client, "hackerone", _submit_payload())
+    resp = client.post("/bug-bounty/api/hackerone/submit", json=confirmed)
+    assert resp.status_code == 200
+    assert called == [1]
+
+
+def test_bugcrowd_submit_rejected_without_confirmation(env, monkeypatch):
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_bc_submit(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(bugcrowd, "bc_submit_report", fake_bc_submit)
+
+    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=_submit_payload())
+    assert resp.status_code == 400
+    assert not called
+
+
+def test_bugcrowd_submit_rejected_when_vrt_id_edited_after_preview(env, monkeypatch):
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_bc_submit(**kwargs):
+        called.append(1)
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(bugcrowd, "bc_submit_report", fake_bc_submit)
+
+    confirmed = _preview_and_confirm(client, "bugcrowd", _submit_payload())
+    confirmed["vrt_id"] = "sql_injection"
+
+    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=confirmed)
+    assert resp.status_code == 400
+    assert not called
+
+
+def test_bugcrowd_submit_succeeds_with_valid_preview_confirmation(env, monkeypatch):
+    client, SessionLocal, user_id = env
+    called = []
+
+    async def fake_bc_submit(**kwargs):
+        called.append(1)
+        return {"status": "submitted", "id": "S9"}
+
+    monkeypatch.setattr(bugcrowd, "bc_submit_report", fake_bc_submit)
+
+    confirmed = _preview_and_confirm(client, "bugcrowd", _submit_payload())
+    resp = client.post("/bug-bounty/api/bugcrowd/submit", json=confirmed)
+    assert resp.status_code == 200
+    assert called == [1]
