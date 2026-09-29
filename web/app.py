@@ -991,6 +991,11 @@ async def on_http_exception(request: Request, exc: HTTPException):
         return templates.TemplateResponse(request, "error.html", {
             "app_name": APP_NAME, "error": "Access denied", "code": 403
         }, status_code=403)
+    if exc.status_code == 402 and not request.url.path.startswith("/api/"):
+        return templates.TemplateResponse(request, "error.html", {
+            "app_name": APP_NAME, "error": exc.detail, "code": 402,
+            "cta_url": "/redeem", "cta_label": "Upgrade Plan",
+        }, status_code=402)
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code, headers=exc.headers)
 
 

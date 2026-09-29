@@ -161,7 +161,7 @@ async function draftFromFinding() {
     el.innerHTML = `<div class="ie6e17958f">تم إنشاء المسودة ${d.draft_ref} / Draft ${d.draft_ref} created.</div>`;
     loadCVEDrafts();
   } else {
-    el.innerHTML = `<div class="iea7ceb264">${d.detail || 'Failed to generate draft.'}</div>`;
+    el.innerHTML = `<div class="iea7ceb264">${d.error || d.detail || 'Failed to generate draft.'}</div>`;
   }
 }
 
@@ -212,7 +212,7 @@ async function draftCVE() {
     el.innerHTML = `<div class="ie6e17958f">تم حفظ المسودة ${d.draft_ref} / Draft saved (${d.draft_ref}).</div>`;
     loadCVEDrafts();
   } else {
-    el.innerHTML = `<div class="iea7ceb264">${d.detail || 'Failed to save draft.'}</div>`;
+    el.innerHTML = `<div class="iea7ceb264">${d.error || d.detail || 'Failed to save draft.'}</div>`;
   }
 }
 

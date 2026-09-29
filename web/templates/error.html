@@ -7,6 +7,6 @@
   <div class="ied76ccb19">⚠️</div>
   <div class="ie318186ca">{{ code }}</div>
   <div class="ie515824a9">{{ error }}</div>
-  <a href="/" class="btn btn-primary">Go to Dashboard</a>
+  <a href="{{ cta_url or '/' }}" class="btn btn-primary">{{ cta_label or 'Go to Dashboard' }}</a>
 </div>
 {% endblock %}
