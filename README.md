@@ -17,8 +17,9 @@
 [![Stars](https://img.shields.io/github/stars/OptisecDev/optisec-recon-pro?style=for-the-badge&color=00ff88)](https://github.com/OptisecDev/optisec-recon-pro/stargazers)
 
 **A full-stack, AI-powered security intelligence platform built for bug bounty hunters,  
-red teamers, and enterprise SOC teams — featuring 13 integrated scanning modules,  
-Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red team simulation.**
+red teamers, and enterprise SOC teams — featuring 12 delivered scanning modules  
+and full Arabic/English NLP, with MITRE ATT&CK mapping, autonomous red-team simulation,  
+and post-quantum-ready cryptography tooling in active development ([roadmap](#roadmap)).**
 
 [Live Demo](https://optisec-recon-pro.onrender.com/demo) · [API Docs](https://optisec-recon-pro.onrender.com/docs) · [License Store](https://optisecdev.github.io/optisec-store) · [Report Bug](https://github.com/OptisecDev/optisec-recon-pro/issues) · [Request Feature](https://github.com/OptisecDev/optisec-recon-pro/issues)
 
@@ -29,7 +30,9 @@ Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Features Matrix — 13 Modules](#features-matrix--13-modules)
+- [Features Matrix — 12 Delivered Modules](#features-matrix--12-delivered-modules)
+  - [🛠️ In Active Development](#-in-active-development--built-not-yet-fully-launched)
+  - [Bug Bounty Submission Safety](#bug-bounty-submission-safety)
 - [OSINT Engine v5.0 — World-Class Intelligence](#osint-engine-v50--world-class-intelligence)
 - [Architecture](#architecture)
 - [Screenshots](#screenshots)
@@ -50,24 +53,24 @@ Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red 
 
 ## Overview
 
-**OPTISEC v4.0 SINGULARITY** is a comprehensive bug bounty and penetration testing platform that consolidates the entire security research workflow into a single, unified web dashboard. From subdomain enumeration to autonomous AI-driven red team simulations, OPTISEC gives security professionals an enterprise-grade toolkit accessible from any browser.
+**OPTISEC v4.0 SINGULARITY** is a comprehensive bug bounty and penetration testing platform that consolidates the entire security research workflow into a single, unified web dashboard: subdomain enumeration, vulnerability scanning, OSINT, and AI-assisted analysis, with several further modules — MITRE ATT&CK mapping, autonomous red-team simulation, quantum-safe crypto, compliance auditing, next-gen firewall DPI, and a global threat feed — already in the codebase and actively being hardened for production (see [Roadmap](#roadmap)).
 
-> **بالعربية:** **OPTISEC v4.0 SINGULARITY** منصة استخبارات أمنية متكاملة موجهة لصائدي الثغرات (Bug Bounty) وفرق الاختراق الأخلاقي وفرق العمليات الأمنية (SOC)، تجمع 13 وحدة فحص واستخبارات — من استكشاف النطاقات الفرعية إلى محاكاة الفريق الأحمر المستقل بالذكاء الاصطناعي — في لوحة تحكم واحدة، مع دعم كامل للغة العربية في واجهة الأوامر الطبيعية (NLP) ووحدات استخبارات مفتوحة المصدر (OSINT) مخصصة للسياق العراقي (البحث بالهوية الوطنية، لوحات المركبات).
+> **بالعربية:** **OPTISEC v4.0 SINGULARITY** منصة استخبارات أمنية متكاملة موجهة لصائدي الثغرات (Bug Bounty) وفرق الاختراق الأخلاقي وفرق العمليات الأمنية (SOC)، تجمع وحدات فحص واستخبارات فعلية — من استكشاف النطاقات الفرعية إلى الفحص الأمني والتحليل بالذكاء الاصطناعي — في لوحة تحكم واحدة، مع دعم كامل للغة العربية في واجهة الأوامر الطبيعية (NLP) ووحدات استخبارات مفتوحة المصدر (OSINT) مخصصة للسياق العراقي (البحث بالهوية الوطنية، لوحات المركبات). وحدات أخرى — خريطة MITRE ATT&CK، محاكاة الفريق الأحمر المستقل، التشفير ما بعد الكمّي، تدقيق الامتثال، وخلاصة التهديدات العالمية — موجودة في الكود وقيد التطوير النشط، انظر [خارطة الطريق](#roadmap).
 
 ### Why OPTISEC?
 
 | Problem | OPTISEC Solution |
 |---------|-----------------|
-| Fragmented tooling (Nmap, Burp, nuclei, theHarvester…) | Single unified dashboard with 13 integrated modules |
+| Fragmented tooling (Nmap, Burp, nuclei, theHarvester…) | Single unified dashboard with 12 delivered modules |
 | Manual report writing takes hours | One-click professional PDF reports |
 | No Arabic-language security tooling | Native Arabic + English NLP command interface |
-| Bug bounty context switching between H1/Bugcrowd/Intigriti | Unified bug bounty management with direct submission APIs |
-| Quantum threats to modern encryption | Kyber-768 post-quantum key encapsulation module — runs in simulation mode out of the box, activates real PQC when the optional `liboqs` library is installed |
+| Bug bounty context switching between H1/Bugcrowd | Unified bug bounty management with direct HackerOne/Bugcrowd submission APIs — every real submission requires an explicit preview + confirmation step, see [Bug Bounty Submission Safety](#bug-bounty-submission-safety) |
+| Quantum threats to modern encryption | Kyber-768 post-quantum key encapsulation module — currently roadmap, see [below](#-in-active-development--built-not-yet-fully-launched) |
 | SOC teams need correlation across threat feeds | IOC correlation engine with AlienVault OTX integration |
 
 ---
 
-## Features Matrix — 13 Modules
+## Features Matrix — 12 Delivered Modules
 
 ### Core Scanning Engine
 
@@ -85,15 +88,13 @@ Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red 
 | **Behavioral UEBA** | User and Entity Behavior Analytics, anomaly detection, insider threat profiling | PRO+ |
 | **Zero-Day Prediction** | Groq LLM-powered vulnerability forecasting against NVD/CISA KEV data (heuristic fallback if no API key is set), exploit probability scoring | PRO+ |
 | **Attack Pattern Engine** | Known malicious pattern library, payload classification, kill chain analysis | PRO+ |
-| **Autonomous Red Team** | AI-driven multi-phase attack simulation (SINGULARITY engine), stealth-tunable, automated reporting | ENTERPRISE |
 
 ### Platform & Integration
 
 | Module | Capabilities | Tier |
 |--------|-------------|------|
-| **Bug Bounty Platform** | HackerOne program browser + report submission, Bugcrowd program discovery + submission, Intigriti integration, CVE pipeline (NVD/MITRE) | PRO+ |
-| **Compliance Checker** | Automated audits against ISO 27001, NIST CSF, PCI-DSS, GDPR, HIPAA with gap analysis | PRO+ |
-| **Threat Intelligence** | AlienVault OTX live feed, MITRE ATT&CK Navigator, Global threat campaigns, HIBP breach detection, Honeypot detection, IOC correlation clustering | ENTERPRISE |
+| **Bug Bounty Platform** | HackerOne program browser + real report submission, Bugcrowd program discovery + real submission (both gated by an explicit preview + confirmation step — see [below](#bug-bounty-submission-safety)), Intigriti program browsing (read-only — no submission API yet), CVE pipeline (NVD/MITRE) | PRO+ |
+| **Threat Intelligence** | AlienVault OTX live feed, HIBP breach detection, Honeypot detection, IOC correlation clustering | ENTERPRISE |
 | **Federated Scanning** | Multi-node OPTISEC cluster coordination, distributed scan tasks, node health monitoring | ENTERPRISE |
 
 ### Infrastructure Security
@@ -101,9 +102,26 @@ Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red 
 | Module | Capabilities | Tier |
 |--------|-------------|------|
 | **AI Firewall (WAF)** | Rule-based traffic analysis (entropy & pattern scoring), IP whitelist/blacklist, custom rule engine | PRO+ |
-| **NGFW v2** | Next-gen firewall with heuristic Deep Packet Inspection (entropy/pattern-based anomaly scoring, not a trained model), L7 policy engine | PRO+ |
 | **WireGuard VPN** | Peer management, key generation + QR codes, config export | PRO+ |
-| **Quantum-Safe Crypto** | Kyber-768 post-quantum key encapsulation (simulated by default; installs a real `liboqs` backend for production PQC), hybrid AES-GCM schemes, key vault | PRO+ |
+
+### 🛠️ In Active Development — built, not yet fully launched
+
+These modules already have real routers, database models, and passing test
+coverage in this repository — they are not vaporware — but each ships a
+meaningfully smaller slice of its headline claim than earlier drafts of this
+README implied, and the public [landing page](web/templates/landing.html)
+correctly lists them under its own "roadmap — coming soon" section rather
+than as delivered features. Don't rely on any of these for a real
+engagement or compliance sign-off yet.
+
+| Module | Actual current state | Code |
+|--------|----------------------|------|
+| **MITRE ATT&CK Navigator** | Real technique-mapping UI over a real MITRE dataset; cross-campaign APT correlation is not built yet | `modules/threat_intel/attack_navigator.py`, `modules/threat_intel/mitre.py` |
+| **Autonomous Red Team** | Phases 1 (recon) and 3 (web vuln scan) run real scans; the other kill-chain phases (weaponization, post-exploitation, lateral movement, objective completion) return *simulated* findings, not genuine autonomous exploitation | `modules/ai_advanced/autonomous_redteam.py` |
+| **Quantum-Safe Crypto** | Kyber-768 KEM runs in simulated mode by default; real PQC requires the optional `liboqs` backend, which most deployments don't install | `modules/quantum/encryption.py` |
+| **Compliance Checker** | Questionnaire-driven framework scoring (ISO 27001, NIST CSF, GDPR, PCI-DSS) with one automated probe (HTTPS/TLS signal detection) — not a full automated compliance scan | `modules/compliance/checker.py` |
+| **NGFW v2** | Real heuristic Deep Packet Inspection (entropy/pattern-based anomaly scoring) — explicitly *not* a trained ML model despite the "next-gen" name | `modules/firewall/ngfw_v2.py` |
+| **Global Threat Feed** | The UI and correlation logic are real, and the URLhaus stream is backed by a live sync job — but every other listed source (Mandiant, CISA KEV, Spamhaus, MISP, Feodo Tracker, Abuse.ch) is fabricated sample data today, not a live feed, despite being labeled with those real vendor/source names in the running app | `modules/threat_intel/global_feed.py` |
 
 ### Platform Features
 
@@ -113,6 +131,31 @@ Arabic/English NLP, post-quantum-ready cryptography tooling, and autonomous red 
 - **PDF Reports** — Professional executive-grade security reports with ReportLab
 - **REST API** — Full OpenAPI 3.0 spec at `/docs` and `/redoc`
 - **Demo Mode** — One-click `/demo` login with pre-populated findings and targets
+
+### Bug Bounty Submission Safety
+
+`POST /bug-bounty/api/hackerone/submit` and `POST /bug-bounty/api/bugcrowd/submit`
+call the real HackerOne / Bugcrowd APIs the moment `HACKERONE_API_TOKEN` /
+`BUGCROWD_API_TOKEN` is configured — under the platform's single shared
+credential, not a per-user one. To make a real submission impossible
+without an explicit, per-report human confirmation:
+
+1. `POST /bug-bounty/api/{hackerone,bugcrowd}/submit/preview` — accepts the
+   draft report and returns the *exact* content that would be sent, plus a
+   `confirm_token` bound to that content via HMAC and valid for 10 minutes.
+2. `POST /bug-bounty/api/{hackerone,bugcrowd}/submit` — refuses with `400`
+   unless the request echoes back `"confirmed": true` and that same
+   `confirm_token`. Editing so much as one field after preview invalidates
+   the token and forces a fresh preview; the token also can't be replayed by
+   a different account.
+
+This is enforced server-side (`web/routers/bug_bounty.py`), so it holds
+regardless of what the web UI does or whether a caller talks to the API
+directly. Unit tests with a mocked `submit_report`/`bc_submit_report`
+assert the external call is never invoked without a valid, matching,
+unexpired confirmation (`tests/test_bug_bounty_submission_controls.py`).
+A per-user submission quota (`RATE_LIMIT_BUG_BOUNTY_SUBMIT`, default 5/hour,
+shared across both platforms) applies on top of the confirmation gate.
 
 ---
 
@@ -329,7 +372,7 @@ pytest tests/test_unified_osint.py -v
 │                    └────────────────────┬─────────────────────────┘ │
 │                                         │                            │
 │  ┌──────────────────────────────────────▼─────────────────────────┐ │
-│  │                    Module Engine (13 Core)                      │ │
+│  │       Module Engine (12 delivered · 6 🛠️ in active dev)         │ │
 │  │                                                                 │ │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │ │
 │  │  │  recon/  │ │  vuln/   │ │  osint/  │ │  ai / ai_advanced│  │ │
@@ -337,22 +380,23 @@ pytest tests/test_unified_osint.py -v
 │  │  │ dns      │ │  sqli    │ │  username│ │  behavioral      │  │ │
 │  │  │ whois    │ │  ssrf    │ │  geo_ip  │ │  zero_day        │  │ │
 │  │  │ nmap     │ │  lfi     │ │  nat_id  │ │  attack_patterns │  │ │
-│  │  │ ssl      │ │  redirect│ │  device  │ │  autonomous_rt   │  │ │
+│  │  │ ssl      │ │  redirect│ │  device  │ │  🛠️ autonomous_rt│  │ │
 │  │  │ headers  │ └──────────┘ └──────────┘ └──────────────────┘  │ │
 │  │  │ ports    │                                                   │ │
 │  │  └──────────┘ ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │ │
-│  │               │bug_bounty│ │compliance│ │  threat_intel/   │  │ │
+│  │               │bug_bounty│ │🛠️compliance│ threat_intel/   │  │ │
 │  │               │hackerone │ │iso_27001 │ │  otx_feed        │  │ │
-│  │               │bugcrowd  │ │nist_csf  │ │  mitre_attack    │  │ │
-│  │               │intigriti │ │pci_dss   │ │  ioc_correlations│  │ │
-│  │               │cve_pipe  │ │gdpr/hipaa│ │  global_feed     │  │ │
+│  │               │bugcrowd  │ │nist_csf  │ │  🛠️mitre_attack  │  │ │
+│  │               │intigriti*│ │pci_dss   │ │  ioc_correlations│  │ │
+│  │               │cve_pipe  │ │gdpr/hipaa│ │  🛠️global_feed   │  │ │
 │  │               └──────────┘ └──────────┘ └──────────────────┘  │ │
-│  │                                                                 │ │
+│  │               *browse-only, no submit API                     │ │
 │  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐  │ │
-│  │  │ firewall │ │   vpn/   │ │ quantum/ │ │  federation/     │  │ │
+│  │  │ firewall │ │   vpn/   │ │ 🛠️quantum/│ │  federation/     │  │ │
 │  │  │ ai_waf   │ │wireguard │ │ kyber768 │ │  multi_node_scan │  │ │
-│  │  │ ngfw_v2  │ │ peer_mgmt│ │ aes_gcm  │ │  distributed_rt  │  │ │
+│  │  │ 🛠️ngfw_v2│ │ peer_mgmt│ │ aes_gcm  │ │  distributed_rt  │  │ │
 │  │  └──────────┘ └──────────┘ └──────────┘ └──────────────────┘  │ │
+│  │                        🛠️ = in active development, see below  │ │
 │  └─────────────────────────────────────────────────────────────────┘ │
 │                                         │                            │
 │  ┌──────────────────────────────────────▼─────────────────────────┐ │
@@ -374,16 +418,21 @@ graph TB
     FastAPI --> WS["⚡ WebSocket<br/>Real-time Scan Progress"]
     FastAPI --> Modules
 
-    subgraph Modules["Module Engine"]
+    subgraph Modules["Module Engine — delivered"]
         Recon["🔍 Recon<br/>subdomain·dns·nmap·ssl"]
         Vuln["🎯 Vuln Scanner<br/>xss·sqli·ssrf·lfi"]
         OSINT["🕵️ OSINT<br/>phone·username·geo·device"]
         AI["🤖 AI Engine<br/>Groq LLaMA-3.3-70B"]
-        BugBounty["💰 Bug Bounty<br/>H1·Bugcrowd·Intigriti"]
-        Compliance["✅ Compliance<br/>ISO27001·NIST·GDPR"]
-        ThreatIntel["🌍 Threat Intel<br/>OTX·MITRE·IOC"]
-        RedTeam["⚔️ Autonomous RT<br/>SINGULARITY Engine"]
-        Quantum["⚛️ Quantum Crypto<br/>Kyber-768 PQC"]
+        BugBounty["💰 Bug Bounty<br/>H1·Bugcrowd (confirm-gated)"]
+        ThreatIntel["🌍 Threat Intel<br/>OTX·HIBP·IOC correlation"]
+    end
+
+    subgraph Roadmap["🛠️ In active development — not fully launched"]
+        Compliance["🛠️ Compliance<br/>ISO27001·NIST·GDPR"]
+        AttackNav["🛠️ ATT&CK Navigator"]
+        RedTeam["🛠️ Autonomous RT<br/>real recon+webscan, rest simulated"]
+        Quantum["🛠️ Quantum Crypto<br/>Kyber-768 PQC, simulated by default"]
+        GlobalFeed["🛠️ Global Threat Feed<br/>mostly sample data today"]
     end
 
     Modules --> DB["🗄️ SQLite / PostgreSQL"]
@@ -802,21 +851,27 @@ OPTISEC operates on a feature-gated licensing model. The license is validated lo
 | AI Analysis (Groq) | ❌ | ✅ | ✅ |
 | Arabic/English NLP | ❌ | ✅ | ✅ |
 | Bug Bounty Platform | ❌ | ✅ | ✅ |
-| Compliance Checker | ❌ | ✅ | ✅ |
+| Compliance Checker 🛠️ | ❌ | ✅ | ✅ |
 | Behavioral UEBA | ❌ | ✅ | ✅ |
 | Zero-Day Prediction | ❌ | ✅ | ✅ |
 | Attack Patterns | ❌ | ✅ | ✅ |
-| AI Firewall + NGFW | ❌ | ✅ | ✅ |
+| AI Firewall + NGFW 🛠️ | ❌ | ✅ | ✅ |
 | WireGuard VPN | ❌ | ✅ | ✅ |
-| Quantum Crypto (PQC) | ❌ | ✅ | ✅ |
+| Quantum Crypto (PQC) 🛠️ | ❌ | ✅ | ✅ |
 | REST API Access | ❌ | ✅ | ✅ |
-| Autonomous Red Team | ❌ | ❌ | ✅ |
-| MITRE ATT&CK Navigator | ❌ | ❌ | ✅ |
-| Global Threat Feed | ❌ | ❌ | ✅ |
+| Autonomous Red Team 🛠️ | ❌ | ❌ | ✅ |
+| MITRE ATT&CK Navigator 🛠️ | ❌ | ❌ | ✅ |
+| Global Threat Feed 🛠️ | ❌ | ❌ | ✅ |
 | IOC Correlations | ❌ | ❌ | ✅ |
 | Federated Scanning | ❌ | ❌ | ✅ |
 | User Management | ❌ | ❌ | ✅ |
 | Multi-node Deployment | ❌ | ❌ | ✅ |
+
+🛠️ = the license gate itself is real and enforced, but the underlying module
+is still in active development — see [In Active
+Development](#-in-active-development--built-not-yet-fully-launched) for
+exactly what each one does and doesn't do today. The NGFW half of "AI
+Firewall + NGFW" is the 🛠️ part; the AI Firewall (WAF) half is fully delivered.
 
 ### Activate a License
 
@@ -914,6 +969,13 @@ We do not operate a formal bug bounty program for OPTISEC itself at this time, b
 ---
 
 ## Roadmap
+
+> Modules already in the codebase but not yet promoted to "delivered" —
+> MITRE ATT&CK Navigator, Autonomous Red Team, Quantum-Safe Crypto,
+> Compliance Checker, NGFW v2, and Global Threat Feed — are tracked in
+> [🛠️ In Active Development](#-in-active-development--built-not-yet-fully-launched)
+> above, alongside exactly what each one does and doesn't do today. The
+> items below are the next tier out: not started yet.
 
 ### v4.1 — Horizon *(Q3 2026)*
 - [ ] Nuclei template integration — run community templates via OPTISEC UI

@@ -14,17 +14,22 @@ DATA_FILE = Path("data/global_threat_feed.json")
 
 # ── Threat Feed Sources (simulated OSINT/commercial feeds) ────────────────────
 
+# is_sample=False means this source's IOCs are live/real (currently only
+# URLHAUS, synced via modules/ioc/scheduler.py — see fetch_real_urlhaus_iocs()
+# below). Every other source here is a label on fabricated _SAMPLE_IOCS
+# entries below, not an actual live feed integration, so it carries
+# is_sample=True in both this catalog and on every IOC tagged with it.
 FEED_SOURCES = [
-    {"id": "OPTISEC-GLOBAL",  "name": "OPTISEC Global Network",       "type": "internal",   "reliability": 0.95},
-    {"id": "ABUSE-CH",        "name": "Abuse.ch ThreatFox",           "type": "open",       "reliability": 0.90},
-    {"id": "ALIENVAULT-OTX",  "name": "AlienVault OTX",               "type": "open",       "reliability": 0.85},
-    {"id": "MISP-COMMUNITY",  "name": "MISP Threat Sharing",          "type": "community",  "reliability": 0.88},
-    {"id": "CISA-KEV",        "name": "CISA Known Exploited Vulns",   "type": "government", "reliability": 0.98},
-    {"id": "SPAMHAUS",        "name": "Spamhaus DROP/EDROP",          "type": "commercial", "reliability": 0.92},
-    {"id": "FEODO-TRACKER",   "name": "Feodo Tracker (Botnet C2)",    "type": "open",       "reliability": 0.93},
-    {"id": "URLHAUS",         "name": "URLhaus Malware URLs",         "type": "open",       "reliability": 0.89},
-    {"id": "CIRCL-LU",        "name": "CIRCL Luxembourg",             "type": "government", "reliability": 0.91},
-    {"id": "MANDIANT",        "name": "Mandiant Threat Intelligence", "type": "commercial", "reliability": 0.96},
+    {"id": "OPTISEC-GLOBAL",  "name": "OPTISEC Global Network",       "type": "internal",   "reliability": 0.95, "is_sample": True},
+    {"id": "ABUSE-CH",        "name": "Abuse.ch ThreatFox",           "type": "open",       "reliability": 0.90, "is_sample": True},
+    {"id": "ALIENVAULT-OTX",  "name": "AlienVault OTX",               "type": "open",       "reliability": 0.85, "is_sample": True},
+    {"id": "MISP-COMMUNITY",  "name": "MISP Threat Sharing",          "type": "community",  "reliability": 0.88, "is_sample": True},
+    {"id": "CISA-KEV",        "name": "CISA Known Exploited Vulns",   "type": "government", "reliability": 0.98, "is_sample": True},
+    {"id": "SPAMHAUS",        "name": "Spamhaus DROP/EDROP",          "type": "commercial", "reliability": 0.92, "is_sample": True},
+    {"id": "FEODO-TRACKER",   "name": "Feodo Tracker (Botnet C2)",    "type": "open",       "reliability": 0.93, "is_sample": True},
+    {"id": "URLHAUS",         "name": "URLhaus Malware URLs",         "type": "open",       "reliability": 0.89, "is_sample": False},
+    {"id": "CIRCL-LU",        "name": "CIRCL Luxembourg",             "type": "government", "reliability": 0.91, "is_sample": True},
+    {"id": "MANDIANT",        "name": "Mandiant Threat Intelligence", "type": "commercial", "reliability": 0.96, "is_sample": True},
 ]
 
 # ── Simulated live IOC stream ─────────────────────────────────────────────────
@@ -92,6 +97,19 @@ MAP_JITTER_NOTE_EN = (
 MAP_JITTER_NOTE_AR = (
     "قيم attacks_per_hour وactive_campaigns لكل نقطة مُهتزة عشوائياً حول خط أساس "
     "ثابت في كل طلب — تأثير تجميلي لإيهام الحيوية، وليست بيانات هجمات حية حقيقية."
+)
+
+# Every IOC below is tagged is_sample=True/False per FEED_SOURCES/provenance —
+# see get_live_ioc_feed(). Only URLhaus-sourced IOCs are is_sample=False.
+SAMPLE_DATA_NOTE_EN = (
+    "This indicator is fabricated sample/demo data shown under the named "
+    "source's label for UI illustration — it is not a live feed from that "
+    "source. Only URLhaus-sourced indicators in this feed are live."
+)
+SAMPLE_DATA_NOTE_AR = (
+    "هذا المؤشر بيانات تجريبية/توضيحية مُلصقة باسم المصدر المذكور لغرض العرض "
+    "فقط، وليست تغذية حية من ذلك المصدر. المؤشرات القادمة من URLhaus فقط هي "
+    "الحية في هذه التغذية."
 )
 
 # ── Threat Map Nodes (global attack origins/targets) ─────────────────────────
@@ -208,10 +226,17 @@ def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None
     """
     data = _load_data()
 
-    # Merge static + stored + real URLhaus IOCs
-    all_iocs = list(_SAMPLE_IOCS) + list(urlhaus_iocs or [])
+    # Merge static + stored + real URLhaus IOCs, tagging provenance up front:
+    # _SAMPLE_IOCS entries are fabricated (is_sample=True); urlhaus_iocs are
+    # real synced indicators (is_sample=False); shared_iocs are real
+    # user submissions via submit_ioc() (is_sample=False, or whatever it was
+    # stamped with — submit_ioc() always stamps False).
+    all_iocs = (
+        [{**ioc, "is_sample": True} for ioc in _SAMPLE_IOCS]
+        + [{**ioc, "is_sample": False} for ioc in (urlhaus_iocs or [])]
+    )
     for stored in data.get("shared_iocs", [])[:20]:
-        all_iocs.insert(0, stored)
+        all_iocs.insert(0, {"is_sample": False, **stored})
 
     # Add threat scoring
     scored = []
@@ -230,6 +255,11 @@ def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None
             "date_source": "estimated",
             "note": IOC_ESTIMATED_NOTE_EN,
             "note_ar": IOC_ESTIMATED_NOTE_AR,
+            # is_sample (carried over from the merge above) marks whether
+            # this specific indicator is fabricated demo data — see
+            # SAMPLE_DATA_NOTE_EN/AR.
+            "sample_note": SAMPLE_DATA_NOTE_EN if ioc.get("is_sample") else None,
+            "sample_note_ar": SAMPLE_DATA_NOTE_AR if ioc.get("is_sample") else None,
         })
 
     total_score = sum(i["threat_score"] for i in scored) / len(scored) if scored else 0
@@ -403,6 +433,9 @@ def submit_ioc(
         "submitted_at": datetime.utcnow().isoformat(),
         "threat_score": min(100, int(confidence * 0.95)),
         "submitted_by": user_id,
+        # Real data entered by a real user, not fabricated demo data — see
+        # SAMPLE_DATA_NOTE_EN/AR and get_live_ioc_feed()'s provenance tagging.
+        "is_sample": False,
     }
     data["shared_iocs"].insert(0, ioc)
     data["shared_iocs"] = data["shared_iocs"][:200]

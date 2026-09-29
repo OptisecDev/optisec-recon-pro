@@ -340,6 +340,7 @@ function renderResults(data) {
         <div class="ie631785f9">
           <div class="iedff98dc3">${f.vuln}</div>
           <span data-dyn-style="font-size:10px;font-weight:700;color:${sevColors[f.severity]||'#888'}">${f.severity}</span>
+          ${f.simulated?`<span class="badge badge-medium" title="${f.note||'Simulated finding — not evidence of an actual compromise.'}">Simulated</span>`:''}
         </div>
         <div class="ie3122d8b0">${f.endpoint}</div>
         <div class="ie14f3429e">${f.proof}</div>

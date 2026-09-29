@@ -33,6 +33,17 @@ SEVERITY_COLORS = {
 } if REPORTLAB_AVAILABLE else {}
 
 
+def _finding_heading(finding: dict, index: int) -> str:
+    """Build a finding's heading line, e.g. for
+    modules/ai_advanced/autonomous_redteam.py's simulated Phase 2/4/5/6
+    findings (which use a "vuln" key, not vuln-scanner findings' "type"),
+    tagging it [SIMULATED] so the PDF never presents it as a real result."""
+    sev = finding.get("severity", "Info")
+    name = finding.get("type") or finding.get("vuln", "Unknown")
+    sim_tag = " [SIMULATED]" if finding.get("simulated") else ""
+    return f"{index}. [{sev}] {name}{sim_tag}"
+
+
 def generate_report(
     target: str,
     recon_data: dict = None,
@@ -190,7 +201,7 @@ def generate_report(
                 spaceBefore=8,
                 spaceAfter=4,
             )
-            story.append(Paragraph(f"{i}. [{sev}] {finding.get('type', 'Unknown')}", sev_style))
+            story.append(Paragraph(_finding_heading(finding, i), sev_style))
 
             detail_data = [
                 ["URL", finding.get("url", "")[:80]],

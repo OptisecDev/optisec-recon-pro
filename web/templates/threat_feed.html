@@ -113,6 +113,7 @@
         <span class="ie3173424d">{{ ioc.malware[:20] }}</span>
         <span class="tlp-{{ ioc.tlp.lower() }} iee70db8d2"  title="{{ ioc.note if ioc.tlp_source == 'estimated' else '' }}">TLP:{{ ioc.tlp }}{% if ioc.tlp_source == 'estimated' %}<sup class="ie72cd8085">*</sup>{% endif %}</span>
         <span class="ie9298272b">{{ ioc.source }}</span>
+        {% if ioc.is_sample %}<span class="badge badge-medium sample-badge" title="{{ ioc.sample_note }}">Sample / Demo data</span>{% endif %}
         <span class="iebbd90081" title="{{ ioc.note if ioc.date_source == 'estimated' else '' }}">{{ ioc.last_seen[:10] }}{% if ioc.date_source == 'estimated' %}<sup class="ie72cd8085">*</sup>{% endif %}</span>
       </div>
       {% endfor %}
@@ -230,6 +231,7 @@
     <div class="feed-source">
       <div class="ie306ee34c">{{ src.name }}</div>
       <span class="badge badge-{{ 'info' if src.type == 'open' else 'medium' if src.type == 'community' else 'high' if src.type == 'government' else 'critical' }} ied9e14ae8" >{{ src.type }}</span>
+      {% if src.is_sample %}<span class="badge badge-medium sample-badge" title="Fabricated sample/demo data — not a live feed integration.">Sample / Demo data</span>{% else %}<span class="badge badge-high">Live</span>{% endif %}
       <div class="ieda5cd676">
         <div class="ie395bd0fb">Reliability: {{ (src.reliability * 100)|int }}%</div>
         <div class="source-rel"><div class="source-rel-fill" data-dyn-style="width:{{ (src.reliability * 100)|int }}%"></div></div>
@@ -453,6 +455,7 @@ async function refreshFeed() {
       <span class="ie3173424d">${escHtml((ioc.malware||'').slice(0,20))}</span>
       <span class="tlp-${escHtml((ioc.tlp||'white').toLowerCase())} iee70db8d2"  title="${ioc.tlp_source==='estimated'?escHtml(ioc.note||'Estimated locally'):''}">TLP:${escHtml(ioc.tlp||'WHITE')}${ioc.tlp_source==='estimated'?'<sup class="ie72cd8085">*</sup>':''}</span>
       <span class="ie9298272b">${escHtml(ioc.source||'')}</span>
+      ${ioc.is_sample?`<span class="badge badge-medium sample-badge" title="${escHtml(ioc.sample_note||'Fabricated sample/demo data')}">Sample / Demo data</span>`:''}
     </div>`).join('');
   optisecApplyDynStyles(iocFeedListEl);
 }
