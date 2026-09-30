@@ -540,7 +540,20 @@ window.runNLPCommand = async function(e) {
   const text = input?.value?.trim();
   if (!text) return;
 
-  const data = await API.post('/api/nlp', { text });
+  const btn = document.getElementById('nlp-go-btn');
+  const btnOrigHtml = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>'; }
+
+  let data;
+  try {
+    data = await API.post('/api/nlp', { text });
+  } catch (err) {
+    toast('Command failed — check your connection and try again', 'error');
+    return;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = btnOrigHtml; }
+  }
+
   const action = data.action;
   const target = data.target;
 

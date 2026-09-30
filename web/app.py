@@ -2451,8 +2451,15 @@ async def ai_analyze(request: Request, user: User = Depends(web_user)):
     },
 )
 async def nlp_parse(request: Request, user: User = Depends(web_user)):
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    if not isinstance(data, dict):
+        return JSONResponse({"error": "Request body must be a JSON object"}, status_code=400)
     text = data.get("text", "")
+    if not isinstance(text, str):
+        return JSONResponse({"error": "'text' must be a string"}, status_code=400)
     from cli.nlp_parser import parse_command
     local_result = parse_command(text)
 
