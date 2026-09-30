@@ -177,14 +177,17 @@ class TestPhase3RealWebScan:
         assert len(phase3) == 1
 
         # risk_score must equal recomputing _calculate_risk_score() over the
-        # session's own findings list (including the real Phase 3 finding) —
-        # proving it's derived live, not a fixed/precomputed constant.
-        assert session["risk_score"] == art._calculate_risk_score(session["findings"])
+        # session's REAL findings only (including the real Phase 3 finding,
+        # excluding the simulated Phase 2/4/5/6 pool) — proving it's derived
+        # live from verified findings, not a fixed/precomputed constant and
+        # not inflated by simulated scenarios (PRIORITY 1 item 1a).
+        real_findings = [f for f in session["findings"] if not f.get("simulated")]
+        assert session["risk_score"] == art._calculate_risk_score(real_findings)
 
         # Dropping the confirmed Phase 3 finding must not increase the score
         # (it can only stay the same, if the total was already saturating the
         # 100-point cap, or drop).
-        without_phase3 = [f for f in session["findings"] if f.get("phase") != 3]
+        without_phase3 = [f for f in real_findings if f.get("phase") != 3]
         assert art._calculate_risk_score(without_phase3) <= session["risk_score"]
 
     def test_calculate_risk_score_weighs_confirmed_findings_by_severity(self):

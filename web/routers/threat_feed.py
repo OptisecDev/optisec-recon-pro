@@ -61,10 +61,19 @@ def _build_feed(otx_iocs: list, fallback_feed: dict) -> dict:
         by_type[t] = by_type.get(t, 0) + 1
         by_source[s] = by_source.get(s, 0) + 1
 
+    # An OTX pulse or a real (synced) URLhaus row never carries is_sample=True
+    # (OTX rows carry no is_sample key at all; real URLhaus rows are stamped
+    # is_sample=False in get_live_ioc_feed()). So "at least one non-sample
+    # indicator" is exactly "this page is showing real data right now" —
+    # see PRIORITY 1 item 4 of the live-walkthrough audit: the feed must
+    # never present a fully-fabricated dataset as live intelligence.
+    is_live = any(not i.get("is_sample", False) for i in iocs)
+
     return {
         "iocs": iocs,
         "total": len(iocs),
         "otx_live": bool(otx_iocs),
+        "is_live": is_live,
         "global_threat_level": level,
         "updated_at": datetime.utcnow().isoformat(),
         "stats": {

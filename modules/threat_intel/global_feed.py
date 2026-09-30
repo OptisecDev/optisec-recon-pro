@@ -39,27 +39,37 @@ FEED_SOURCES = [
 # periodic sync (Phase 3). Every other source in this list (ABUSE-CH,
 # CISA-KEV, FEODO-TRACKER, etc.) is still fabricated sample data — untouched.
 
+# Indicator VALUES below are documentation-safe placeholders, not real-world
+# indicators: IPs are drawn from the RFC 5737 documentation ranges
+# (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24), domains from RFC 2606
+# reserved names (example.com/.net/.org, *.test), and hashes are obviously
+# synthetic patterns (deadbeef/cafebabe/abadcafe repeated) rather than any
+# real file's digest — none attributable to a real organization or, for the
+# hashes, colliding with a real malware sample or (in the prior MD5 row's
+# case) the empty file. Threat-actor/malware-family NAMES are kept as
+# illustrative labels; only the indicator values themselves are placeholders.
+# Public CVE IDs (Log4Shell etc.) are real, public facts and are unchanged.
 _SAMPLE_IOCS = [
-    {"type": "ip",         "value": "185.234.216.45", "malware": "Cobalt Strike",    "confidence": 95, "source": "FEODO-TRACKER"},
-    {"type": "ip",         "value": "91.108.4.10",    "malware": "Emotet",           "confidence": 92, "source": "ABUSE-CH"},
-    {"type": "domain",     "value": "evil-c2-domain.ru", "malware": "Qbot",         "confidence": 88, "source": "ALIENVAULT-OTX"},
-    {"type": "hash_sha256","value": "a9f2e1b3c5d7890f1a2b3c4d5e6f7890a1b2c3d4e5f67890a1b2c3d4e5f67890",
+    {"type": "ip",         "value": "192.0.2.10",     "malware": "Cobalt Strike",    "confidence": 95, "source": "FEODO-TRACKER"},
+    {"type": "ip",         "value": "192.0.2.55",     "malware": "Emotet",           "confidence": 92, "source": "ABUSE-CH"},
+    {"type": "domain",     "value": "c2-domain-sample.test", "malware": "Qbot",      "confidence": 88, "source": "ALIENVAULT-OTX"},
+    {"type": "hash_sha256","value": "deadbeef" * 8,
      "malware": "WannaCry",     "confidence": 99, "source": "MISP-COMMUNITY"},
-    {"type": "ip",         "value": "5.188.206.14",   "malware": "TrickBot",         "confidence": 90, "source": "SPAMHAUS"},
+    {"type": "ip",         "value": "198.51.100.23",  "malware": "TrickBot",         "confidence": 90, "source": "SPAMHAUS"},
     {"type": "cve",        "value": "CVE-2021-44228", "malware": "Log4Shell",        "confidence": 99, "source": "CISA-KEV"},
     {"type": "cve",        "value": "CVE-2023-44487", "malware": "HTTP/2 Rapid Reset","confidence": 98,"source": "CISA-KEV"},
-    {"type": "domain",     "value": "malware-distribution.xyz", "malware": "AsyncRAT","confidence": 85,"source": "CIRCL-LU"},
-    {"type": "hash_md5",   "value": "d41d8cd98f00b204e9800998ecf8427e", "malware": "Mirai", "confidence": 88, "source": "ALIENVAULT-OTX"},
-    {"type": "ip",         "value": "103.43.75.1",    "malware": "APT41 Infrastructure","confidence": 94,"source": "MANDIANT"},
-    {"type": "ip",         "value": "178.250.240.10", "malware": "Lazarus Group",    "confidence": 96, "source": "MANDIANT"},
-    {"type": "domain",     "value": "update-microsoft-security.net","malware":"Phishing","confidence": 82,"source": "OPTISEC-GLOBAL"},
-    {"type": "hash_sha256","value": "3f5a2e9b0c1d4e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f",
+    {"type": "domain",     "value": "malware-distribution.example.net", "malware": "AsyncRAT","confidence": 85,"source": "CIRCL-LU"},
+    {"type": "hash_md5",   "value": "cafebabe" * 4, "malware": "Mirai", "confidence": 88, "source": "ALIENVAULT-OTX"},
+    {"type": "ip",         "value": "203.0.113.5",    "malware": "APT41 Infrastructure","confidence": 94,"source": "MANDIANT"},
+    {"type": "ip",         "value": "203.0.113.80",   "malware": "Lazarus Group",    "confidence": 96, "source": "MANDIANT"},
+    {"type": "domain",     "value": "update-security-notice.example.org","malware":"Phishing","confidence": 82,"source": "OPTISEC-GLOBAL"},
+    {"type": "hash_sha256","value": "abadcafe" * 8,
      "malware": "Ryuk",         "confidence": 91, "source": "MISP-COMMUNITY"},
-    {"type": "ip",         "value": "62.75.154.99",   "malware": "BlackMatter",      "confidence": 87, "source": "FEODO-TRACKER"},
+    {"type": "ip",         "value": "198.51.100.77",  "malware": "BlackMatter",      "confidence": 87, "source": "FEODO-TRACKER"},
     {"type": "cve",        "value": "CVE-2022-30190", "malware": "Follina MSDT",     "confidence": 97, "source": "CISA-KEV"},
     {"type": "cve",        "value": "CVE-2024-3400",  "malware": "PAN-OS Zero-Day",  "confidence": 99, "source": "CISA-KEV"},
-    {"type": "domain",     "value": "apt28-infrastructure.eu", "malware": "APT28",   "confidence": 93, "source": "MANDIANT"},
-    {"type": "ip",         "value": "37.120.222.5",   "malware": "LockBit",          "confidence": 89, "source": "ABUSE-CH"},
+    {"type": "domain",     "value": "apt-infrastructure.example.com", "malware": "APT28",   "confidence": 93, "source": "MANDIANT"},
+    {"type": "ip",         "value": "203.0.113.200",  "malware": "LockBit",          "confidence": 89, "source": "ABUSE-CH"},
 ]
 
 # ── Estimated-field disclosure notes ──────────────────────────────────────────

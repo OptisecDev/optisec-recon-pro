@@ -34,6 +34,10 @@
 .compliant{border-color:#66BB6A;background:#66BB6A18;color:#66BB6A}
 .non-compliant{border-color:#FF6B6B;background:#FF6B6B18;color:#FF6B6B}
 .partial{border-color:#FFA726;background:#FFA72618;color:#FFA726}
+.sim-section{border:1px dashed var(--border);opacity:0.92}
+.sim-finding{opacity:0.85}
+.mt4{margin-top:4px}
+.mb8{margin-bottom:8px}
 </style>
 
 <!-- Stats -->
@@ -211,14 +215,14 @@
             <div class="ieacac8ae4">{{ s.target }}</div>
           </div>
           <div class="ief6e3d7fe">
-            <span class="badge badge-{{ 'critical' if s.risk_score >= 75 else 'high' if s.risk_score >= 50 else 'medium' }}">
+            <span class="badge badge-{{ 'critical' if s.risk_score >= 75 else 'high' if s.risk_score >= 50 else 'medium' }}" title="Verified findings only">
               Risk: {{ s.risk_score }}/100
             </span>
             <div class="ied28d0fca">{{ s.started_at[:10] }}</div>
           </div>
         </div>
         <div class="ie8a3e8f1b">
-          <span>{{ s.findings|length }} findings</span>
+          <span>{{ s.real_findings_count if s.real_findings_count is defined else s.findings|length }} verified findings{% set simc = s.simulated_findings_count if s.simulated_findings_count is defined else 0 %}{% if simc %} + {{ simc }} simulated{% endif %}</span>
           <span>{{ s.attack_types | join(', ') }}</span>
           <span class="badge badge-{{ 'high' if s.status == 'completed' else 'medium' }} ied9e14ae8" >{{ s.status }}</span>
         </div>
@@ -321,22 +325,14 @@ async function launchSimulation() {
 function renderResults(data) {
   const report = data.report || {};
   const exec = report.executive_summary || {};
-  const findings = data.findings || [];
+  const allFindings = data.findings || [];
+  const realFindings = allFindings.filter(f => !f.simulated);
+  const simFindings = allFindings.filter(f => f.simulated);
   const sevColors = {CRITICAL:'#FF6B6B',HIGH:'#FFA726',MEDIUM:'#FFCA28',LOW:'#66BB6A'};
-  const riskScore = exec.risk_score || data.risk_score || 0;
+  const riskScore = exec.risk_score ?? data.risk_score ?? 0;
+  const totalReal = exec.total_findings ?? realFindings.length;
 
-  const resultsContentEl = document.getElementById('results-content');
-  resultsContentEl.innerHTML = `
-    <div data-dyn-style="margin-bottom:16px;padding:14px;background:${riskScore>=75?'#FF6B6B18':riskScore>=50?'#FFA72618':'#FFCA2818'};
-      border:1px solid ${riskScore>=75?'#FF6B6B':riskScore>=50?'#FFA726':'#FFCA28'};border-radius:8px">
-      <div data-dyn-style="font-size:13px;font-weight:700;color:${riskScore>=75?'#FF6B6B':riskScore>=50?'#FFA726':'#FFCA28'}">${exec.overall_risk||'HIGH'} RISK — Score: ${riskScore}/100</div>
-      <div class="ief13248b8">${data.id} · ${data.target}</div>
-    </div>
-    <div class="ie4f82bada">
-      ${[['Total','findings',findings.length,'#00ff88'],[`Critical`,'',(exec.critical_count||0),'#FF6B6B'],['High','',(exec.high_count||0),'#FFA726'],['Medium','',(exec.medium_count||0),'#FFCA28']].map(([l,s,v,c])=>`<div class="ie7bd82616"><div data-dyn-style="font-size:18px;font-weight:700;color:${c}">${v}</div><div class="iee974f2d0">${l} ${s}</div></div>`).join('')}
-    </div>
-    <div class="iefa3e1c7d">
-      ${findings.map(f=>`<div class="finding-item sev-${f.severity}">
+  const findingCard = (f) => `<div class="finding-item sev-${f.severity}${f.simulated?' sim-finding':''}">
         <div class="ie631785f9">
           <div class="iedff98dc3">${f.vuln}</div>
           <span data-dyn-style="font-size:10px;font-weight:700;color:${sevColors[f.severity]||'#888'}">${f.severity}</span>
@@ -345,10 +341,29 @@ function renderResults(data) {
         <div class="ie3122d8b0">${f.endpoint}</div>
         <div class="ie14f3429e">${f.proof}</div>
         <div class="ied28d0fca">MITRE: <code>${f.technique}</code> · CVSS: ${f.cvss}</div>
-      </div>`).join('')}
+      </div>`;
+
+  const resultsContentEl = document.getElementById('results-content');
+  resultsContentEl.innerHTML = `
+    <div data-dyn-style="margin-bottom:16px;padding:14px;background:${riskScore>=75?'#FF6B6B18':riskScore>=50?'#FFA72618':'#FFCA2818'};
+      border:1px solid ${riskScore>=75?'#FF6B6B':riskScore>=50?'#FFA726':'#FFCA28'};border-radius:8px">
+      <div data-dyn-style="font-size:13px;font-weight:700;color:${riskScore>=75?'#FF6B6B':riskScore>=50?'#FFA726':'#FFCA28'}">${exec.overall_risk||'LOW'} RISK — Score: ${riskScore}/100</div>
+      <div class="ief13248b8">${data.id} · ${data.target}</div>
+      <div class="ie3122d8b0 mt4">${exec.risk_score_note || 'Score reflects verified findings only. Simulated attack scenarios are excluded.'}<br>${exec.risk_score_note_ar || 'يعكس هذا التقييم النتائج المؤكدة فقط. سيناريوهات الهجوم المحاكاة مستثناة.'}</div>
     </div>
+    <div class="ie4f82bada">
+      ${[['Total','verified',totalReal,'#00ff88'],[`Critical`,'',(exec.critical_count||0),'#FF6B6B'],['High','',(exec.high_count||0),'#FFA726'],['Medium','',(exec.medium_count||0),'#FFCA28']].map(([l,s,v,c])=>`<div class="ie7bd82616"><div data-dyn-style="font-size:18px;font-weight:700;color:${c}">${v}</div><div class="iee974f2d0">${l} ${s}</div></div>`).join('')}
+    </div>
+    <div class="iefa3e1c7d">
+      ${realFindings.length ? realFindings.map(findingCard).join('') : '<div class="ie038f68c8">No vulnerabilities confirmed by real recon/scan modules.</div>'}
+    </div>
+    ${simFindings.length ? `<div class="iefa3e1c7d sim-section">
+      <div class="ie4fd68982">Simulated Attack Scenarios — Demonstration Only<br>سيناريوهات هجوم محاكاة — لأغراض العرض فقط</div>
+      <div class="ie3122d8b0 mb8">Not executed against the target. Excluded from the risk score and every counter above. / لم يتم تنفيذها ضد الهدف. مستثناة من درجة الخطر وجميع العدادات أعلاه.</div>
+      ${simFindings.map(findingCard).join('')}
+    </div>` : ''}
     ${report.compliance_impact ? `<div class="iefa3e1c7d">
-      <div class="ie4fd68982">Compliance Impact:</div>
+      <div class="ie4fd68982">Compliance Impact <span class="ie3122d8b0">(verified findings only)</span>:</div>
       ${Object.entries(report.compliance_impact||{}).map(([k,v])=>`<div class="ie79e1602a"><span>${k}</span><span data-dyn-style="color:${v.includes('NON')||v.includes('MATERIAL')?'#FF6B6B':'#FFA726'}">${v}</span></div>`).join('')}
     </div>` : ''}
     <button class="btn btn-secondary btn-sm" data-onclick="viewFullReport" data-onclick-args="${optisecArgs([data.id])}">View Full Report</button>

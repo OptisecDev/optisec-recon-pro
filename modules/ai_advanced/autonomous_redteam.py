@@ -292,15 +292,21 @@ async def start_autonomous_simulation(
     for i, f in enumerate(findings, start=1):
         f["id"] = f"F{i:03d}"
 
+    real_findings = [f for f in findings if not f.get("simulated")]
+
     session["recon_data"] = recon_data
     session["web_scan_data"] = web_scan_data
     session["findings"] = findings
+    session["real_findings_count"] = len(real_findings)
+    session["simulated_findings_count"] = len(findings) - len(real_findings)
     session["payloads_generated"] = sum(len(PAYLOAD_TEMPLATES.get(at, {}).get("payloads", [])) for at in attack_types)
     session["current_phase"] = len(selected_phases)
     session["progress_pct"] = 100
     session["status"] = "completed"
     session["completed_at"] = datetime.utcnow().isoformat()
-    session["risk_score"] = _calculate_risk_score(session["findings"])
+    # Risk score reflects verified findings only (real recon/scan output) —
+    # simulated Phase 2/4/5/6 scenarios never drive the headline score.
+    session["risk_score"] = _calculate_risk_score(real_findings)
     session["report"] = generate_pentest_report(session)
 
     sessions = _load_sessions()
@@ -595,12 +601,23 @@ Provide a concise attack analysis in JSON:
 
 
 def generate_pentest_report(session: dict) -> dict:
-    """Auto-generate a structured penetration test report."""
+    """Auto-generate a structured penetration test report.
+
+    All headline numbers (risk score, Total/Critical/High/Medium counters,
+    business impact, remediation roadmap, compliance impact) are derived
+    from REAL findings only (recon/scan output, phases 1 and 3). Simulated
+    Phase 2/4/5/6 scenarios are never executed against the target, so they
+    are reported separately and excluded from every aggregate below —
+    see PRIORITY 1, items 1-2 of the live-walkthrough audit.
+    """
     findings = session.get("findings", [])
-    critical = [f for f in findings if f.get("severity") == "CRITICAL"]
-    high = [f for f in findings if f.get("severity") == "HIGH"]
-    medium = [f for f in findings if f.get("severity") == "MEDIUM"]
-    low = [f for f in findings if f.get("severity") == "LOW"]
+    real_findings = [f for f in findings if not f.get("simulated")]
+    simulated_findings = [f for f in findings if f.get("simulated")]
+
+    critical = [f for f in real_findings if f.get("severity") == "CRITICAL"]
+    high = [f for f in real_findings if f.get("severity") == "HIGH"]
+    medium = [f for f in real_findings if f.get("severity") == "MEDIUM"]
+    low = [f for f in real_findings if f.get("severity") == "LOW"]
 
     risk_score = session.get("risk_score", 0)
     overall_rating = (
@@ -622,13 +639,22 @@ def generate_pentest_report(session: dict) -> dict:
         "executive_summary": {
             "overall_risk": overall_rating,
             "risk_score": risk_score,
-            "total_findings": len(findings),
+            "risk_score_note": (
+                "Score reflects verified findings only (real recon and scan output). "
+                "Simulated attack scenarios are excluded."
+            ),
+            "risk_score_note_ar": (
+                "يعكس هذا التقييم النتائج المؤكدة فقط (نتائج فعلية من الاستطلاع والفحص). "
+                "سيناريوهات الهجوم المحاكاة مستثناة."
+            ),
+            "total_findings": len(real_findings),
             "critical_count": len(critical),
             "high_count": len(high),
             "medium_count": len(medium),
             "low_count": len(low),
+            "simulated_findings_count": len(simulated_findings),
             "key_findings": [f["vuln"] for f in critical[:3]] or ["No critical findings"],
-            "business_impact": _assess_business_impact(findings),
+            "business_impact": _assess_business_impact(real_findings),
         },
         "technical_findings": [
             {
@@ -644,7 +670,8 @@ def generate_pentest_report(session: dict) -> dict:
             "short_term": [_get_remediation(f["vuln"]) for f in high],
             "medium_term": [_get_remediation(f["vuln"]) for f in medium],
         },
-        "compliance_impact": _assess_compliance_impact(findings),
+        # Derived from real findings only — see _assess_compliance_impact().
+        "compliance_impact": _assess_compliance_impact(real_findings),
         "mitre_coverage": list({f.get("technique", "") for f in findings if f.get("technique")}),
     }
 
@@ -677,26 +704,40 @@ def _get_remediation(vuln: str) -> str:
 
 
 def _generate_narrative(session: dict) -> str:
+    """Narrative summary — built from REAL findings only (see generate_pentest_report's
+    docstring); a simulated Weak JWT / SQLi scenario must never be described as
+    "achieved" against the target."""
     target = session["target"]
     findings = session.get("findings", [])
-    n = len(findings)
-    critical = [f for f in findings if f.get("severity") == "CRITICAL"]
+    real_findings = [f for f in findings if not f.get("simulated")]
+    n = len(real_findings)
+    critical = [f for f in real_findings if f.get("severity") == "CRITICAL"]
 
     if critical:
         entry = critical[0]["vuln"]
         return (
-            f"The autonomous red team engagement against {target} identified {n} vulnerabilities across "
-            f"{len(session.get('phases', []))} attack phases. Initial access was achieved via {entry}, "
-            f"which allowed the simulated attacker to escalate privileges and move laterally within the "
+            f"The autonomous red team engagement against {target} identified {n} verified vulnerabilities "
+            f"across {len(session.get('phases', []))} attack phases. Initial access was achieved via {entry}, "
+            f"which allowed the attacker to escalate privileges and move laterally within the "
             f"target environment. Critical findings require immediate remediation before public exposure."
         )
+    if n:
+        return (
+            f"Engagement against {target} completed {n} verified vulnerability checks from real recon and "
+            f"scan modules. No critical vulnerabilities were identified, though {n} lower-severity findings "
+            f"require attention."
+        )
     return (
-        f"Engagement against {target} completed {n} vulnerability checks. "
-        f"No critical vulnerabilities were identified, though {n} lower-severity findings require attention."
+        f"Engagement against {target} completed reconnaissance and scan phases with no vulnerabilities "
+        f"confirmed by real recon/scan modules. Any additional findings shown for this session are "
+        f"simulated attack scenarios for demonstration only and do not reflect actual exploitation."
     )
 
 
 def _assess_compliance_impact(findings: list) -> dict:
+    """Compliance verdicts (GDPR/PCI_DSS/SOC2/ISO27001). Callers must pass REAL
+    findings only — a tool must never emit a compliance verdict based on
+    simulated scenarios that did not actually occur against the target."""
     has_critical = any(f.get("severity") == "CRITICAL" for f in findings)
     has_pii = any("cred" in f.get("vuln", "").lower() or "sql" in f.get("vuln", "").lower() for f in findings)
     return {

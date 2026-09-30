@@ -30,7 +30,29 @@
 .source-rel{height:6px;border-radius:3px;background:var(--bg-card);overflow:hidden;flex:1}
 .source-rel-fill{height:100%;border-radius:3px;background:var(--accent)}
 .submit-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
+.sample-data-banner{border-color:#FFA726;background:#FFA72612;margin-bottom:16px}
+.sample-data-banner-title{font-weight:700;color:#FFA726;font-size:13px}
+.mt4{margin-top:4px}
 </style>
+
+<!-- Sample/demo data disclosure — shown whenever nothing on this page is a
+     live indicator (see web/routers/threat_feed.py's is_live computation).
+     PRIORITY 1 item 4 of the live-walkthrough audit: this feed must never
+     be mistaken for a live intelligence source when it isn't one. -->
+{% if not feed.is_live %}
+<div class="tf-card sample-data-banner" id="sample-data-banner">
+  <div class="sample-data-banner-title">⚠ Sample / Demo Data — Not a Live Feed</div>
+  <div class="ie3122d8b0 mt4">
+    This page is currently showing sample/demo threat-intelligence data. No live indicator source
+    (AlienVault OTX, abuse.ch URLhaus) is connected and returning data right now, so nothing below
+    reflects real-time threats.
+  </div>
+  <div class="ie3122d8b0 mt4">
+    هذه الصفحة تعرض حالياً بيانات استخبارات تهديدات تجريبية/عرضية. لا يوجد مصدر مؤشرات حي متصل ويُرجع بيانات
+    حالياً (AlienVault OTX أو abuse.ch URLhaus)، لذا لا شيء أدناه يعكس تهديدات فعلية في الوقت الحقيقي.
+  </div>
+</div>
+{% endif %}
 
 <!-- Global threat level banner -->
 <div data-dyn-style="background:{{ '#FF6B6B18' if feed.global_threat_level == 'CRITICAL' else '#FFA72618' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA18' }};
@@ -38,10 +60,10 @@
   border-radius:10px;padding:16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
   <div>
     <div data-dyn-style="font-size:18px;font-weight:700;color:{{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }}">
-      GLOBAL THREAT LEVEL: {{ feed.global_threat_level }}
+      GLOBAL THREAT LEVEL: {{ feed.global_threat_level }}{% if not feed.is_live %} <span class="badge badge-medium" title="Computed over sample/demo IOCs only — not a live measurement.">SAMPLE DATA</span>{% endif %}
     </div>
     <div class="ieebc423f0">
-      {{ feed.total }} active IOCs tracked across {{ stats.feed_sources }} intelligence sources
+      {{ feed.total }} IOCs shown across {{ stats.feed_sources }} catalogued sources{% if not feed.is_live %} — mostly sample/demo (see Feed Sources tab){% endif %}
     </div>
   </div>
   <div class="iede66ae74">
@@ -56,7 +78,7 @@
 <div class="stats-grid ie98c9aa3b" >
   <div class="stat-card">
     <div class="stat-value">{{ feed.total }}</div>
-    <div class="stat-label">Active IOCs</div>
+    <div class="stat-label">{{ 'Sample IOCs' if not feed.is_live else 'Active IOCs' }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-value iee22d2807" >{{ feed.stats.critical_iocs }}</div>
@@ -64,17 +86,18 @@
   </div>
   <div class="stat-card">
     <div class="stat-value ie146bf057" >{{ stats.active_campaigns }}</div>
-    <div class="stat-label">Active Campaigns</div>
+    <div class="stat-label">Illustrative Campaigns</div>
   </div>
   <div class="stat-card">
     <div class="stat-value ie29925b1a" >{{ stats.feed_sources }}</div>
-    <div class="stat-label">Feed Sources</div>
+    <div class="stat-label">Catalogued Sources</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value ie78539534" >{{ threat_map.total_attacks_per_hour | int }}</div>
-    <div class="stat-label">Attacks/Hour</div>
+    <div class="stat-value ie78539534" title="{{ threat_map.note }}">{{ threat_map.total_attacks_per_hour | int }}*</div>
+    <div class="stat-label">Attacks/Hour (sample)</div>
   </div>
 </div>
+<div class="iebfdf0207">* Attacks/Hour is a randomly jittered demo figure around a static baseline — not real-time attack telemetry. See the Threat Map tab.</div>
 
 <div class="tabs ie3019698e" >
   <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["feed"]'>Live IOC Feed</button>
@@ -89,7 +112,7 @@
 <div id="tab-feed">
   <div class="tf-card">
     <div class="ie27a7ccf4">
-      <h3>Live IOC Stream</h3>
+      <h3 id="feed-stream-heading">{{ 'Live IOC Stream' if feed.is_live else 'Sample IOC Stream — Demo Data' }}</h3>
       <div class="iee0e9ec07">
         <input type="text" class="form-control ie1bac07f7"  placeholder="Search IOCs..." data-oninput="filterFeedFromInput" id="feed-search">
         <select class="form-control ie9e7d48a6"  data-onchange="filterFeedTypeFromInput">
@@ -445,6 +468,8 @@ async function refreshFeed() {
   const resp = await fetch('/threat-feed/api/feed?limit=30');
   const data = await resp.json();
   const scoreColors = s => s>=80?'#FF6B6B':s>=60?'#FFA726':s>=40?'#FFCA28':'#66BB6A';
+  const headingEl = document.getElementById('feed-stream-heading');
+  if (headingEl) headingEl.textContent = data.is_live ? 'Live IOC Stream' : 'Sample IOC Stream — Demo Data';
   const iocFeedListEl = document.getElementById('ioc-feed-list');
   iocFeedListEl.innerHTML = data.iocs.map(ioc => `
     <div class="ioc-row" data-type="${escHtml(ioc.type)}" data-value="${escHtml(ioc.value.toLowerCase())}">
