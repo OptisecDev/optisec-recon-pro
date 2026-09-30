@@ -98,3 +98,34 @@ def test_402_on_api_path_still_returns_json(client):
     assert resp.headers["content-type"].startswith("application/json")
     body = resp.json()
     assert "error" in body
+
+
+# ── PRIORITY 3 item 8: heading/title must read as a plan gate, not a crash ──
+
+def test_402_page_heading_is_bilingual_upgrade_required_not_error(client):
+    """Before this fix, error.html hardcoded block page_title/title to
+    "Error" for every status code, so a free-tier user hitting a paywall
+    saw a page headed "Error 402" — indistinguishable from an actual
+    malfunction. The visible topbar heading and the <title> tag must now
+    both read "Upgrade Required / ميزة مدفوعة" for the 402 case."""
+    c, session_factory = client
+    token = _free_user_token(session_factory)
+    resp = c.get("/compliance", cookies={"access_token": token})
+    assert resp.status_code == 402
+    assert "Upgrade Required" in resp.text
+    assert any("؀" <= ch <= "ۿ" for ch in resp.text)
+    assert "<title>Upgrade Required / ميزة مدفوعة —" in resp.text
+    assert ">Error<" not in resp.text
+
+
+def test_403_branch_does_not_pass_a_heading_override(monkeypatch):
+    """403 (plain access-denied, unrelated to plan gating) must be
+    unaffected by the 402 heading override. Rather than hunting for a
+    real non-/api/ route that a logged-in user gets a plain 403 from
+    (fragile — depends on unrelated routing details), assert directly on
+    on_http_exception's 403 branch: it must not pass a `heading` key, so
+    error.html's `{{ heading or 'Error' }}` default keeps applying there."""
+    import inspect
+    src = inspect.getsource(app_module.on_http_exception)
+    branch_403 = src.split('exc.status_code == 403')[1].split('if exc.status_code == 402')[0]
+    assert '"heading"' not in branch_403

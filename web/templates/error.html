@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Error {{ code }} — {{ app_name }}{% endblock %}
-{% block page_title %}Error{% endblock %}
+{% block title %}{{ heading or ('Error ' ~ code) }} — {{ app_name }}{% endblock %}
+{% block page_title %}{{ heading or 'Error' }}{% endblock %}
 
 {% block content %}
 <div class="card ieb69ebe73" >

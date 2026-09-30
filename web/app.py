@@ -179,7 +179,7 @@ OPENAPI_TAGS = [
         "description": (
             "CVE report drafting assistant: turn a scan finding into a MITRE CNA-style "
             "draft (title, description, affected product/versions, CWE, CVSS, references), "
-            "store it locally, and export it as a CVE JSON 5.0 record. Drafting only — "
+            "store it locally, and export it as a CVE JSON 5.1 record. Drafting only — "
             "no report is ever submitted to MITRE automatically; real submission requires "
             "human review and an approved CNA account."
         ),
@@ -994,6 +994,9 @@ async def on_http_exception(request: Request, exc: HTTPException):
     if exc.status_code == 402 and not request.url.path.startswith("/api/"):
         return templates.TemplateResponse(request, "error.html", {
             "app_name": APP_NAME, "error": exc.detail, "code": 402,
+            # A plan gate isn't a malfunction — "Error" as the page heading
+            # reads like one. Bilingual per this app's EN/AR convention.
+            "heading": "Upgrade Required / ميزة مدفوعة",
             "cta_url": "/redeem", "cta_label": "Upgrade Plan",
         }, status_code=402)
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code, headers=exc.headers)
@@ -1406,6 +1409,19 @@ async def api_docs_page(request: Request, user: User = Depends(web_user)):
         "endpoint_count": sum(len(v) for v in tag_endpoints.values()),
         "tag_count": len(tag_endpoints),
     })
+
+
+@app.head("/", include_in_schema=False)
+async def index_head() -> Response:
+    """`@app.get("/")` below registers methods={"GET"} only -- this FastAPI/
+    Starlette version does not implicitly add HEAD to a GET-only route (see
+    fastapi.routing.APIRoute.__init__: self.methods is exactly the passed-in
+    `methods` list, unlike bare starlette.routing.Route which does add it) --
+    so Render's health probe (and any other bare HEAD /) previously got a
+    405, not 200. A bare 200/no-body response is correct for HEAD semantics
+    and is all a health probe needs; it intentionally skips index()'s
+    authenticated DB-query/template-render path entirely."""
+    return Response(status_code=200)
 
 
 @app.get("/", response_class=HTMLResponse)

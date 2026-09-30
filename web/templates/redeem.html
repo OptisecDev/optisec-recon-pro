@@ -71,6 +71,12 @@
     </button>
   </form>
 
+  {% if user and user.subscription_tier in ('pro', 'enterprise') %}
+  <div class="alert alert-success ie6fe27512">
+    ✓ أنت بالفعل على خطة {{ user.subscription_tier|upper }} — لا حاجة للشراء.<br />
+    You are on the {{ user.subscription_tier|upper }} plan — no purchase needed.
+  </div>
+  {% else %}
   <div class="ie6fe27512">
     <div class="iefc9973a7">Don't have a key yet? Buy PRO — $399 one-time</div>
     <form id="buy-pro-form" class="ie1a0c9c83">
@@ -93,6 +99,7 @@
   <p class="ie-refund-note">
     💚 Full refund within 7 days of purchase if you're not satisfied.
   </p>
+  {% endif %}
 </div>
 
 {% endblock %}
@@ -145,7 +152,7 @@ document.getElementById('redeem-form').addEventListener('submit', async (e) => {
   }
 });
 
-document.getElementById('buy-pro-form').addEventListener('submit', async (e) => {
+document.getElementById('buy-pro-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const emailInput = document.getElementById('buy-pro-email');
   const btn = document.getElementById('buy-pro-btn');
