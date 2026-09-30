@@ -119,7 +119,7 @@ def test_inline_extracted_css_exists_and_uses_important_on_every_declaration():
 
 def test_base_html_links_inline_extracted_stylesheet():
     base = open(os.path.join(REPO_ROOT, "web/templates/base.html")).read()
-    assert '/static/css/inline-extracted.css' in base
+    assert "static_v('css/inline-extracted.css')" in base
 
 
 def test_standalone_pages_link_inline_extracted_stylesheet():
@@ -127,7 +127,7 @@ def test_standalone_pages_link_inline_extracted_stylesheet():
     # each needs its own <link> to the extracted stylesheet.
     for name in ("login.html", "register.html", "landing.html"):
         html = open(os.path.join(REPO_ROOT, "web/templates", name)).read()
-        assert '/static/css/inline-extracted.css' in html, f"{name} missing the stylesheet link"
+        assert "static_v('css/inline-extracted.css')" in html, f"{name} missing the stylesheet link"
 
 
 def test_main_js_defines_the_dyn_style_and_args_helpers():
