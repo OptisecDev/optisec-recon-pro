@@ -40,7 +40,7 @@ from web.auth import (
     generate_api_key, hash_api_key, get_current_user, get_ws_user,
     require_admin, require_analyst_or_admin,
     check_rate_limit, record_failed_attempt, clear_attempts,
-    log_auth_event, validate_password_strength, get_client_ip,
+    log_auth_event, record_auth_event, validate_password_strength, get_client_ip,
     generate_csrf_token, verify_csrf_token, generate_csrf_secret,
     SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES,
 )
@@ -882,7 +882,7 @@ async def _ensure_first_admin():
             if not env_password:
                 _write_initial_credentials_file("admin", username, password)
             logger.warning(f"[OPTISEC] Initial admin account created: username={username}")
-            log_auth_event("INIT_ADMIN", username, "localhost", True, "first admin created")
+            await record_auth_event(db, "INIT_ADMIN", username, "localhost", True, "first admin created")
         else:
             _cleanup_stale_initial_creds("admin")
 
@@ -1099,7 +1099,7 @@ async def login_submit(
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
         minutes = remaining // 60 + 1
-        log_auth_event("LOGIN", username, ip, False, f"rate_limited remaining={remaining}s")
+        await record_auth_event(db, "LOGIN", username, ip, False, f"rate_limited remaining={remaining}s")
         return templates.TemplateResponse(request, "login.html", {
             "app_name": APP_NAME,
             "error": f"Too many failed attempts. Try again in {minutes} minute(s).",
@@ -1116,7 +1116,7 @@ async def login_submit(
 
     if not user or not verify_password(password, user.password_hash):
         record_failed_attempt(ip)
-        log_auth_event("LOGIN", username, ip, False, "invalid_credentials")
+        await record_auth_event(db, "LOGIN", username, ip, False, "invalid_credentials")
         return templates.TemplateResponse(request, "login.html", {
             "app_name": APP_NAME,
             "error": "Invalid username or password",
@@ -1126,7 +1126,7 @@ async def login_submit(
     clear_attempts(ip)
     user.last_login = datetime.utcnow()
     await db.commit()
-    log_auth_event("LOGIN", user.username, ip, True)
+    await record_auth_event(db, "LOGIN", user.username, ip, True)
 
     if user.role == "admin":
         _cleanup_stale_initial_creds("admin")
@@ -1160,7 +1160,7 @@ async def register_submit(
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
         minutes = remaining // 60 + 1
-        log_auth_event("REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
+        await record_auth_event(db, "REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
         return templates.TemplateResponse(request, "register.html", {
             "app_name": APP_NAME,
             "error": f"Too many attempts. Try again in {minutes} minute(s).",
@@ -1195,7 +1195,7 @@ async def register_submit(
     db.add(user)
     await db.commit()
     clear_attempts(ip)
-    log_auth_event("REGISTER", username, ip, True)
+    await record_auth_event(db, "REGISTER", username, ip, True)
 
     token = create_access_token(user.id, user.role)
     response = RedirectResponse("/", status_code=302)
@@ -1205,7 +1205,7 @@ async def register_submit(
 
 
 @app.get("/logout")
-async def logout(request: Request):
+async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     ip = get_client_ip(request)
     token = request.cookies.get("access_token")
     username = "unknown"
@@ -1213,10 +1213,18 @@ async def logout(request: Request):
         try:
             from jose import jwt as jose_jwt
             payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            username = payload.get("sub", "unknown")
+            # "sub" is the user id (create_access_token), not the username --
+            # resolve it so LOGOUT rows show the same username LOGIN rows do.
+            user_id = payload.get("sub")
+            if user_id is not None:
+                looked_up = (await db.execute(
+                    select(User).where(User.id == int(user_id))
+                )).scalar_one_or_none()
+                if looked_up:
+                    username = looked_up.username
         except Exception:
             pass
-    log_auth_event("LOGOUT", username, ip, True)
+    await record_auth_event(db, "LOGOUT", username, ip, True)
     response = RedirectResponse("/login", status_code=302)
     response.delete_cookie("access_token")
     response.delete_cookie(CSRF_COOKIE_NAME)
@@ -1247,7 +1255,7 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
 
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
-        log_auth_event("API_LOGIN", username_input, ip, False, f"rate_limited remaining={remaining}s")
+        await record_auth_event(db, "API_LOGIN", username_input, ip, False, f"rate_limited remaining={remaining}s")
         raise HTTPException(429, f"Too many failed attempts. Try again in {remaining} seconds.")
 
     result = await db.execute(
@@ -1259,11 +1267,11 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     user = result.scalar_one_or_none()
     if not user or not verify_password(data.get("password", ""), user.password_hash):
         record_failed_attempt(ip)
-        log_auth_event("API_LOGIN", username_input, ip, False, "invalid_credentials")
+        await record_auth_event(db, "API_LOGIN", username_input, ip, False, "invalid_credentials")
         raise HTTPException(401, "Invalid credentials")
 
     clear_attempts(ip)
-    log_auth_event("API_LOGIN", user.username, ip, True)
+    await record_auth_event(db, "API_LOGIN", user.username, ip, True)
 
     if user.role == "admin":
         _cleanup_stale_initial_creds("admin")
@@ -1301,7 +1309,7 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
 
     allowed, remaining = check_rate_limit(ip)
     if not allowed:
-        log_auth_event("API_REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
+        await record_auth_event(db, "API_REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
         raise HTTPException(429, f"Too many attempts. Try again in {remaining} seconds.")
 
     pw_errors = validate_password_strength(password)
@@ -1326,7 +1334,7 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     db.add(user)
     await db.commit()
     clear_attempts(ip)
-    log_auth_event("API_REGISTER", username, ip, True)
+    await record_auth_event(db, "API_REGISTER", username, ip, True)
     return JSONResponse({"id": user.id, "username": user.username,
                          "role": user.role, "api_key": api_key})
 
@@ -2494,37 +2502,22 @@ async def nlp_parse(request: Request, user: User = Depends(web_user)):
 async def admin_auth_log(
     user: User = Depends(web_user),
     lines: int = 100,
+    db: AsyncSession = Depends(get_db),
 ):
     require_admin(user)
-    log_path = Path(__file__).parent.parent / "logs" / "auth.log"
-    if not log_path.exists():
-        return JSONResponse([])
-    with open(log_path, "r") as f:
-        raw = f.readlines()
-    entries = []
-    for line in raw[-min(lines, 500):]:
-        line = line.strip()
-        if not line:
-            continue
-        # Format: "2026-06-29 03:01:05,747 SUCCESS | EVENT | user='x' | ip=y | detail"
-        parts = line.split(" ", 2)
-        timestamp = f"{parts[0]} {parts[1]}" if len(parts) >= 2 else line
-        rest = parts[2] if len(parts) >= 3 else ""
-        fields = [f.strip() for f in rest.split("|")]
-        status = fields[0] if fields else ""
-        event  = fields[1].strip() if len(fields) > 1 else ""
-        user_f = fields[2].replace("user=", "").strip().strip("'") if len(fields) > 2 else ""
-        ip     = fields[3].replace("ip=", "").strip() if len(fields) > 3 else ""
-        detail = fields[4].strip() if len(fields) > 4 else ""
-        entries.append({
-            "timestamp": timestamp,
-            "status": status,
-            "event": event,
-            "user": user_f,
-            "ip": ip,
-            "detail": detail,
-        })
-    return JSONResponse(list(reversed(entries)))
+    from web.models import AuthEvent
+    result = await db.execute(
+        select(AuthEvent).order_by(AuthEvent.timestamp.desc()).limit(min(lines, 500))
+    )
+    entries = [{
+        "timestamp": e.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+        "status": e.status,
+        "event": e.event,
+        "user": e.username,
+        "ip": e.ip,
+        "detail": e.detail or "",
+    } for e in result.scalars().all()]
+    return JSONResponse(entries)
 
 
 @app.get(

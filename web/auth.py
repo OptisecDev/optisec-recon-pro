@@ -106,6 +106,32 @@ def log_auth_event(event: str, username: str, ip: str, success: bool, detail: st
     _auth_logger.info(msg)
 
 
+async def record_auth_event(
+    db: AsyncSession, event: str, username: str, ip: str, success: bool, detail: str = ""
+) -> None:
+    """Like log_auth_event, but also persists a row to auth_events (DB) --
+    the source the Admin Panel's Auth Log reads from. logs/auth.log lives on
+    each instance's local, ephemeral disk (never shared across Render's 2
+    uvicorn workers/instances, wiped on every restart/redeploy), so it can
+    never be a reliable read path; the DB row is durable the same way
+    users.last_login already is.
+
+    Committed immediately in its own step so a login/register/logout event
+    is recorded even if something later in the same request fails and rolls
+    back the caller's own transaction.
+    """
+    log_auth_event(event, username, ip, success, detail)
+    from web.models import AuthEvent  # local import: avoids a web.auth <-> web.models import cycle
+    db.add(AuthEvent(
+        status="SUCCESS" if success else "FAILURE",
+        event=event,
+        username=username,
+        ip=ip,
+        detail=detail or None,
+    ))
+    await db.commit()
+
+
 # ─── Rate limiting ─────────────────────────────────────────────────────────────
 RATE_LIMIT_MAX = 5
 RATE_LIMIT_WINDOW = 900  # 15 minutes in seconds

@@ -390,3 +390,21 @@ class SchedulerLock(Base):
     job_name = Column(String(100), primary_key=True)
     locked_at = Column(DateTime)
     locked_by = Column(String(100))
+
+
+class AuthEvent(Base):
+    """Durable audit trail for authentication events (web/auth.py
+    log_auth_event), backing the Admin Panel's Auth Log. Previously logged
+    only to a local logs/auth.log file, which doesn't survive on Render
+    (ephemeral disk, not shared across the 2 uvicorn workers/instances --
+    see SchedulerLock above) -- this table lives in the same durable DB as
+    users.last_login so the Admin Panel always sees real activity."""
+    __tablename__ = "auth_events"
+
+    id = Column(Integer, primary_key=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    status = Column(String(10), nullable=False)   # SUCCESS | FAILURE
+    event = Column(String(30), nullable=False)    # LOGIN | LOGOUT | REGISTER | API_LOGIN | API_REGISTER | INIT_ADMIN
+    username = Column(String(50), nullable=False)
+    ip = Column(String(45), nullable=False)
+    detail = Column(String(255))
