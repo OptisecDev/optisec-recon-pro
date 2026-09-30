@@ -68,9 +68,10 @@ async def create_engagement(
     groq_key = os.environ.get("GROQ_API_KEY", "")
 
     if groq_key:
-        plan = await _ai_generate_plan(target, scope, objectives, categories, groq_key)
+        plan, plan_source = await _ai_generate_plan(target, scope, objectives, categories, groq_key)
     else:
         plan = _template_plan(target, scope, objectives, categories)
+        plan_source = "template"
 
     engagement = {
         "id": f"RT-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}",
@@ -83,6 +84,7 @@ async def create_engagement(
         "status": "planned",
         "created_at": datetime.utcnow().isoformat(),
         "plan": plan,
+        "plan_source": plan_source,
         "findings": [],
         "risk_rating": plan.get("estimated_risk", "high"),
     }
@@ -96,7 +98,7 @@ async def create_engagement(
 
 async def _ai_generate_plan(
     target: str, scope: list, objectives: list, categories: list, api_key: str
-) -> dict:
+) -> tuple[dict, str]:
     techniques = []
     for cat in categories:
         techniques.extend(TECHNIQUE_LIBRARY.get(cat, []))
@@ -149,10 +151,10 @@ Generate a detailed red team plan in JSON:
             return json.loads(content)
 
     try:
-        return await call_groq_async_with_retry(_request)
+        return await call_groq_async_with_retry(_request), "ai"
     except Exception:
         pass
-    return _template_plan(target, scope, objectives, categories)
+    return _template_plan(target, scope, objectives, categories), "template"
 
 
 def _template_plan(target: str, scope: list, objectives: list, categories: list) -> dict:
