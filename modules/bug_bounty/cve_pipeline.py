@@ -50,6 +50,29 @@ CWE_BY_VULN_TYPE: dict[str, dict[str, str]] = {
 
 _DEFAULT_CWE = {"cwe_id": "NVD-CWE-noinfo", "label": "Insufficient information to classify (reviewer should assign a CWE)"}
 
+# Every finding this pipeline can draft from (modules/vuln/*, modules/recon/*)
+# targets a specific hosted website/URL, never a distributable product — see
+# draft_from_finding() below and web/routers/cve_submission.py's create_draft(),
+# whose only caller of draft_from_finding() is the finding_id path. CVE IDs
+# are for vulnerabilities in distributable software/firmware/libraries; a bug
+# in one specific hosted site is generally out of scope for a CNA and should
+# go to the site owner or its bug-bounty program instead. This is advisory
+# only — draft generation is never blocked on it.
+HOSTED_WEBSITE_CVE_NOTICE_EN = (
+    "This draft was generated from a scan finding against a hosted website, not "
+    "distributable software. CVE IDs are intended for vulnerabilities in "
+    "distributable products (software, firmware, libraries) — a vulnerability "
+    "affecting one specific hosted website is generally not CVE-eligible. "
+    "Consider reporting it directly to the site owner or through its "
+    "bug-bounty program instead."
+)
+HOSTED_WEBSITE_CVE_NOTICE_AR = (
+    "تم إنشاء هذه المسودة من نتيجة فحص على موقع ويب مستضاف، وليس برمجية قابلة "
+    "للتوزيع. مُعرّفات CVE مخصصة لثغرات المنتجات القابلة للتوزيع (برمجيات، برامج "
+    "ثابتة، مكتبات) — الثغرة التي تخص موقع ويب مُحدد ليست عادةً مؤهلة لـ CVE. "
+    "يُفضَّل الإبلاغ عنها مباشرةً لمالك الموقع أو عبر برنامج مكافآت الثغرات الخاص به."
+)
+
 # ─── Suggested CVSS 3.1 starting points per severity (editable, not authoritative) ──
 
 SUGGESTED_CVSS_BY_SEVERITY: dict[str, dict[str, str]] = {

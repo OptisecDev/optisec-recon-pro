@@ -1,7 +1,8 @@
 """
 CVE Submission Pipeline router — turns a scan finding (or a manually entered
 vulnerability) into a locally-stored CVE report draft, following MITRE CNA
-conventions, exportable as a CVE JSON 5.0 record.
+conventions, exportable as a CVE JSON 5.1 record (matches
+cve_pipeline.CVE_JSON_DATA_VERSION — keep this in sync with that constant).
 
 SAFETY NOTICE — read before wiring a "submit" button to anything:
 This router never submits, reserves, or publishes a CVE with MITRE or any
@@ -86,6 +87,13 @@ def _draft_to_dict(row: CveDraft) -> dict:
         "exported_at": row.exported_at.isoformat() if row.exported_at else None,
         "disclaimer_en": DISCLAIMER_EN,
         "disclaimer_ar": DISCLAIMER_AR,
+        # Advisory only, never blocks generation — see
+        # cve_pipeline.HOSTED_WEBSITE_CVE_NOTICE_EN/AR. source_module is only
+        # ever "scan_finding" when create_draft() built this from a URL-based
+        # scan finding (draft_from_finding()), i.e. a hosted website, not a
+        # distributable product.
+        "hosted_website_notice_en": cve_pipeline.HOSTED_WEBSITE_CVE_NOTICE_EN if row.source_module == "scan_finding" else None,
+        "hosted_website_notice_ar": cve_pipeline.HOSTED_WEBSITE_CVE_NOTICE_AR if row.source_module == "scan_finding" else None,
     }
 
 
@@ -247,9 +255,9 @@ async def cve_draft_detail(draft_id: int, user: User = Depends(_user), db: Async
 
 @router.get(
     "/drafts/{draft_id}/export",
-    summary="Export a CVE draft as a CVE JSON 5.0 record",
+    summary="Export a CVE draft as a CVE JSON 5.1 record",
     description=(
-        "Downloads the draft rendered as a CVE JSON 5.0 CVE Record. "
+        "Downloads the draft rendered as a CVE JSON 5.1 CVE Record. "
         "cveId/assignerOrgId are TBD placeholders — no real CVE ID exists until "
         "a CNA actually assigns one, which this tool does not do. " + DISCLAIMER_EN
     ),

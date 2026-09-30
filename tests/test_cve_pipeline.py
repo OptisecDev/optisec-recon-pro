@@ -667,6 +667,59 @@ class TestDraftToDict:
         assert "description" not in item
         assert item["draft_ref"] == row.draft_ref
 
+    def test_hosted_website_notice_present_when_drafted_from_a_scan_finding(self, db):
+        """PRIORITY 2 item 6a: a draft built from a scan finding targets a
+        specific hosted website/URL, never distributable software — the UI
+        must be told this isn't generally CVE-eligible, without blocking
+        generation (create_draft() above already proves generation still
+        succeeds)."""
+        async def go():
+            user = await _seed_user(db)
+            finding = await _seed_finding(db, user.id)
+            async with db() as db_:
+                return await cve_router.create_draft(db_, user=user, payload={}, finding=finding)
+        row = _run(go())
+        d = cve_router._draft_to_dict(row)
+        assert d["hosted_website_notice_en"] is not None
+        assert "not CVE-eligible" in d["hosted_website_notice_en"] or "not distributable software" in d["hosted_website_notice_en"]
+        assert any("؀" <= ch <= "ۿ" for ch in d["hosted_website_notice_ar"])
+
+    def test_hosted_website_notice_absent_for_manual_drafts(self, db):
+        """A manually-entered draft has no known target type (could well be
+        distributable software) — the notice must not be shown."""
+        async def go():
+            user = await _seed_user(db)
+            async with db() as db_:
+                return await cve_router.create_draft(db_, user=user, payload={"title": "A", "description": "d"}, finding=None)
+        row = _run(go())
+        d = cve_router._draft_to_dict(row)
+        assert d["hosted_website_notice_en"] is None
+        assert d["hosted_website_notice_ar"] is None
+
+
+# ── 10. CVE JSON version consistency (button label vs. emitted payload) ────
+
+class TestCveJsonVersionConsistency:
+    def test_data_version_constant_matches_build_cve_json_5_output(self):
+        """PRIORITY 2 item 6b: the export button/UI text and the emitted
+        dataVersion must agree. build_cve_json_5() always emits
+        CVE_JSON_DATA_VERSION — this locks the single source of truth so a
+        future edit to one can't silently diverge from the other again."""
+        draft = dict(title="t", description="d")
+        record = pipeline.build_cve_json_5(draft)
+        assert record["dataVersion"] == pipeline.CVE_JSON_DATA_VERSION
+
+    def test_template_button_label_matches_data_version(self):
+        template_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "web", "templates", "cve_pipeline.html",
+        )
+        with open(template_path, encoding="utf-8") as f:
+            src = f.read()
+        expected = f"CVE JSON {pipeline.CVE_JSON_DATA_VERSION}"
+        assert expected in src
+        assert "CVE JSON 5.0" not in src
+
 
 # ── 9. Safety invariant — no submit-to-MITRE capability exists ─────────────
 

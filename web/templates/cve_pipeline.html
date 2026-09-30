@@ -19,10 +19,14 @@
       <strong class="ie78539534">تنبيه هام / Important Notice:</strong>
       هذه أداة مساعدة لصياغة التقرير فقط — <strong>التقديم الفعلي لـ MITRE يتطلب مراجعة بشرية وحساب CNA معتمد</strong>.
       لا يقوم هذا النظام أبداً بإرسال أي تقرير تلقائياً إلى أي جهة خارجية؛ كل ما يوفره هو توليد مسودة محلية يمكن
-      مراجعتها وتعديلها، ثم تصديرها بصيغة CVE JSON 5.0 القياسية لتقديمها يدوياً عبر حساب CNA معتمد.<br>
+      مراجعتها وتعديلها، ثم تصديرها بصيغة CVE JSON 5.1 القياسية لتقديمها يدوياً عبر حساب CNA معتمد. مُعرّف الثغرة في
+      الملف المُصدَّر هو <code>CVE-TBD-TBD</code> — قيمة مؤقتة فقط؛ يقوم CNA معتمد بتخصيص المُعرّف الحقيقي عند
+      التقديم الفعلي.<br>
       <em>This is a drafting assistant only. Actual submission to MITRE requires human review and an approved CNA
       account. Nothing is ever sent to MITRE or any third party automatically — this tool only generates a local
-      draft you can review, edit, and export as a standard CVE JSON 5.0 record for manual submission.</em>
+      draft you can review, edit, and export as a standard CVE JSON 5.1 record for manual submission. The exported
+      record's <code>cveId</code> is always the placeholder <code>CVE-TBD-TBD</code> — a real CVE ID is assigned
+      by an approved CNA only at actual submission time.</em>
     </div>
   </div>
 </div>
@@ -158,7 +162,8 @@ async function draftFromFinding() {
   });
   const d = await r.json();
   if (r.ok) {
-    el.innerHTML = `<div class="ie6e17958f">تم إنشاء المسودة ${d.draft_ref} / Draft ${d.draft_ref} created.</div>`;
+    el.innerHTML = `<div class="ie6e17958f">تم إنشاء المسودة ${d.draft_ref} / Draft ${d.draft_ref} created.</div>` +
+      (d.hosted_website_notice_en ? `<div class="ie49bd2a6d">ℹ ${d.hosted_website_notice_ar}<br>${d.hosted_website_notice_en}</div>` : '');
     loadCVEDrafts();
   } else {
     el.innerHTML = `<div class="iea7ceb264">${d.error || d.detail || 'Failed to generate draft.'}</div>`;
@@ -178,8 +183,9 @@ async function loadCVEDrafts() {
         ${e.severity ? ` · ${e.severity}` : ''} ${e.product ? ` · ${e.product}` : ''}
       </div>
       <a class="btn btn-secondary btn-sm ied4316970"  href="/api/cve/drafts/${e.id}/export">
-        ⬇ Export CVE JSON 5.0 · تصدير
+        ⬇ Export CVE JSON 5.1 · تصدير
       </a>
+      <div class="ied28d0fca">cveId: <code>CVE-TBD-TBD</code> — placeholder, assigned by a CNA at submission · مؤقت، يخصصه CNA عند التقديم</div>
     </div>`).join('') || '<div class="text-dim">لا توجد مسودات بعد / Queue is empty</div>';
 }
 
