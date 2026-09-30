@@ -52,7 +52,7 @@ def fingerprint_device(ua_string: str) -> dict:
     device_model = device_info.get("model") or "Unknown"
     device_form = _infer_form_factor(os_family, device_brand, ua_string)
 
-    chipset = _guess_chipset(device_brand, ua_string)
+    chipset_info = _guess_chipsets(device_brand, ua_string)
     release_year = _estimate_year(os_family, os_major)
 
     risk_score = _calc_risk(os_family, os_major, browser_family, browser_major)
@@ -75,7 +75,8 @@ def fingerprint_device(ua_string: str) -> dict:
             "engine": _infer_engine(browser_family, ua_string),
         },
         "hardware": {
-            "chipset_family": chipset,
+            "possible_chipsets": chipset_info["possible_chipsets"],
+            "chipset_confirmed": chipset_info["confirmed"],
             "release_year_estimate": release_year,
         },
         "intelligence": _build_intel(os_family, os_major, browser_family, device_brand),
@@ -120,22 +121,32 @@ def _infer_form_factor(os_family: str, brand: str, ua: str) -> str:
     return "Unknown"
 
 
-def _guess_chipset(brand: str, ua: str) -> str:
-    chipsets = CHIPSET_FAMILIES.get(brand or "", [])
-    if chipsets:
-        return chipsets[0]
+_UA_CHIPSET_STRINGS = (
+    ("snapdragon", "Qualcomm Snapdragon"),
+    ("exynos", "Samsung Exynos"),
+    ("dimensity", "MediaTek Dimensity"),
+    ("kirin", "HiSilicon Kirin"),
+)
+
+
+def _guess_chipsets(brand: str, ua: str) -> dict:
+    """Never claims a single confirmed chipset from brand alone -- a brand
+    like Samsung ships multiple chipset families depending on region/model
+    (e.g. the global Galaxy S23 is Snapdragon, not Exynos, despite Samsung
+    using Exynos elsewhere), so a brand match returns every family the brand
+    is known to use, explicitly marked as unconfirmed. Only an explicit
+    chipset name appearing in the UA string itself counts as confirmed."""
     ua_lower = ua.lower()
-    if "snapdragon" in ua_lower:
-        return "Qualcomm Snapdragon"
-    if "exynos" in ua_lower:
-        return "Samsung Exynos"
-    if "dimensity" in ua_lower:
-        return "MediaTek Dimensity"
-    if "kirin" in ua_lower:
-        return "HiSilicon Kirin"
+    for needle, name in _UA_CHIPSET_STRINGS:
+        if needle in ua_lower:
+            return {"possible_chipsets": [name], "confirmed": True}
+
+    chipsets = CHIPSET_FAMILIES.get(brand or "")
+    if chipsets:
+        return {"possible_chipsets": list(chipsets), "confirmed": False}
     if brand == "Apple":
-        return "Apple Silicon (A/M-series)"
-    return "Unknown"
+        return {"possible_chipsets": ["Apple Silicon (A/M-series)"], "confirmed": False}
+    return {"possible_chipsets": [], "confirmed": False}
 
 
 def _estimate_year(os_family: str, major: str) -> str:

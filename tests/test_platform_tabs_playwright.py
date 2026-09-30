@@ -261,7 +261,7 @@ def test_osint_tabs_respond_to_clicks(browser_context):
 
     tab_ids = [
         "tab-phone", "tab-username", "tab-device", "tab-plate",
-        "tab-ip", "tab-cell", "tab-natid", "tab-phonesoc", "tab-domain",
+        "tab-ip", "tab-cell", "tab-phonesoc", "tab-domain",
     ]
     visibility = _visible_tab_ids(page, tab_ids)
     assert visibility["tab-phone"] is True

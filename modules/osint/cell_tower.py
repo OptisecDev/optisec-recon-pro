@@ -1,4 +1,13 @@
-"""Cell Tower Fingerprinting — MCC/MNC database for Iraq + Middle East."""
+"""Carrier / MCC-MNC Lookup — static MCC/MNC reference table for Iraq + Middle East.
+
+Renamed from "Cell Tower Fingerprinting" (2026-09-30 credibility audit): this
+module only matches a (MCC, MNC) pair against a static, hand-maintained table
+of publicly-known carrier codes. It does not query OpenCelliD, Mozilla
+Location Service, or any other real cell-tower database, so it cannot
+identify or geolocate an actual tower. LAC and Cell ID are accepted as input
+and echoed back for the user's own records, but are never used in a lookup —
+there is nothing in this module that resolves them to a location.
+"""
 
 # MCC/MNC database: { "MCC-MNC": { carrier info } }
 MCC_MNC_DB: dict[str, dict] = {
@@ -51,6 +60,12 @@ SIGNAL_QUALITY = {
     range(-130, -100): {"label": "Very Poor", "color": "critical"},
 }
 
+DISCLAIMER = (
+    "Carrier identification from MCC/MNC only — no real tower geolocation. "
+    "LAC and Cell ID are not used in any lookup; they are only echoed back "
+    "from your input."
+)
+
 
 def lookup_cell_tower(mcc: int, mnc: int, lac: int = None, cell_id: int = None,
                       signal_dbm: int = None) -> dict:
@@ -60,6 +75,8 @@ def lookup_cell_tower(mcc: int, mnc: int, lac: int = None, cell_id: int = None,
     signal_info = None
     if signal_dbm is not None:
         signal_info = _analyze_signal(signal_dbm)
+
+    input_echo = _echo_unused_inputs(lac, cell_id)
 
     if not carrier_info:
         # Try to identify country from MCC alone
@@ -74,6 +91,8 @@ def lookup_cell_tower(mcc: int, mnc: int, lac: int = None, cell_id: int = None,
             "carrier": "Unknown carrier",
             "note": f"MCC {mcc}-MNC {mnc} not in database",
             "signal": signal_info,
+            "input_echo": input_echo,
+            "disclaimer": DISCLAIMER,
             "risk_score": 30,
             "risk_label": "LOW",
         }
@@ -86,7 +105,9 @@ def lookup_cell_tower(mcc: int, mnc: int, lac: int = None, cell_id: int = None,
         "found": True,
         **carrier_info,
         "signal": signal_info,
-        "coverage_pattern": _build_coverage_notes(carrier_info, lac, cell_id),
+        "carrier_notes": _build_carrier_notes(carrier_info),
+        "input_echo": input_echo,
+        "disclaimer": DISCLAIMER,
         "risk_score": 15,
         "risk_label": "LOW",
     }
@@ -111,23 +132,28 @@ def _mcc_to_country(mcc: int) -> str:
     return MCC_COUNTRIES.get(mcc, f"Unknown (MCC {mcc})")
 
 
-def _build_coverage_notes(info: dict, lac: int, cell_id: int) -> list:
-    notes = []
+def _build_carrier_notes(info: dict) -> list:
+    """Notes about the carrier itself, derived only from the static MCC/MNC
+    table above -- never from LAC/Cell ID, which this module cannot resolve."""
     carrier = info.get("carrier", "")
     country = info.get("country", "")
     tech = info.get("tech", [])
+    return [
+        f"Carrier: {carrier} ({country})",
+        f"Technologies supported: {', '.join(tech)}",
+    ]
 
-    notes.append(f"Carrier: {carrier} ({country})")
-    notes.append(f"Technologies supported: {', '.join(tech)}")
 
+def _echo_unused_inputs(lac: int, cell_id: int) -> list:
+    """LAC/Cell ID are not resolved to anything real by this module -- echoed
+    back verbatim, explicitly labeled as not part of any real lookup, so the
+    UI never implies a tower was actually located."""
+    echoes = []
     if lac:
-        notes.append(f"LAC {lac} → Local Area Code (identifies cell region)")
+        echoes.append(f"LAC {lac} — received, not used in any real lookup")
     if cell_id:
-        notes.append(f"Cell ID {cell_id} → individual tower within LAC")
-    if country == "Iraq":
-        notes.append("Iraqi cell tower — coverage denser in Baghdad, Basra, Erbil metro areas")
-
-    return notes
+        echoes.append(f"Cell ID {cell_id} — received, not used in any real lookup")
+    return echoes
 
 
 def list_iraq_carriers() -> list:

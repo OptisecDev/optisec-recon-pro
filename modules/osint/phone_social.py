@@ -1,4 +1,16 @@
-"""Phone → Social Accounts OSINT — 5-tier intelligence engine."""
+"""Phone → Social Accounts OSINT — breach intel, reverse lookup, carrier ID, dorks.
+
+T3 (WhatsApp/Telegram/Viber) used to run live HTTP probes and blend the
+response into a "confidence" percentage. Removed 2026-09-30 (credibility
+audit): live-tested against multiple fabricated Iraqi numbers with no real
+accounts behind them, and every one came back with a high "confidence" score
+(e.g. 79% WhatsApp / 70% Telegram) because these platforms' public pages
+render identically regardless of whether the number is actually registered.
+There was no real signal being measured. T3 is now manual-check links only,
+explicitly labeled as unverified. Truecaller (formerly a fourth T3 entry) was
+removed outright: it called `search.truecaller.com`, a hostname that does not
+resolve at all, so it was permanently dead code, not a "no API key" case.
+"""
 
 import asyncio
 import os
@@ -30,12 +42,6 @@ IRAQ_CARRIERS: dict[str, dict] = {
 }
 
 IRAQ_PREFIXES = frozenset(IRAQ_CARRIERS.keys())
-
-# Regional platform adoption rates (%) for confidence blending
-REGIONAL_ADOPTION = {
-    "IQ": {"whatsapp": 85, "telegram": 78, "viber": 35, "facebook": 62, "instagram": 55, "tiktok": 48, "snapchat": 25, "signal": 10},
-    "DEFAULT": {"whatsapp": 60, "telegram": 42, "viber": 18, "facebook": 52, "instagram": 48, "tiktok": 40, "snapchat": 30, "signal": 15},
-}
 
 
 # ── TIER 4 helpers ────────────────────────────────────────────────────────────
@@ -115,7 +121,6 @@ def build_dorks(variations: dict) -> dict:
             f'"{national}" filetype:txt OR filetype:csv',
             f'"{e164}" (leaked OR dump OR breach)',
             f'"{national}" (whatsapp OR telegram OR viber)',
-            f'intext:"{national}" site:truecaller.com',
         ],
         "bing": [
             f'"{national}" site:facebook.com',
@@ -136,143 +141,56 @@ def build_dorks(variations: dict) -> dict:
     }
 
 
-# ── TIER 3: Social Platform HTTP Probes ───────────────────────────────────────
+# ── TIER 3: Manual Verification Links (WhatsApp / Telegram / Viber) ──────────
+#
+# No automated HTTP probing is performed here. It used to be: fetch the
+# platform's public page and score "confidence" from the presence of generic
+# branding/CTA text. That text is present for any syntactically valid phone
+# number whether or not it is registered, so the resulting number was not
+# measuring anything about *this* number -- it was fabricated-looking
+# precision with no real signal behind it. These are now plain links for a
+# human to open and check by hand.
 
-async def _probe_whatsapp(session: aiohttp.ClientSession, variations: dict) -> dict:
+def _manual_link(platform: str, icon: str, url: str, note: str) -> dict:
+    return {
+        "platform": platform,
+        "icon": icon,
+        "url": url,
+        "status": "manual_check_only",
+        "note": note,
+    }
+
+
+def _whatsapp_manual_link(variations: dict) -> dict:
     wa_num = variations.get("whatsapp_format", "")
-    url = f"https://wa.me/{wa_num}"
-    try:
-        async with session.get(url, allow_redirects=True, ssl=False) as resp:
-            body = await resp.text(encoding="utf-8", errors="ignore")
-            conf = 0
-            indicators: list[str] = []
-
-            if resp.status == 200:
-                conf += 30
-                indicators.append("wa.me URL resolved (200 OK)")
-
-            if "WhatsApp" in body:
-                conf += 15
-                indicators.append("WhatsApp branding present")
-
-            if "send message" in body.lower() or "chat" in body.lower():
-                conf += 20
-                indicators.append("Chat CTA detected in page")
-
-            if "og:description" in body:
-                conf += 10
-                indicators.append("OpenGraph metadata found")
-
-            return {
-                "platform": "WhatsApp",
-                "icon": "💬",
-                "url": url,
-                "status_code": resp.status,
-                "confidence": min(conf, 90),
-                "indicators": indicators,
-                "methodology": "wa.me landing page content analysis",
-            }
-    except Exception as e:
-        return {"platform": "WhatsApp", "icon": "💬", "url": url, "confidence": 0,
-                "status": "unreachable", "indicators": [str(e)[:80]]}
+    return _manual_link(
+        "WhatsApp", "💬", f"https://wa.me/{wa_num}",
+        "Manual verification link — not automatically verified. wa.me renders "
+        "the same generic page for any syntactically valid number, registered "
+        "or not; open it yourself to actually attempt a chat.",
+    )
 
 
-async def _probe_telegram(session: aiohttp.ClientSession, variations: dict) -> dict:
+def _telegram_manual_link(variations: dict) -> dict:
     phone_no_plus = variations.get("e164", "").lstrip("+")
-    url = f"https://t.me/+{phone_no_plus}"
-    try:
-        async with session.get(url, allow_redirects=True, ssl=False) as resp:
-            body = await resp.text(encoding="utf-8", errors="ignore")
-            conf = 0
-            indicators: list[str] = []
-
-            if resp.status == 200:
-                conf += 20
-                indicators.append("t.me URL resolved (200 OK)")
-
-            if "tgme_page_context_link" in body or "tg://resolve" in body:
-                conf += 30
-                indicators.append("Telegram profile context link found")
-
-            if "og:image" in body and "telegram" in body.lower():
-                conf += 15
-                indicators.append("Telegram OG image metadata")
-
-            if "tgme_widget_message" in body:
-                conf += 20
-                indicators.append("Telegram widget message present")
-
-            return {
-                "platform": "Telegram",
-                "icon": "✈️",
-                "url": url,
-                "status_code": resp.status,
-                "confidence": min(conf, 88),
-                "indicators": indicators,
-                "methodology": "t.me phone deep-link response analysis",
-            }
-    except Exception as e:
-        return {"platform": "Telegram", "icon": "✈️", "url": url, "confidence": 0,
-                "status": "unreachable", "indicators": [str(e)[:80]]}
+    return _manual_link(
+        "Telegram", "✈️", f"https://t.me/+{phone_no_plus}",
+        "Manual verification link — not automatically verified. Telegram has "
+        "no public API to check phone registration, and the '+' prefix in "
+        "t.me links is normally reserved for invite links, so this may not "
+        "resolve to a profile at all. Try adding the number as a contact in "
+        "the Telegram app for a real check.",
+    )
 
 
-async def _probe_truecaller(session: aiohttp.ClientSession, variations: dict) -> dict:
-    national = variations.get("national", "")
-    url = f"https://search.truecaller.com/v2/search?q={urllib.parse.quote(national)}&type=4&countryCode=IQ"
-    try:
-        async with session.get(url, ssl=False) as resp:
-            conf = 0
-            name_hint = ""
-            indicators: list[str] = []
-
-            if resp.status == 200:
-                try:
-                    data = await resp.json()
-                    if data.get("data"):
-                        conf = 78
-                        name_hint = (data.get("data") or [{}])[0].get("name", "")
-                        indicators.append("Truecaller record found")
-                    else:
-                        conf = 10
-                        indicators.append("Truecaller responded — no record")
-                except Exception:
-                    conf = 5
-            elif resp.status == 429:
-                indicators.append("Rate limited by Truecaller")
-
-            return {
-                "platform": "Truecaller",
-                "icon": "📋",
-                "url": url,
-                "status_code": resp.status,
-                "confidence": conf,
-                "name_hint": name_hint,
-                "indicators": indicators,
-                "methodology": "Truecaller public search API",
-            }
-    except Exception as e:
-        return {"platform": "Truecaller", "icon": "📋", "confidence": 0,
-                "status": "unreachable", "indicators": [str(e)[:80]]}
-
-
-async def _probe_viber(session: aiohttp.ClientSession, variations: dict) -> dict:
-    phone = variations.get("whatsapp_format", "")
-    url = f"https://chats.viber.com/api/getAccount?id={phone}"
-    try:
-        async with session.get(url, ssl=False) as resp:
-            conf = 18 if resp.status == 200 else 0
-            return {
-                "platform": "Viber",
-                "icon": "📳",
-                "url": url,
-                "status_code": resp.status,
-                "confidence": conf,
-                "indicators": ["Viber chat API endpoint probed"],
-                "methodology": "Viber chat API pattern probe",
-            }
-    except Exception as e:
-        return {"platform": "Viber", "icon": "📳", "confidence": 0,
-                "status": "unreachable", "indicators": [str(e)[:80]]}
+def _viber_manual_link(variations: dict) -> dict:
+    e164 = variations.get("e164", "")
+    return _manual_link(
+        "Viber", "📳", f"viber://chat?number={urllib.parse.quote(e164)}",
+        "Manual verification link — not automatically verified. Opens Viber "
+        "(if installed) to start a chat; there is no public web API to check "
+        "phone registration.",
+    )
 
 
 def _offline_platform(platform: str, icon: str, note: str) -> dict:
@@ -411,40 +329,32 @@ def _opencnam_patterns(variations: dict, carrier: Optional[dict]) -> dict:
 
 # ── Risk Scorer ───────────────────────────────────────────────────────────────
 
-def _compute_risk(social: list[dict], hibp: dict, carrier: Optional[dict], iraqi: bool) -> int:
-    active = [p for p in social if p.get("confidence", 0) >= 40]
-    exposure_score = min(len(active) * 12, 48)
-    breach_score   = min((hibp.get("breach_count", 0) + hibp.get("paste_count", 0)) * 15, 30)
-    carrier_score  = 10 if carrier else 0
-    country_score  = 12 if iraqi else 5
-    return min(exposure_score + breach_score + carrier_score + country_score, 100)
+def _compute_risk(hibp: dict, carrier: Optional[dict], iraqi: bool) -> int:
+    """No social-platform component: WhatsApp/Telegram/Viber are manual-check
+    links only (see the T3 section docstring above) and contribute no
+    automated signal, so they are deliberately excluded from this score."""
+    breach_score  = min((hibp.get("breach_count", 0) + hibp.get("paste_count", 0)) * 15, 30)
+    carrier_score = 10 if carrier else 0
+    country_score = 12 if iraqi else 5
+    return min(breach_score + carrier_score + country_score, 100)
 
 
 # ── Main Entry Point ──────────────────────────────────────────────────────────
 
 async def phone_social_lookup(raw: str) -> dict:
-    """Run full 5-tier phone-to-social OSINT investigation."""
+    """Run the phone-to-social OSINT investigation."""
     variations = generate_variations(raw)
     if not variations:
         return {"error": "Cannot parse phone number", "input": raw}
 
     carrier = detect_carrier(variations)
     iraqi   = is_iraqi(variations)
-    region  = "IQ" if iraqi else "DEFAULT"
-    adoption = REGIONAL_ADOPTION[region]
 
     connector = aiohttp.TCPConnector(limit=20, ssl=False)
     hdrs = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,*/*;q=0.9"}
 
     async with aiohttp.ClientSession(headers=hdrs, timeout=TIMEOUT, connector=connector) as sess:
-        (
-            wa_r, tg_r, vi_r, tc_r,
-            hibp_r, nv_r, aa_r,
-        ) = await asyncio.gather(
-            _probe_whatsapp(sess, variations),
-            _probe_telegram(sess, variations),
-            _probe_viber(sess, variations),
-            _probe_truecaller(sess, variations),
+        hibp_r, nv_r, aa_r = await asyncio.gather(
             _check_hibp(sess, variations),
             _check_numverify(sess, variations.get("e164", "")),
             _check_abstractapi(sess, variations.get("e164", "")),
@@ -456,6 +366,12 @@ async def phone_social_lookup(raw: str) -> dict:
             return {"platform": platform, "icon": icon, "confidence": 0, "status": "error", "indicators": []}
         return r
 
+    manual_links = [
+        _whatsapp_manual_link(variations),
+        _telegram_manual_link(variations),
+        _viber_manual_link(variations),
+    ]
+
     # Offline-only platforms (no public lookup possible without auth)
     offline_platforms = [
         _offline_platform("Signal",    "🔒", "Signal has no public phone lookup API"),
@@ -465,34 +381,7 @@ async def phone_social_lookup(raw: str) -> dict:
         _offline_platform("TikTok",    "🎵", "TikTok phone lookup requires authentication"),
     ]
 
-    # Build probed platform list and blend with regional adoption rates
-    probed = [
-        _safe(wa_r, "WhatsApp",   "💬"),
-        _safe(tg_r, "Telegram",   "✈️"),
-        _safe(vi_r, "Viber",      "📳"),
-        _safe(tc_r, "Truecaller", "📋"),
-    ]
-
-    for p in probed:
-        pkey = p["platform"].lower()
-        base = adoption.get(pkey, 30)
-        raw_conf = p.get("confidence", 0)
-        if raw_conf > 0:
-            # Blend: 60% HTTP signal + 40% regional stats
-            p["confidence"] = min(int(raw_conf * 0.6 + base * 0.4), 95)
-        else:
-            # Assign regional base when check was inconclusive (not an error/unreachable)
-            if p.get("status") not in ("unreachable", "error"):
-                p["regional_base_confidence"] = base
-                p["confidence"] = 0
-
-    social_all = probed + offline_platforms
-
-    # Add regional adoption hint to offline platforms
-    for p in social_all:
-        pkey = p["platform"].lower()
-        if pkey in adoption:
-            p["regional_adoption_pct"] = adoption[pkey]
+    social_all = manual_links + offline_platforms
 
     hibp   = _safe(hibp_r,  "HIBP",        "")
     nv     = _safe(nv_r,    "NumVerify",   "")
@@ -500,7 +389,7 @@ async def phone_social_lookup(raw: str) -> dict:
     cnam   = _opencnam_patterns(variations, carrier)
     dorks  = build_dorks(variations)
 
-    risk = _compute_risk(social_all, hibp, carrier, iraqi)
+    risk = _compute_risk(hibp, carrier, iraqi)
 
     return {
         "input": raw,
@@ -517,7 +406,7 @@ async def phone_social_lookup(raw: str) -> dict:
             "opencnam": cnam,
         },
 
-        # T3
+        # T3 — manual-check links only, see module docstring
         "social_platforms": social_all,
 
         # T4
@@ -530,8 +419,7 @@ async def phone_social_lookup(raw: str) -> dict:
         "risk_score": risk,
         "risk_label": "HIGH" if risk >= 65 else "MEDIUM" if risk >= 35 else "LOW",
         "summary": {
-            "platforms_probed": len(probed),
-            "platforms_with_signal": sum(1 for p in probed if p.get("confidence", 0) >= 40),
+            "manual_check_links": len(manual_links),
             "breach_hits": hibp.get("breach_count", 0) + hibp.get("paste_count", 0),
             "carrier_identified": bool(carrier),
             "dork_queries": sum(len(v) for v in dorks.values()),

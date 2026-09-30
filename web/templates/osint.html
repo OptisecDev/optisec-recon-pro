@@ -10,8 +10,7 @@
   <button class="btn btn-secondary" id="tab-btn-device"    data-onclick="switchTab" data-onclick-args='["device"]'>💻 Device</button>
   <button class="btn btn-secondary" id="tab-btn-plate"     data-onclick="switchTab" data-onclick-args='["plate"]'>🚗 Plate</button>
   <button class="btn btn-secondary" id="tab-btn-ip"        data-onclick="switchTab" data-onclick-args='["ip"]'>🌐 IP/Geo</button>
-  <button class="btn btn-secondary" id="tab-btn-cell"      data-onclick="switchTab" data-onclick-args='["cell"]'>📡 Cell Tower</button>
-  <button class="btn btn-secondary" id="tab-btn-natid"     data-onclick="switchTab" data-onclick-args='["natid"]'>🪪 National ID</button>
+  <button class="btn btn-secondary" id="tab-btn-cell"      data-onclick="switchTab" data-onclick-args='["cell"]'>📡 Carrier Lookup</button>
   <button class="btn btn-secondary" id="tab-btn-domain"    data-onclick="switchTab" data-onclick-args='["domain"]'>🔍 Domain OSINT</button>
   <button class="btn btn-secondary" id="tab-btn-phonesoc"  data-onclick="switchTab" data-onclick-args='["phonesoc"]'>📲 Phone → Social</button>
 </div>
@@ -113,7 +112,7 @@
         <div>• Device brand & model</div>
         <div>• OS family & version</div>
         <div>• Browser engine (Blink/WebKit/Gecko)</div>
-        <div>• Chipset family estimate</div>
+        <div>• Possible chipset families (not confirmed unless named in the UA string)</div>
         <div>• Release year estimate</div>
         <div>• Form factor (phone/tablet/desktop)</div>
         <div>• Security risk score (outdated OS?)</div>
@@ -191,8 +190,8 @@
     <div class="card">
       <div class="card-header">
         <div>
-          <div class="card-title">📡 Cell Tower Fingerprinting</div>
-          <div class="card-subtitle">MCC/MNC → carrier · LAC/Cell ID analysis · signal quality</div>
+          <div class="card-title">📡 Carrier / MCC-MNC Lookup</div>
+          <div class="card-subtitle">MCC/MNC → carrier name (static reference table) · signal quality</div>
         </div>
       </div>
       <div class="form-group">
@@ -204,11 +203,11 @@
         <input type="number" id="cell-mnc" placeholder="20 (Zain Iraq)" />
       </div>
       <div class="form-group">
-        <label>LAC (Location Area Code) — optional</label>
+        <label>LAC (Location Area Code) — optional, not looked up</label>
         <input type="number" id="cell-lac" placeholder="e.g. 12345" />
       </div>
       <div class="form-group">
-        <label>Cell ID — optional</label>
+        <label>Cell ID — optional, not looked up</label>
         <input type="number" id="cell-cid" placeholder="e.g. 98765" />
       </div>
       <div class="form-group">
@@ -221,7 +220,10 @@
         <button class="btn btn-secondary btn-sm" data-onclick="setCell" data-onclick-args='[418,40]'>Korek</button>
         <button class="btn btn-secondary btn-sm" data-onclick="loadIraqCarriers">List Iraq Carriers</button>
       </div>
-      <button class="btn btn-primary" data-onclick="runCell" id="cell-btn">🔍 Lookup Tower</button>
+      <button class="btn btn-primary" data-onclick="runCell" id="cell-btn">🔍 Lookup Carrier</button>
+      <div class="alert alert-info ie0221fac8" >
+        ⚠️ Carrier identification from MCC/MNC only — no real tower geolocation. LAC and Cell ID are not used in any lookup.
+      </div>
       <div id="cell-result" class="ieb0043ef4"></div>
     </div>
     <div class="card">
@@ -231,49 +233,11 @@
   </div>
 </div>
 
-<!-- ── NATIONAL ID ── -->
-<div id="tab-natid" class="osint-tab is-hidden" >
-  <div class="grid-2 ie2a4dac26" >
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <div class="card-title">🪪 Iraqi National ID Intelligence</div>
-          <div class="card-subtitle">Format validation · province · year extraction</div>
-        </div>
-      </div>
-      <div class="form-group">
-        <label>National ID (12 digits)</label>
-        <input type="text" id="natid-input" placeholder="100012345678" data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["runNatID"]' />
-        <div class="ief13248b8">
-          Format: PP YY SSSSSS CC (province · year · sequence · check)
-        </div>
-      </div>
-      <div class="ie60e30436">
-        <button class="btn btn-secondary btn-sm" data-onclick="setNatID" data-onclick-args='["100012345678"]'>Baghdad Example</button>
-        <button class="btn btn-secondary btn-sm" data-onclick="setNatID" data-onclick-args='["200099876543"]'>Basra Example</button>
-        <button class="btn btn-secondary btn-sm" data-onclick="setNatID" data-onclick-args='["350015678901"]'>Erbil Example</button>
-      </div>
-      <button class="btn btn-primary" data-onclick="runNatID" id="natid-btn">🔍 Analyze ID</button>
-      <div class="alert alert-info ie0221fac8" >
-        ⚠️ Metadata extraction only — no real database lookup. For investigative use.
-      </div>
-      <div id="natid-result" class="ie002535c2"></div>
-    </div>
-    <div class="card">
-      <div class="card-header"><div class="card-title">🏛️ Province Codes</div></div>
-      <div class="iec56c0df1">
-        <div><span class="iebb2b0e55">10-12</span> → Baghdad &nbsp; <span class="iebb2b0e55">20</span> → Basra</div>
-        <div><span class="iebb2b0e55">30</span> → Nineveh &nbsp; <span class="iebb2b0e55">35</span> → Erbil</div>
-        <div><span class="iebb2b0e55">36</span> → Sulaymaniyah &nbsp; <span class="iebb2b0e55">37</span> → Duhok</div>
-        <div><span class="iebb2b0e55">40</span> → Kirkuk &nbsp; <span class="iebb2b0e55">50</span> → Diyala</div>
-        <div><span class="iebb2b0e55">60</span> → Babil &nbsp; <span class="iebb2b0e55">65</span> → Karbala</div>
-        <div><span class="iebb2b0e55">70</span> → Najaf &nbsp; <span class="iebb2b0e55">75</span> → Qadisiyyah</div>
-        <div><span class="iebb2b0e55">85</span> → Dhi Qar &nbsp; <span class="iebb2b0e55">90</span> → Maysan</div>
-        <div><span class="iebb2b0e55">95</span> → Saladin &nbsp; <span class="iebb2b0e55">97</span> → Anbar</div>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- National ID tab removed deliberately before launch (2026-09-30 credibility
+     audit): the province/year/sequence/check-digit layout it decoded was an
+     unverified guess at the real NCCID format, not a confirmed spec, so it
+     produced a confident-looking "Issued in <province>" result for identity
+     documents from nothing but 12 digits and a static province table. -->
 
 <!-- ── PHONE → SOCIAL ACCOUNTS ── -->
 <div id="tab-phonesoc" class="osint-tab is-hidden" >
@@ -282,7 +246,7 @@
       <div class="card-header">
         <div>
           <div class="card-title">📲 Phone → Social Accounts OSINT</div>
-          <div class="card-subtitle">5-Tier intelligence: breaches · carrier · social presence · dorks</div>
+          <div class="card-subtitle">Breaches · carrier · manual-check links · dorks</div>
         </div>
       </div>
       <div class="form-group">
@@ -298,7 +262,7 @@
         <button class="btn btn-secondary btn-sm" data-onclick="fillPhoneSample" data-onclick-args='["+9647801234567"]'>Asiacell Sample</button>
         <button class="btn btn-secondary btn-sm" data-onclick="fillPhoneSample" data-onclick-args='["+9647501234567"]'>Korek Sample</button>
       </div>
-      <button class="btn btn-primary" id="ps-btn" data-onclick="runPhoneSocial">🔍 Run 5-Tier OSINT</button>
+      <button class="btn btn-primary" id="ps-btn" data-onclick="runPhoneSocial">🔍 Run Phone OSINT</button>
       <div class="progress-bar ie59058f2b is-hidden" id="ps-progress" ><div class="progress-fill ieeedc800b" ></div></div>
       <div id="ps-result" class="ieb0043ef4"></div>
     </div>
@@ -307,7 +271,7 @@
       <div class="ie7aafa739">
         <div><strong class="ieb5d51d24">T1 — Breach Intel</strong> · HaveIBeenPwned v3 · Paste DB</div>
         <div><strong class="ie53ea3ac0">T2 — Reverse Lookup</strong> · NumVerify · AbstractAPI · OpenCNAM</div>
-        <div><strong class="iebb2b0e55">T3 — Social Detection</strong> · WhatsApp · Telegram · Viber · Truecaller</div>
+        <div><strong class="iebb2b0e55">T3 — Manual Check Links</strong> · WhatsApp · Telegram · Viber (not automatically verified)</div>
         <div><strong class="iee42055b6">T4 — Carrier Intel</strong> · Zain · Asiacell · Korek · Earthlink · MNP</div>
         <div><strong class="ieeed815a6">T5 — OSINT Dorks</strong> · Google · Bing · Pastebin · GitHub patterns</div>
         <hr class="ie587baaaa">
@@ -512,7 +476,7 @@ async function runDevice() {
         ${infoRow('OS', `${d.os?.family} ${d.os?.version}`)}
         ${infoRow('Browser', `${d.browser?.family} ${d.browser?.version}`)}
         ${infoRow('Browser Engine', d.browser?.engine)}
-        ${infoRow('Chipset Family', d.hardware?.chipset_family)}
+        ${infoRow(d.hardware?.chipset_confirmed ? 'Chipset (confirmed)' : 'Possible Chipsets (not confirmed)', (d.hardware?.possible_chipsets||[]).join(' / ') || 'Unknown')}
         ${infoRow('Release Year Est.', d.hardware?.release_year_estimate)}
         ${infoRow('Risk Score', `${d.risk_score}/100`)}
         ${d.intelligence?.length ? `<div class="ied4316970">${d.intelligence.map(n=>`<div class="alert alert-info ie45e0aaf1" >💡 ${esc(n)}</div>`).join('')}</div>` : ''}
@@ -617,17 +581,17 @@ async function runCell() {
       <div class="osint-result-card">
         <div class="ie546e10f1">
           <div class="ie2e5190f6">${esc(d.carrier||d.country)}</div>
-          <span class="badge badge-${d.found?'low':'medium'}">${d.found?'IDENTIFIED':'UNKNOWN'}</span>
+          <span class="badge badge-${d.found?'low':'medium'}">${d.found?'CARRIER MATCHED':'UNKNOWN'}</span>
         </div>
         ${infoRow('Country', d.country)}
         ${infoRow('Carrier', d.carrier||'Unknown')}
         ${d.brand ? infoRow('Brand', d.brand) : ''}
         ${d.tech ? infoRow('Technologies', (d.tech||[]).join(', ')) : ''}
         ${infoRow('MCC', d.mcc)} ${infoRow('MNC', d.mnc)}
-        ${d.lac ? infoRow('LAC', d.lac) : ''}
-        ${d.cell_id ? infoRow('Cell ID', d.cell_id) : ''}
         ${sigInfo ? `<div class="info-row"><span class="info-label">Signal Quality</span><span class="badge badge-${sev(sigInfo.color)}">${esc(sigInfo.label)} (${esc(String(sigInfo.dbm))} dBm)</span></div>` : ''}
-        ${(d.coverage_pattern||[]).map(n=>`<div class="alert alert-info ie4c704819" >• ${esc(n)}</div>`).join('')}
+        ${(d.carrier_notes||[]).map(n=>`<div class="alert alert-info ie4c704819" >• ${esc(n)}</div>`).join('')}
+        ${(d.input_echo||[]).map(n=>`<div class="alert alert-info ie0221fac8" >ℹ️ ${esc(n)}</div>`).join('')}
+        ${d.disclaimer ? `<div class="ie360a011f">${esc(d.disclaimer)}</div>` : ''}
       </div>`;
   } catch(e) {
     document.getElementById('cell-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
@@ -645,39 +609,6 @@ async function loadIraqCarriers() {
         <span class="iefcb79f64">${(c.tech||[]).join('/')}</span>
       </div>`).join('') || '<div class="text-dim">Loading…</div>';
   } catch(e) {}
-}
-
-// ── National ID ────────────────────────────────────────────────────────────────
-function setNatID(id) { document.getElementById('natid-input').value = id; }
-
-async function runNatID() {
-  const id = document.getElementById('natid-input').value.trim();
-  if (!id) return;
-  showLoading('natid-btn', 'natid-result');
-  try {
-    const d = await API.post('/api/osint/national-id', {id});
-    if (!d.valid) {
-      document.getElementById('natid-result').innerHTML = `<div class="alert alert-error">${esc(d.error||'Invalid National ID')}</div>`;
-    } else {
-      document.getElementById('natid-result').innerHTML = `
-        <div class="osint-result-card">
-          <div class="ie546e10f1">
-            <div class="ie8afdb7d7">${esc(d.formatted)}</div>
-            <span class="badge badge-low">VALID FORMAT</span>
-          </div>
-          ${infoRow('Province', `${d.province} (${d.province_arabic||''})`)}
-          ${infoRow('Region', d.region)}
-          ${infoRow('Reg. Year Estimate', d.registration_year_estimate)}
-          ${infoRow('Sequence', d.sequence_number)}
-          ${infoRow('Check Digits', d.check_digits)}
-          ${(d.notes||[]).map(n=>`<div class="alert alert-info ie4c704819" >• ${esc(n)}</div>`).join('')}
-          <div class="ie360a011f">${esc(d.disclaimer)}</div>
-        </div>`;
-    }
-  } catch(e) {
-    document.getElementById('natid-result').innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
-  }
-  stopLoading('natid-btn');
 }
 
 // ── Domain OSINT ───────────────────────────────────────────────────────────────
@@ -742,29 +673,23 @@ async function runDomain() {
 }
 
 // ── Phone → Social OSINT ──────────────────────────────────────────────────────
-function confBar(pct, color) {
-  const col = pct >= 65 ? '#ff4d4d' : pct >= 40 ? '#ffa000' : pct >= 20 ? '#7ec8e3' : 'var(--border)';
-  return `<div class="ie1dce676a">
-    <div class="ie5f88b8e1">
-      <div data-dyn-style="height:100%;width:${pct}%;background:${col};transition:width .4s ease;border-radius:3px"></div>
-    </div>
-    <span data-dyn-style="font-size:11px;font-weight:700;color:${col};min-width:34px">${pct}%</span>
-  </div>`;
-}
-
+// No confidence bar here: T3 platforms are either a manual-check link (no
+// automated verification at all) or an honestly-static auth_required stub.
+// A percentage bar next to a phone number implies a measured signal neither
+// case actually has.
 function platformCard(p) {
-  const conf = p.confidence || 0;
-  const rb = p.regional_adoption_pct ? `<span class="ie3122d8b0"> (regional: ${p.regional_adoption_pct}%)</span>` : '';
-  const indicators = (p.indicators||[]).map(i=>`<div class="ieb6b2d31c">• ${esc(i)}</div>`).join('');
   const noteEl = p.note ? `<div class="ie855fc9db">ℹ️ ${esc(p.note)}</div>` : '';
   const urlEl  = p.url ? `<a href="${esc(p.url)}" target="_blank" class="ie8f899454">${esc(p.url)}</a>` : '';
+  const isManual = p.status === 'manual_check_only';
+  const badge = isManual
+    ? '<span class="ie53ea3ac0">MANUAL CHECK ONLY</span>'
+    : `<span class="ied605eae1">${esc((p.status||'UNAVAILABLE').toUpperCase())}</span>`;
   return `<div class="ie254cbf7c">
     <span class="iedb30df31">${esc(p.icon||'')}</span>
     <div class="ie71202d21">${esc(p.platform)}</div>
-    ${confBar(conf)}
-    <div class="ied213d0fb">${conf>=65?'<span class="ieb5d51d24">LIKELY</span>':conf>=40?'<span class="ie53ea3ac0">POSSIBLE</span>':'<span class="ied605eae1">UNKNOWN</span>'}</div>
+    <div class="ied213d0fb">${badge}</div>
   </div>
-  ${indicators || noteEl || urlEl ? `<div class="ie8cdad1ce">${indicators}${noteEl}${urlEl}</div>` : ''}`;
+  ${noteEl || urlEl ? `<div class="ie8cdad1ce">${noteEl}${urlEl}</div>` : ''}`;
 }
 
 async function runPhoneSocial() {
@@ -776,7 +701,7 @@ async function runPhoneSocial() {
   const prog = document.getElementById('ps-progress');
   btn.disabled = true;
   optisecSetVisible(prog, true, 'block');
-  res.innerHTML = '<div class="iebb2b0e55"><span class="spinner"></span> Running 5-tier OSINT analysis…</div>';
+  res.innerHTML = '<div class="iebb2b0e55"><span class="spinner"></span> Running phone OSINT analysis…</div>';
 
   try {
     const d = await API.post('/api/osint/phone-social', {number});
@@ -802,7 +727,7 @@ async function runPhoneSocial() {
         </div>
       </div>
       ${infoRow('Iraqi Number', d.is_iraqi_number ? '🇮🇶 Yes' : 'No')}
-      ${infoRow('Platforms w/ Signal', `${sum.platforms_with_signal} / ${sum.platforms_probed} probed`)}
+      ${infoRow('Manual Check Links', `${sum.manual_check_links} (not automatically verified)`)}
       ${infoRow('Breach Hits', sum.breach_hits > 0 ? `⚠️ ${sum.breach_hits}` : '✅ None detected')}
       ${infoRow('Carrier', carrier ? `${carrier.name} (${carrier.mcc_mnc})` : 'Not identified')}
       ${infoRow('Dork Queries', `${sum.dork_queries} patterns generated`)}
@@ -870,11 +795,11 @@ async function runPhoneSocial() {
     }
     html += '</div>';
 
-    // ── T3: Social Platforms ──
+    // ── T3: Manual Check Links ──
     html += `<div class="osint-result-card iefa3e1c7d" >
-      <div class="ie285ba42e">🟢 T3 — Social Platform Confidence</div>
+      <div class="ie285ba42e">🟢 T3 — Manual Check Links</div>
       <div class="ie07f0b52f">
-        Confidence = HTTP probe signal (60%) + regional adoption rate (40%). Bars show likelihood of presence.
+        These are not automatically verified — none of these platforms expose a public way to confirm whether a number has an account. Open the links yourself.
       </div>
       ${social.map(platformCard).join('')}
     </div>`;

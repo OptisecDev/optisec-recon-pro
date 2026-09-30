@@ -158,18 +158,12 @@ async def osint_iraq_carriers(user: User = Depends(_user)):
     return JSONResponse({"carriers": list_iraq_carriers()})
 
 
-# ── National ID Intelligence ───────────────────────────────────────────────────
-
-@router.post("/api/osint/national-id")
-async def osint_national_id(request: Request, user: User = Depends(_user)):
-    data = await request.json()
-    nid = data.get("id", "").strip()
-    if not nid:
-        raise HTTPException(400, "National ID is required")
-
-    from modules.osint.national_id import analyze_national_id
-    result = await asyncio.to_thread(analyze_national_id, nid)
-    return JSONResponse(result)
+# National ID Intelligence was removed deliberately before launch: the field
+# layout it claimed to decode (province/year/sequence/check digits) was an
+# undocumented, unverified guess at the real NCCID format, not a confirmed
+# spec -- so every syntactically-valid 12-digit input produced a confident
+# "Issued in <province>" result with no real identity database behind it.
+# See the OSINT credibility audit (2026-09-30) for the full writeup.
 
 
 # ── Phone → Social Accounts OSINT ─────────────────────────────────────────────
