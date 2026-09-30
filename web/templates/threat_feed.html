@@ -148,7 +148,7 @@
 </div>
 
 <!-- THREAT MAP TAB -->
-<div id="tab-map" class="iecb458930">
+<div id="tab-map" class="is-hidden">
   <div class="tf-card">
     <div class="ie57d669d7">
       <h3>Global Threat Map — Live Attack Origins</h3>
@@ -204,7 +204,7 @@
 </div>
 
 <!-- CAMPAIGNS TAB -->
-<div id="tab-campaigns" class="iecb458930">
+<div id="tab-campaigns" class="is-hidden">
   {% for camp in campaigns %}
   <div class="campaign-card camp-{{ camp.status }}">
     <div class="ie5ad71ab9">
@@ -247,7 +247,7 @@
 </div>
 
 <!-- FEED SOURCES TAB -->
-<div id="tab-sources" class="iecb458930">
+<div id="tab-sources" class="is-hidden">
   <div class="tf-card">
     <h3 class="ie8e86974b">Intelligence Feed Sources</h3>
     {% for src in feed.feed_sources %}
@@ -272,7 +272,7 @@
 </div>
 
 <!-- SUBMIT IOC TAB -->
-<div id="tab-submit" class="iecb458930">
+<div id="tab-submit" class="is-hidden">
   <div class="grid grid-2">
     <div class="submit-panel">
       <h3 class="ieb3c688e0">Submit IOC to Global Feed</h3>
@@ -322,7 +322,7 @@
 </div>
 
 <!-- THREAT SHARING TAB -->
-<div id="tab-sharing" class="iecb458930">
+<div id="tab-sharing" class="is-hidden">
   <div class="tf-card iedbfdd5b9" >
     <div class="ieadafa060">
       <span class="iee5e6f834">⚠️</span>
@@ -369,7 +369,7 @@
 <script nonce="{{ request.state.csp_nonce }}">
 function showTab(t) {
   ['feed','map','campaigns','sources','submit','sharing'].forEach(id => {
-    document.getElementById('tab-'+id).style.display = id===t?'':'none';
+    optisecSetVisible(document.getElementById('tab-'+id), id===t);
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',['feed','map','campaigns','sources','submit','sharing'][i]===t));
   if (t === 'sharing') { loadSharingStatus(); loadLocalIocs(); loadShareHistory(); }

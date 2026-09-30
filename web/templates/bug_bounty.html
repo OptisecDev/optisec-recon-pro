@@ -12,11 +12,11 @@
 </div>
 
 <!-- ══ Scope Modal ══════════════════════════════════════════════════════════ -->
-<div id="scope-modal" class="ie50240f0f" data-onclick="closeModalIfBackdrop" data-onclick-event>
+<div id="scope-modal" class="ie50240f0f is-hidden" data-onclick="closeModalIfBackdrop" data-onclick-event>
   <div class="ieec1b89ff">
     <!-- Modal Header -->
     <div class="ie5c58c4c6">
-      <img id="modal-logo" src="" alt="" class="ie94afd63e" data-onerror="hideImgOnError" />
+      <img id="modal-logo" src="" alt="" class="ie94afd63e is-hidden" data-onerror="hideImgOnError" />
       <div class="ie89bd09bd">
         <div id="modal-name" class="ie6bd33ad2"></div>
         <div id="modal-state-row" class="iefda9df9d"></div>
@@ -104,7 +104,7 @@
 </div>
 
 <!-- ══ Bugcrowd Tab ═════════════════════════════════════════════════════════ -->
-<div id="tab-bugcrowd" class="iecb458930">
+<div id="tab-bugcrowd" class="is-hidden">
   <div class="card ie8e86974b" >
     <div class="card-header">
       <div>
@@ -128,7 +128,7 @@
 </div>
 
 <!-- ══ Intigriti Tab ════════════════════════════════════════════════════════ -->
-<div id="tab-intigriti" class="iecb458930">
+<div id="tab-intigriti" class="is-hidden">
   <div class="card">
     <div class="card-header">
       <div>
@@ -143,7 +143,7 @@
 </div>
 
 <!-- ══ CVE Pipeline Tab ═════════════════════════════════════════════════════ -->
-<div id="tab-cve" class="iecb458930">
+<div id="tab-cve" class="is-hidden">
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header"><div class="card-title">🔍 NVD CVE Search</div></div>
@@ -162,7 +162,7 @@
 </div>
 
 <!-- ══ Submit Report Tab ════════════════════════════════════════════════════ -->
-<div id="tab-submit" class="iecb458930">
+<div id="tab-submit" class="is-hidden">
   <div class="card ie403688b7" >
     <div class="card-header"><div class="card-title">📤 Submit Vulnerability Report</div></div>
     <div class="form-group">
@@ -219,7 +219,7 @@ let _modalTarget = '';
 // ── Tab switching ──────────────────────────────────────────────────────────
 function showTab(name) {
   ['hackerone','bugcrowd','intigriti','cve','submit'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+    optisecSetVisible(document.getElementById(`tab-${t}`), t === name);
     const btn = document.getElementById(`tab-btn-${t}`);
     if (btn) btn.className = t === name ? 'btn btn-primary' : 'btn btn-secondary';
   });
@@ -233,8 +233,8 @@ function openScopeModal(handle) {
 
   // Header
   const logo = document.getElementById('modal-logo');
-  if (p.logo) { logo.src = p.logo; logo.style.display = ''; }
-  else logo.style.display = 'none';
+  logo.src = p.logo || '';
+  optisecSetVisible(logo, !!p.logo);
   document.getElementById('modal-name').textContent = p.name || handle;
 
   // State badges
@@ -304,11 +304,11 @@ function openScopeModal(handle) {
   // Footer link
   document.getElementById('modal-h1-link').href = p.url || '#';
 
-  document.getElementById('scope-modal').style.display = '';
+  optisecSetVisible(document.getElementById('scope-modal'), true);
 }
 
 function closeScopeModal() {
-  document.getElementById('scope-modal').style.display = 'none';
+  optisecSetVisible(document.getElementById('scope-modal'), false);
 }
 
 function closeModalIfBackdrop(evt) {

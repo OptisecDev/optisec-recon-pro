@@ -67,7 +67,7 @@
 </div>
 
 <!-- Encrypt/Decrypt -->
-<div id="tab-encrypt" class="iecb458930">
+<div id="tab-encrypt" class="is-hidden">
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header"><div class="card-title">🔒 Encrypt Data</div></div>
@@ -102,7 +102,7 @@
 </div>
 
 <!-- Crypto Assessment -->
-<div id="tab-assess" class="iecb458930">
+<div id="tab-assess" class="is-hidden">
   <div class="card ie3e9d9c4c" >
     <div class="card-header">
       <div class="card-title">🔍 Quantum Vulnerability Assessment</div>
@@ -130,7 +130,7 @@
 </div>
 
 <!-- Key Store -->
-<div id="tab-keys" class="iecb458930">
+<div id="tab-keys" class="is-hidden">
   <div class="card">
     <div class="card-header">
       <div class="card-title">📋 Generated Keys</div>
@@ -166,7 +166,11 @@
 <script nonce="{{ request.state.csp_nonce }}">
 function showTab(name) {
   ['keygen','encrypt','assess','keys'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+    optisecSetVisible(document.getElementById(`tab-${t}`), t === name);
+  });
+  document.querySelectorAll('[data-onclick="showTab"]').forEach(btn => {
+    const t = JSON.parse(btn.getAttribute('data-onclick-args'))[0];
+    btn.className = t === name ? 'btn btn-primary' : 'btn btn-secondary';
   });
 }
 

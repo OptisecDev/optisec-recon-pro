@@ -146,7 +146,7 @@
 </div>
 
 <!-- ATTACK PHASES TAB -->
-<div id="tab-phases" class="iecb458930">
+<div id="tab-phases" class="is-hidden">
   <div class="art-card">
     <h3 class="ie8e86974b">Multi-Stage Attack Chain ({{ attack_phases|length }} Phases)</h3>
     {% for phase in attack_phases %}
@@ -177,7 +177,7 @@
 </div>
 
 <!-- PAYLOAD LIBRARY TAB -->
-<div id="tab-payloads" class="iecb458930">
+<div id="tab-payloads" class="is-hidden">
   <div class="art-card">
     <h3 class="ie8e86974b">Payload Library ({{ payload_library|length }} categories)</h3>
     {% for key, cat in payload_library.items() %}
@@ -192,7 +192,7 @@
       {% if cat.bypass_waf %}
       <div class="ie3122d8b0">WAF Bypass: {{ cat.bypass_waf | join(', ') }}</div>
       {% endif %}
-      <div id="payloads-{{ key }}" class="ie59058f2b">
+      <div id="payloads-{{ key }}" class="ie59058f2b is-hidden">
         {% for p in cat.payloads %}
         <div class="payload-code" data-onclick="copyPayload">{{ p }}</div>
         {% endfor %}
@@ -204,7 +204,7 @@
 </div>
 
 <!-- SESSION HISTORY TAB -->
-<div id="tab-sessions" class="iecb458930">
+<div id="tab-sessions" class="is-hidden">
   <div id="sessions-list">
     {% if sessions %}
       {% for s in sessions %}
@@ -242,7 +242,7 @@ const selectedTypes = new Set();
 
 function showTab(t) {
   ['launch','phases','payloads','sessions'].forEach(id => {
-    document.getElementById('tab-'+id).style.display = id===t?'':'none';
+    optisecSetVisible(document.getElementById('tab-'+id), id===t);
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
     b.classList.toggle('active', ['launch','phases','payloads','sessions'][i]===t);
@@ -266,7 +266,7 @@ function toggleAI() {
 
 function togglePayloads(key) {
   const el = document.getElementById('payloads-'+key);
-  el.style.display = el.style.display === 'none' ? '' : 'none';
+  optisecSetVisible(el, el.classList.contains('is-hidden'));
 }
 
 function copyPayload() {

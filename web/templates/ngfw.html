@@ -112,7 +112,7 @@
 </div>
 
 <!-- LIVE TRAFFIC TAB -->
-<div id="tab-traffic" class="iecb458930">
+<div id="tab-traffic" class="is-hidden">
   <div class="fw-card ie8e86974b" >
     <div class="ie631785f9">
       <h3>Inspected Traffic Log</h3>
@@ -142,7 +142,7 @@
 </div>
 
 <!-- DPI RULES TAB -->
-<div id="tab-rules" class="iecb458930">
+<div id="tab-rules" class="is-hidden">
   <div class="fw-card">
     <div class="iebec8399a">
       <h3>DPI Signature Database ({{ stats.dpi_rules_count }} rules)</h3>
@@ -170,7 +170,7 @@
 </div>
 
 <!-- GEO INTELLIGENCE TAB -->
-<div id="tab-geo" class="iecb458930">
+<div id="tab-geo" class="is-hidden">
   <div class="grid grid-2">
     <div class="fw-card">
       <h3 class="ief9398a66">Geo-Blocking Rules</h3>
@@ -217,7 +217,7 @@
 <script nonce="{{ request.state.csp_nonce }}">
 function showTab(t) {
   ['inspect','traffic','rules','geo'].forEach(id => {
-    document.getElementById('tab-'+id).style.display = id===t?'':'none';
+    optisecSetVisible(document.getElementById('tab-'+id), id===t);
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',['inspect','traffic','rules','geo'][i]===t));
   if (t==='traffic') refreshTraffic();

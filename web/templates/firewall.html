@@ -64,7 +64,7 @@
 </div>
 
 <!-- Log Analyzer -->
-<div id="tab-log-analyzer" class="iecb458930">
+<div id="tab-log-analyzer" class="is-hidden">
   <div class="card">
     <div class="card-header">
       <div class="card-title">📄 Apache / Nginx Log Analyzer</div>
@@ -83,7 +83,7 @@
 </div>
 
 <!-- Rules -->
-<div id="tab-rules" class="iecb458930">
+<div id="tab-rules" class="is-hidden">
   <div class="card">
     <div class="card-header">
       <div class="card-title">📋 Active Firewall Rules</div>
@@ -116,7 +116,7 @@
 </div>
 
 <!-- Rate Limiting -->
-<div id="tab-rate" class="iecb458930">
+<div id="tab-rate" class="is-hidden">
   <div class="card ie5ab11840" >
     <div class="card-header"><div class="card-title">⏱️ Rate Limit Check</div></div>
     <div class="form-group">
@@ -146,7 +146,11 @@ const SEV_BORDER = { CRITICAL:'rgba(255,51,102,0.5)', HIGH:'rgba(255,102,0,0.5)'
 
 function showTab(name) {
   ['inspector','log-analyzer','rules','rate'].forEach(t => {
-    document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
+    optisecSetVisible(document.getElementById(`tab-${t}`), t === name);
+  });
+  document.querySelectorAll('[data-onclick="showTab"]').forEach(btn => {
+    const t = JSON.parse(btn.getAttribute('data-onclick-args'))[0];
+    btn.className = t === name ? 'btn btn-primary' : 'btn btn-secondary';
   });
 }
 

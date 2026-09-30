@@ -268,7 +268,7 @@
       </button>
     </div>
   </div>
-  <div id="gen-result" class="iecb458930">
+  <div id="gen-result" class="is-hidden">
     <label>المفتاح المُولَّد / Generated Key</label>
     <div class="iefaaa794c">
       <code id="gen-key-display"
@@ -300,7 +300,7 @@ async function generateKey() {
   });
   const data = await res.json();
   if (data.key) {
-    document.getElementById('gen-result').style.display = 'block';
+    optisecSetVisible(document.getElementById('gen-result'), true, 'block');
     document.getElementById('gen-key-display').textContent = data.key;
     const exp = new Date();
     exp.setDate(exp.getDate() + parseInt(days));

@@ -92,7 +92,7 @@
     </div>
 
     <!-- Add Peer Form -->
-    <div id="add-peer-form" class="card ie8886c233" >
+    <div id="add-peer-form" class="card ie8886c233 is-hidden" >
       <div class="card-header"><div class="card-title">➕ Add New Peer</div></div>
       <div class="form-group">
         <label>Peer Name</label>
@@ -110,7 +110,7 @@
     </div>
 
     <!-- QR Modal -->
-    <div id="qr-card" class="card ie39849f35" >
+    <div id="qr-card" class="card ie39849f35 is-hidden" >
       <div class="card-header"><div class="card-title">📱 QR Code</div></div>
       <div id="qr-content" class="ie7fa56380"></div>
     </div>
@@ -122,7 +122,7 @@
 {% block scripts %}
 <script nonce="{{ request.state.csp_nonce }}">
 function hideAddPeerForm() {
-  document.getElementById('add-peer-form').style.display = 'none';
+  optisecSetVisible(document.getElementById('add-peer-form'), false);
 }
 
 async function refreshStatus() {
@@ -133,7 +133,7 @@ async function refreshStatus() {
 }
 
 function showAddPeer() {
-  document.getElementById('add-peer-form').style.display = '';
+  optisecSetVisible(document.getElementById('add-peer-form'), true);
 }
 
 async function addPeer() {
@@ -175,7 +175,7 @@ async function showQR(name) {
   const data = await r.json();
   const el = document.getElementById('qr-card');
   const content = document.getElementById('qr-content');
-  el.style.display = '';
+  optisecSetVisible(el, true);
   if (data.qr) {
     content.innerHTML = `<img src="data:image/png;base64,${data.qr}" class="ie3cc175cb">
       <div class="ie65471aaa">Scan with WireGuard app</div>`;

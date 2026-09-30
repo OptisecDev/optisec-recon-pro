@@ -130,7 +130,7 @@
 </div>
 
 <!-- PASTE MONITOR TAB -->
-<div id="tab-paste" class="iecb458930">
+<div id="tab-paste" class="is-hidden">
   <div class="grid grid-2">
     <div class="dw-card">
       <h3 class="ie29ff9661">Paste Content Scanner</h3>
@@ -163,7 +163,7 @@
 </div>
 
 <!-- TOR INTELLIGENCE TAB -->
-<div id="tab-tor" class="iecb458930">
+<div id="tab-tor" class="is-hidden">
   {{ sim_banner() }}
   <div class="grid grid-2">
     <div class="dw-card">
@@ -212,7 +212,7 @@
 </div>
 
 <!-- KEYWORD ALERTS TAB -->
-<div id="tab-keywords" class="iecb458930">
+<div id="tab-keywords" class="is-hidden">
   <div class="grid grid-2">
     <div class="dw-card">
       <h3 class="ie14ddda13">Add Keyword Monitor</h3>
@@ -266,7 +266,7 @@
 </div>
 
 <!-- RANSOMWARE GROUPS TAB -->
-<div id="tab-ransomware" class="iecb458930">
+<div id="tab-ransomware" class="is-hidden">
   {{ sim_banner() }}
   <div class="grid grid-3">
     {% for rw in tor_monitor.ransomware_groups %}
@@ -291,7 +291,7 @@
 </div>
 
 <!-- CONTINUOUS MONITORING TAB -->
-<div id="tab-monitor" class="iecb458930">
+<div id="tab-monitor" class="is-hidden">
   <div class="ie8e86974b">
     <span class="live-badge"><span class="dot"></span>Live data · بيانات حية</span>
   </div>
@@ -358,7 +358,7 @@
 <script nonce="{{ request.state.csp_nonce }}">
 function showTab(t) {
   ['breach','paste','tor','keywords','ransomware','monitor'].forEach(id => {
-    document.getElementById('tab-'+id).style.display = id===t?'':'none';
+    optisecSetVisible(document.getElementById('tab-'+id), id===t);
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
     b.classList.toggle('active', ['breach','paste','tor','keywords','ransomware','monitor'][i]===t);

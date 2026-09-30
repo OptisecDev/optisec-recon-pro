@@ -83,14 +83,37 @@ def test_no_style_cssText_or_setAttribute_style_assignments():
     assert not offenders, f"Found style.cssText/setAttribute('style',...) usage:\n" + "\n".join(offenders)
 
 
+# Declarations deliberately missing !important: the element they style is
+# also mutated by JS via element.style.<prop> (a toggle switch, a progress
+# bar), so !important would permanently defeat that assignment (see
+# inline-extracted.css's header comment and README's CSP section for the
+# full writeup of the bug this fixes). Every other declaration on the same
+# class, and every other class, still carries !important as normal.
+KNOWN_NON_IMPORTANT_JS_TOGGLED = {
+    "ie40f1cf8d": {"background"},   # autonomous_redteam.html #ai-toggle
+    "iefbc64e1e": {"background", "left"},  # autonomous_redteam.html #ai-knob
+    "ie9c33ea5e": {"width"},        # progress-bar / progress-fill width
+}
+
+
 def test_inline_extracted_css_exists_and_uses_important_on_every_declaration():
     assert os.path.exists(EXTRACTED_CSS), "web/static/css/inline-extracted.css is missing"
     css = open(EXTRACTED_CSS).read()
-    rules = re.findall(r"\.ie[0-9a-f]{8}\s*\{([^}]*)\}", css)
+    rules = re.findall(r"\.(ie[0-9a-f]{8})\s*\{([^}]*)\}", css)
     assert len(rules) > 500, f"Expected 500+ extracted classes, found {len(rules)}"
-    for body in rules:
+    for cls, body in rules:
+        exceptions = KNOWN_NON_IMPORTANT_JS_TOGGLED.get(cls, set())
         decls = [d.strip() for d in body.split(";") if d.strip()]
         for d in decls:
+            prop = d.split(":", 1)[0].strip()
+            if prop in exceptions:
+                assert not d.endswith("!important"), (
+                    f".{cls} {{{d!r}}}: expected this declaration to be a "
+                    "documented JS-toggle exception without !important -- "
+                    "update KNOWN_NON_IMPORTANT_JS_TOGGLED if this class was "
+                    "intentionally changed, don't just silence the assert"
+                )
+                continue
             assert d.endswith("!important"), f"Declaration missing !important: {d!r}"
 
 

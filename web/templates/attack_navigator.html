@@ -117,7 +117,7 @@
 </div>
 
 <!-- APT PROFILES TAB -->
-<div id="tab-apt" class="iecb458930">
+<div id="tab-apt" class="is-hidden">
   <div class="grid grid-3">
     {% for apt in apt_groups %}
     <div class="apt-card" data-onclick="showAptDetail" data-onclick-args='{{ [apt.id] | tojson }}'>
@@ -146,7 +146,7 @@
 </div>
 
 <!-- IOC DETECTION TAB -->
-<div id="tab-ioc" class="iecb458930">
+<div id="tab-ioc" class="is-hidden">
   <div class="grid grid-2">
     <div class="ioc-panel">
       <h3 class="ieff203577">IOC → Technique Mapping</h3>
@@ -196,7 +196,7 @@
 </div>
 
 <!-- LIVE DETECTIONS TAB -->
-<div id="tab-detections" class="iecb458930">
+<div id="tab-detections" class="is-hidden">
   <div class="iebec8399a">
     <h3 class="iebb2b0e55">Live Detection Log</h3>
     <button class="btn btn-secondary btn-sm" data-onclick="loadDetections">Refresh</button>
@@ -234,7 +234,7 @@ let currentModalTech = {};
 
 function showTab(tab) {
   ['matrix','apt','ioc','detections'].forEach(t => {
-    document.getElementById('tab-'+t).style.display = t === tab ? '' : 'none';
+    optisecSetVisible(document.getElementById('tab-'+t), t === tab);
   });
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
     b.classList.toggle('active', ['matrix','apt','ioc','detections'][i] === tab);

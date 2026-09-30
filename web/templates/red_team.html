@@ -14,7 +14,7 @@
 </div>
 
 <!-- Engagements List -->
-<div id="tab-engagements" class="iefa9aeccc">
+<div id="tab-engagements">
   {% if engagements %}
   <div class="grid-2">
     {% for eng in engagements %}
@@ -55,7 +55,7 @@
 </div>
 
 <!-- New Engagement -->
-<div id="tab-new" class="iecb458930">
+<div id="tab-new" class="is-hidden">
   <div class="card ie403688b7" >
     <div class="card-header">
       <div class="card-title">➕ New AI Red Team Engagement</div>
@@ -95,7 +95,7 @@
 </div>
 
 <!-- Technique Library -->
-<div id="tab-library" class="iecb458930">
+<div id="tab-library" class="is-hidden">
   <div class="grid-2">
     {% for category, techs in technique_library.items() %}
     <div class="card">
@@ -126,8 +126,11 @@
 <script nonce="{{ request.state.csp_nonce }}">
 function showTab(name) {
   ['engagements','new','library'].forEach(t => {
-    const el = document.getElementById(`tab-${t}`);
-    if (el) el.style.display = t === name ? 'block' : 'none';
+    optisecSetVisible(document.getElementById(`tab-${t}`), t === name, 'block');
+  });
+  document.querySelectorAll('.ie54a09571 [data-onclick="showTab"]').forEach(btn => {
+    const t = JSON.parse(btn.getAttribute('data-onclick-args'))[0];
+    btn.className = t === name ? 'btn btn-primary' : 'btn btn-secondary';
   });
   if (name === 'new') {
     setTimeout(() => {
@@ -220,7 +223,7 @@ function renderEngagementDetail(data) {
         <button class="btn btn-secondary btn-sm" data-onclick="showLogFinding" data-onclick-args="${optisecArgs([data.id])}">➕ Log Finding</button>
       </div>
 
-      <div id="log-finding-form-${data.id}" class="ie68acf7d2">
+      <div id="log-finding-form-${data.id}" class="ie68acf7d2 is-hidden">
         <div class="form-group"><label>Finding Title</label><input type="text" id="finding-title-${data.id}" placeholder="XSS in login page" /></div>
         <div class="form-group"><label>Severity</label>
           <select id="finding-sev-${data.id}"><option>critical</option><option>high</option><option>medium</option><option>low</option></select>
@@ -232,7 +235,7 @@ function renderEngagementDetail(data) {
 }
 
 function showLogFinding(id) {
-  document.getElementById(`log-finding-form-${id}`).style.display = '';
+  optisecSetVisible(document.getElementById(`log-finding-form-${id}`), true);
 }
 
 async function logFinding(engId) {

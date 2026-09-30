@@ -444,6 +444,42 @@ graph TB
 
 ---
 
+### Content-Security-Policy (CSP)
+
+`style-src` and `script-src` both run with no `unsafe-inline`. Every former
+`style="..."` HTML attribute was mechanically extracted into
+`web/static/css/inline-extracted.css` as a `class="ie<hash>"` rule with
+`!important` on every declaration — `!important` was required to reproduce
+inline style's old cascade precedence, since a class alone has lower
+specificity than the attribute it replaced.
+
+**Rule: never let an extracted `!important` declaration sit on a property
+that JS also assigns via `element.style.<prop>` / `setProperty()`.** The
+`!important` class permanently wins over that assignment and the element
+freezes on whichever state the class encodes, no matter what the JS does —
+this bit the platform once, silently breaking every `showTab()`-style tab
+switcher, several modals, and a couple of progress bars/toggle switches
+(fixed across 17 templates; see `web/static/css/inline-extracted.css`'s
+header comment for the full writeup).
+
+- **`display` toggled by JS** (tabs, modals, show/hide panels): give the
+  element `class="is-hidden"` for its initial hidden state (`style.css`)
+  instead of a static extracted `display:none` class, and toggle it from JS
+  with `window.optisecSetVisible(el, visible, displayValue)`
+  (`web/static/js/main.js`) — never `el.style.display = ...` directly.
+- **Any other property JS assigns** (`width`, `background`, `left`, …):
+  drop `!important` from just that one declaration in the extracted class
+  (the plain, non-`!important` rule still sets the correct initial value;
+  JS's inline `style.<prop>` assignment then wins the cascade normally on
+  top of it), or route the value through `data-dyn-style="..."` +
+  `optisecApplyDynStyles()` if it's genuinely data-driven per instance.
+- There is no committed generator script for `inline-extracted.css` — the
+  extraction was a one-off pass (commit `53a7f60`). Anyone re-running or
+  extending it by hand must apply the same rule; see
+  `tests/test_style_extraction.py` for the static guard that checks it.
+
+---
+
 ## Screenshots
 
 > All screenshots are taken live from a running OPTISEC v4.0 SINGULARITY instance.

@@ -50,7 +50,7 @@
 </div>
 
 <!-- ── USERNAME FOOTPRINT ── -->
-<div id="tab-username" class="osint-tab iecb458930" >
+<div id="tab-username" class="osint-tab is-hidden" >
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
@@ -65,7 +65,7 @@
       </div>
       <button class="btn btn-primary" data-onclick="runUsername" id="username-btn">🔍 Search Platforms</button>
       <div class="ied4316970">
-        <div class="progress-bar iecb458930" id="username-progress" ><div class="progress-fill ieeedc800b" ></div></div>
+        <div class="progress-bar is-hidden" id="username-progress" ><div class="progress-fill ieeedc800b" ></div></div>
       </div>
       <div id="username-result" class="ieb0043ef4"></div>
     </div>
@@ -84,7 +84,7 @@
 </div>
 
 <!-- ── DEVICE FINGERPRINTING ── -->
-<div id="tab-device" class="osint-tab iecb458930" >
+<div id="tab-device" class="osint-tab is-hidden" >
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
@@ -123,7 +123,7 @@
 </div>
 
 <!-- ── VEHICLE PLATE ── -->
-<div id="tab-plate" class="osint-tab iecb458930" >
+<div id="tab-plate" class="osint-tab is-hidden" >
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
@@ -155,7 +155,7 @@
 </div>
 
 <!-- ── IP GEOLOCATION ── -->
-<div id="tab-ip" class="osint-tab iecb458930" >
+<div id="tab-ip" class="osint-tab is-hidden" >
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
@@ -186,7 +186,7 @@
 </div>
 
 <!-- ── CELL TOWER ── -->
-<div id="tab-cell" class="osint-tab iecb458930" >
+<div id="tab-cell" class="osint-tab is-hidden" >
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
@@ -232,7 +232,7 @@
 </div>
 
 <!-- ── NATIONAL ID ── -->
-<div id="tab-natid" class="osint-tab iecb458930" >
+<div id="tab-natid" class="osint-tab is-hidden" >
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
@@ -276,7 +276,7 @@
 </div>
 
 <!-- ── PHONE → SOCIAL ACCOUNTS ── -->
-<div id="tab-phonesoc" class="osint-tab iecb458930" >
+<div id="tab-phonesoc" class="osint-tab is-hidden" >
   <div class="grid-2 ie2a4dac26" >
     <div class="card">
       <div class="card-header">
@@ -299,7 +299,7 @@
         <button class="btn btn-secondary btn-sm" data-onclick="fillPhoneSample" data-onclick-args='["+9647501234567"]'>Korek Sample</button>
       </div>
       <button class="btn btn-primary" id="ps-btn" data-onclick="runPhoneSocial">🔍 Run 5-Tier OSINT</button>
-      <div class="progress-bar ie59058f2b" id="ps-progress" ><div class="progress-fill ieeedc800b" ></div></div>
+      <div class="progress-bar ie59058f2b is-hidden" id="ps-progress" ><div class="progress-fill ieeedc800b" ></div></div>
       <div id="ps-result" class="ieb0043ef4"></div>
     </div>
     <div class="card">
@@ -319,7 +319,7 @@
 </div>
 
 <!-- ── DOMAIN OSINT ── -->
-<div id="tab-domain" class="osint-tab iecb458930" >
+<div id="tab-domain" class="osint-tab is-hidden" >
   <div class="card ie3e9d9c4c" >
     <div class="card-header">
       <div>
@@ -359,11 +359,11 @@
 <script nonce="{{ request.state.csp_nonce }}">
 // ── Tab switching ──────────────────────────────────────────────────────────────
 function switchTab(name) {
-  document.querySelectorAll('.osint-tab').forEach(t => t.style.display = 'none');
+  document.querySelectorAll('.osint-tab').forEach(t => optisecSetVisible(t, false));
   document.querySelectorAll('[id^="tab-btn-"]').forEach(b => {
     b.className = b.id === `tab-btn-${name}` ? 'btn btn-primary' : 'btn btn-secondary';
   });
-  document.getElementById(`tab-${name}`).style.display = '';
+  optisecSetVisible(document.getElementById(`tab-${name}`), true);
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -438,11 +438,11 @@ async function runUsername() {
   const result = document.getElementById('username-result');
   const prog = document.getElementById('username-progress');
   btn.disabled = true;
-  prog.style.display = 'block';
+  optisecSetVisible(prog, true, 'block');
   result.innerHTML = `<div class="iebb2b0e55">Checking 50+ platforms asynchronously…</div>`;
   try {
     const d = await API.post('/api/osint/username', {username});
-    prog.style.display = 'none';
+    optisecSetVisible(prog, false);
     const found = d.found || [];
     const unverified = d.unverified || [];
     result.innerHTML = `
@@ -480,7 +480,7 @@ async function runUsername() {
         </div>
       </div>`;
   } catch(e) {
-    prog.style.display = 'none';
+    optisecSetVisible(prog, false);
     result.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
   }
   btn.disabled = false;
@@ -775,12 +775,12 @@ async function runPhoneSocial() {
   const res  = document.getElementById('ps-result');
   const prog = document.getElementById('ps-progress');
   btn.disabled = true;
-  prog.style.display = 'block';
+  optisecSetVisible(prog, true, 'block');
   res.innerHTML = '<div class="iebb2b0e55"><span class="spinner"></span> Running 5-tier OSINT analysis…</div>';
 
   try {
     const d = await API.post('/api/osint/phone-social', {number});
-    prog.style.display = 'none';
+    optisecSetVisible(prog, false);
 
     if (d.error) { res.innerHTML = `<div class="alert alert-error">${esc(d.error)}</div>`; return; }
 
@@ -900,7 +900,7 @@ async function runPhoneSocial() {
     res.innerHTML = html;
     optisecApplyDynStyles(res);
   } catch(e) {
-    prog.style.display = 'none';
+    optisecSetVisible(prog, false);
     res.innerHTML = `<div class="alert alert-error">${esc(e.message)}</div>`;
   }
   btn.disabled = false;

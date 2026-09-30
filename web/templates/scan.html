@@ -91,7 +91,7 @@
       </div>
     </div>
 
-    <div class="card iecb458930" id="ws-status-card" >
+    <div class="card is-hidden" id="ws-status-card" >
       <div class="card-header">
         <div class="card-title">📡 Live Progress</div>
       </div>
@@ -133,7 +133,7 @@ window.startScan = async function() {
   if (resultsEl) resultsEl.innerHTML = '';
   if (wsLog) wsLog.innerHTML = '';
   if (fill) fill.style.width = '2%';
-  if (wsCard) wsCard.style.display = 'block';
+  if (wsCard) optisecSetVisible(wsCard, true, 'block');
 
   const selectedOption = document.getElementById('target-select')?.selectedOptions[0];
   const targetId = selectedOption?.dataset?.id || null;

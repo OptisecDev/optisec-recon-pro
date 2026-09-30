@@ -242,7 +242,7 @@
   {% endfor %}
 </div>
 
-<div id="no-match" class="ie774c095a">
+<div id="no-match" class="ie774c095a is-hidden">
   No clusters match the current filters.
 </div>
 
@@ -284,7 +284,7 @@ function applyFilters() {
     if (show) visible++;
   });
 
-  document.getElementById('no-match').style.display = visible === 0 ? '' : 'none';
+  optisecSetVisible(document.getElementById('no-match'), visible === 0);
   document.getElementById('count-label').textContent = `${visible} cluster${visible !== 1 ? 's' : ''}`;
 }
 

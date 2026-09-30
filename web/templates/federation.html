@@ -80,7 +80,7 @@
       {% endif %}
 
       <!-- Add Node Form -->
-      <div id="add-node-form" class="ie71598e18">
+      <div id="add-node-form" class="ie71598e18 is-hidden">
         <div class="form-group"><label>Node Name</label><input type="text" id="node-name" placeholder="datacenter-eu" /></div>
         <div class="form-group"><label>Endpoint URL</label><input type="text" id="node-endpoint" placeholder="https://10.0.1.100:8000" /></div>
         <div class="form-group"><label>API Key</label><input type="password" id="node-apikey" /></div>
@@ -93,7 +93,7 @@
 </div>
 
 <!-- Dispatch Scan -->
-<div id="tab-scan" class="iecb458930">
+<div id="tab-scan" class="is-hidden">
   <div class="card ie3e9d9c4c" >
     <div class="card-header">
       <div class="card-title">🔍 Dispatch Federated Scan</div>
@@ -166,7 +166,7 @@
 </div>
 
 <!-- Setup -->
-<div id="tab-setup" class="iecb458930">
+<div id="tab-setup" class="is-hidden">
   {% if user.role == 'admin' %}
   <div class="card ie5ab11840" >
     <div class="card-header"><div class="card-title">⚙️ Initialize This Node</div></div>
@@ -187,13 +187,16 @@
 <script nonce="{{ request.state.csp_nonce }}">
 function showTab(name) {
   ['nodes','scan','tasks','setup'].forEach(t => {
-    const el = document.getElementById(`tab-${t}`);
-    if (el) el.style.display = t === name ? '' : 'none';
+    optisecSetVisible(document.getElementById(`tab-${t}`), t === name);
+  });
+  document.querySelectorAll('.ie54a09571 [data-onclick="showTab"]').forEach(btn => {
+    const t = JSON.parse(btn.getAttribute('data-onclick-args'))[0];
+    btn.className = t === name ? 'btn btn-primary' : 'btn btn-secondary';
   });
 }
 
 function showAddNode() {
-  document.getElementById('add-node-form').style.display = '';
+  optisecSetVisible(document.getElementById('add-node-form'), true);
 }
 
 async function addNode() {

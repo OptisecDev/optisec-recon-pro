@@ -1,7 +1,23 @@
 /* Mechanically extracted from inline style="" attributes to allow
    dropping 'unsafe-inline' from CSP style-src. !important on every
    declaration exactly reproduces inline style's override precedence
-   (inline style always won before; a class alone would not). */
+   (inline style always won before; a class alone would not).
+
+   RULE for anyone re-running or extending this extraction: never emit
+   !important on a declaration whose element is later mutated by JS via
+   element.style.<prop> / setProperty() / a template's own showTab-style
+   toggler -- the !important class permanently wins over that assignment
+   and the element freezes on whichever state the class encodes (this bit
+   the platform once: every showTab()-style tab switcher, several modals,
+   and a couple of progress bars silently stopped responding to clicks).
+   For `display`, use the central `.is-hidden` class from style.css
+   (toggled via main.js's optisecSetVisible()) instead of a static
+   extracted display:none/block class. For any other dynamic property,
+   either drop that one declaration from the extracted class (letting the
+   plain, non-!important CSS set the initial value and JS's inline style
+   win afterwards) or route it through data-dyn-style +
+   optisecApplyDynStyles() like a fully dynamic value. See
+   tests/test_style_extraction.py and README's CSP section. */
 
 .ie002535c2 { margin-top:12px !important; }
 .ie00c0df93 { margin-right:12px !important; }
@@ -142,7 +158,7 @@
 .ie3868b543 { display:flex !important; align-items:flex-end !important; }
 .ie387cab18 { font-size:12px !important; color:var(--text-dim) !important; margin-top:6px !important; }
 .ie395bd0fb { font-size:9px !important; color:var(--text-dim) !important; margin-bottom:3px !important; }
-.ie39849f35 { display:none !important; margin-top:16px !important; text-align:center !important; }
+.ie39849f35 { margin-top:16px !important; text-align:center !important; }
 .ie3a354c0a { font-family:monospace !important; font-size:12px !important; line-height:1.8 !important; }
 .ie3ae1f62a { margin-top:20px !important; }
 .ie3ae613b4 { font-size:11px !important; padding:2px 8px !important; border-radius:3px !important; background:rgba(255,255,255,0.08) !important; color:var(--accent) !important; }
@@ -162,7 +178,7 @@
 .ie409f7c5e { font-weight:600 !important; width:140px !important; }
 .ie40a22946 { font-size:20px !important; font-weight:700 !important; color:#FF6B6B !important; }
 .ie40ce17d8 { font-size:13px !important; margin-bottom:10px !important; }
-.ie40f1cf8d { width:36px !important; height:20px !important; background:var(--bg-secondary) !important; border-radius:10px !important; position:relative !important; transition:background 0.2s !important; border:1px solid var(--border) !important; cursor:pointer !important; }
+.ie40f1cf8d { width:36px !important; height:20px !important; background:var(--bg-secondary); border-radius:10px !important; position:relative !important; transition:background 0.2s !important; border:1px solid var(--border) !important; cursor:pointer !important; }
 .ie420fe5de { display:block !important; text-align:center !important; text-decoration:none !important; }
 .ie459fe4b3 { display:flex !important; flex-direction:column !important; gap:10px !important; }
 .ie45e0aaf1 { margin-bottom:4px !important; font-size:12px !important; }
@@ -192,7 +208,7 @@
 .ie4fb09d02 { display:flex !important; align-items:center !important; gap:6px !important; margin-bottom:8px !important; }
 .ie4fc2a98d { margin-top:10px !important; font-size:11px !important; color:var(--text-dim) !important; }
 .ie4fd68982 { font-size:11px !important; font-weight:700 !important; margin-bottom:6px !important; color:var(--accent) !important; }
-.ie50240f0f { display:none !important; position:fixed !important; inset:0 !important; z-index:9999 !important; background:rgba(0,0,0,.6) !important; backdrop-filter:blur(2px) !important; }
+.ie50240f0f { position:fixed !important; inset:0 !important; z-index:9999 !important; background:rgba(0,0,0,.6) !important; backdrop-filter:blur(2px) !important; }
 .ie50b8fb0f { display:block !important; height:6px !important; width:90px !important; margin:0 !important; border-radius:3px !important; }
 .ie50df17a4 { color:var(--text-dim) !important; font-size:12px !important; text-align:center !important; padding:20px !important; }
 .ie510ea680 { display:flex !important; justify-content:space-between !important; align-items:center !important; }
@@ -216,7 +232,7 @@
 .ie57f0f8ae { font-weight:700 !important; font-size:12px !important; color:var(--text-dim) !important; text-transform:uppercase !important; letter-spacing:1px !important; margin-bottom:10px !important; }
 .ie57f68680 { flex:1 !important; min-width:260px !important; }
 .ie587baaaa { border-color:var(--border) !important; margin:8px 0 !important; }
-.ie59058f2b { display:none !important; margin-top:10px !important; }
+.ie59058f2b { margin-top:10px !important; }
 .ie59d37738 { padding:8px 0 !important; border-bottom:1px solid var(--border) !important; }
 .ie5ab11840 { max-width:500px !important; }
 .ie5ad71ab9 { display:flex !important; justify-content:space-between !important; align-items:flex-start !important; margin-bottom:10px !important; }
@@ -250,7 +266,7 @@
 .ie66ad0d12 { flex:0 0 130px !important; font-size:11px !important; }
 .ie66ee4707 { padding:10px !important; background:rgba(0,255,136,0.05) !important; border-radius:6px !important; margin-bottom:12px !important; font-size:13px !important; }
 .ie685cf01f { display:flex !important; flex-direction:column !important; gap:8px !important; }
-.ie68acf7d2 { display:none !important; margin-top:12px !important; }
+.ie68acf7d2 { margin-top:12px !important; }
 .ie68d431fe { display:flex !important; align-items:center !important; justify-content:space-between !important; padding:10px !important; background:var(--bg-secondary) !important; border-radius:8px !important; margin-bottom:6px !important; }
 .ie693ea11c { margin-top:6px !important; display:flex !important; flex-wrap:wrap !important; gap:4px !important; }
 .ie69878f67 { padding:6px 10px !important; border-left:2px solid var(--accent) !important; margin-bottom:4px !important; font-size:12px !important; display:flex !important; align-items:center !important; gap:8px !important; }
@@ -277,7 +293,7 @@
 .ie70790ba5 { width:100% !important; height:80px !important; font-size:10px !important; font-family:monospace !important; background:var(--bg-hover) !important; border:1px solid var(--border) !important; color:var(--accent) !important; padding:6px !important; resize:vertical !important; }
 .ie70795348 { display:flex !important; gap:8px !important; margin-bottom:16px !important; }
 .ie71202d21 { min-width:90px !important; font-size:12px !important; font-weight:600 !important; }
-.ie71598e18 { display:none !important; margin-top:12px !important; border-top:1px solid var(--border) !important; padding-top:12px !important; }
+.ie71598e18 { margin-top:12px !important; border-top:1px solid var(--border) !important; padding-top:12px !important; }
 .ie719803bc { font-size:12px !important; font-weight:700 !important; color:#ffa000 !important; margin-bottom:8px !important; }
 .ie71d85aaa { color:#FFA726 !important; font-size:9px !important; min-width:60px !important; }
 .ie71f08e4d { width:100% !important; padding:12px !important; font-size:14px !important; }
@@ -290,9 +306,9 @@
 .ie7650fe81 { background:var(--bg-secondary) !important; border-radius:8px !important; padding:14px !important; }
 .ie76b6cacf { font-size:11px !important; color:var(--text-dim) !important; margin-bottom:12px !important; }
 .ie770b9dc8 { margin:8px 0 !important; }
-.ie7715c83f { display:none !important; margin-bottom:12px !important; }
+.ie7715c83f { margin-bottom:12px !important; }
 .ie7716f061 { font-weight:600 !important; color:#f59e0b !important; }
-.ie774c095a { display:none !important; text-align:center !important; padding:40px !important; color:var(--text-dim) !important; }
+.ie774c095a { text-align:center !important; padding:40px !important; color:var(--text-dim) !important; }
 .ie77593361 { color:var(--text-dim) !important; font-size:12px !important; }
 .ie78100408 { font-size:12px !important; font-weight:700 !important; color:#ff4d4d !important; margin-bottom:8px !important; }
 .ie783b8152 { flex:1 !important; padding:0 8px !important; }
@@ -331,7 +347,7 @@
 .ie855fc9db { font-size:10px !important; color:var(--text-dim) !important; margin-top:2px !important; }
 .ie857c0464 { display:flex !important; gap:6px !important; margin-bottom:12px !important; flex-wrap:wrap !important; }
 .ie85e4e68a { color:#58a6ff !important; }
-.ie8886c233 { display:none !important; margin-top:16px !important; }
+.ie8886c233 { margin-top:16px !important; }
 .ie88920653 { color:var(--danger) !important; margin-bottom:8px !important; }
 .ie89a7eb59 { width:45% !important; background:#ff8800 !important; }
 .ie89a869f3 { max-width:1100px !important; margin:0 auto !important; }
@@ -360,7 +376,7 @@
 .ie9300e698 { font-size:10px !important; color:var(--text-dim) !important; font-family:monospace !important; background:var(--bg-card) !important; padding:8px !important; border-radius:6px !important; height:80px !important; overflow-y:auto !important; }
 .ie9356b3c0 { padding:8px !important; border-bottom:1px solid var(--border) !important; font-size:12px !important; display:flex !important; align-items:center !important; gap:8px !important; }
 .ie94573aa5 { font-size:9px !important; background:var(--bg-secondary) !important; padding:1px 4px !important; border-radius:3px !important; }
-.ie94afd63e { width:36px !important; height:36px !important; border-radius:6px !important; object-fit:contain !important; display:none !important; }
+.ie94afd63e { width:36px !important; height:36px !important; border-radius:6px !important; object-fit:contain !important; }
 .ie9535b3b9 { font-size:15px !important; font-weight:700 !important; }
 .ie955a47ac { margin:4px 0 !important; font-size:12px !important; }
 .ie95e42c06 { font-size:11px !important; color:var(--text-dim) !important; margin-top:6px !important; }
@@ -381,7 +397,7 @@
 .ie9ab332aa { font-size:10px !important; font-family:monospace !important; background:var(--bg-card) !important; padding:4px 6px !important; border-radius:4px !important; margin-top:6px !important; color:#FFA726 !important; }
 .ie9bbb60d7 { text-align:center !important; padding:16px !important; color:var(--text-dim) !important; font-size:11px !important; }
 .ie9bc1e947 { font-family:monospace !important; font-size:12px !important; padding:2px 0 !important; border-bottom:1px solid var(--border) !important; }
-.ie9c33ea5e { width:0% !important; }
+.ie9c33ea5e { width:0%; }
 .ie9c68691e { display:flex !important; gap:8px !important; }
 .ie9c8f428e { font-size:12px !important; padding:2px 0 !important; color:#ff6600 !important; }
 .ie9e3c4ccb { margin-top:6px !important; }
@@ -611,10 +627,9 @@
 .ief9de584c { margin-top:8px !important; display:flex !important; gap:8px !important; }
 .iefa3e1c7d { margin-bottom:12px !important; }
 .iefa5a3750 { font-size:11px !important; color:var(--accent) !important; }
-.iefa9aeccc { display:block !important; }
 .iefaaa794c { display:flex !important; gap:8px !important; align-items:center !important; }
 .iefaba9118 { font-size:10px !important; color:var(--text-dim) !important; font-family:monospace !important; }
-.iefbc64e1e { width:14px !important; height:14px !important; background:#888 !important; border-radius:50% !important; position:absolute !important; top:2px !important; left:2px !important; transition:all 0.2s !important; }
+.iefbc64e1e { width:14px !important; height:14px !important; background:#888; border-radius:50% !important; position:absolute !important; top:2px !important; left:2px; transition:all 0.2s !important; }
 .iefbf92c22 { display:flex !important; justify-content:space-between !important; align-items:center !important; margin-bottom:8px !important; }
 .iefc2c3a92 { min-width:48px !important; }
 .iefc4c1fec { font-size:12px !important; font-weight:700 !important; margin-bottom:8px !important; color:var(--accent) !important; }

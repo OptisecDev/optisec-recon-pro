@@ -100,6 +100,23 @@ window.optisecApplyDynStyles = function (root) {
 };
 document.addEventListener('DOMContentLoaded', () => optisecApplyDynStyles());
 
+// ─── Central visibility toggle for JS-driven show/hide ─────────────────────
+// Same !important-vs-inline-style problem as above, but for display instead
+// of arbitrary properties: a JS-toggled element's inline-extracted class
+// carries `display:none !important`, which permanently beats any later
+// `el.style.display = ...` from JS -- the element freezes on whichever
+// state the class encodes (see inline-extracted.css's header comment).
+// optisecSetVisible() never touches element.style for the hidden state; it
+// toggles the single .is-hidden class instead (style.css), which is also
+// !important but exclusively JS-owned, so there's no competing rule to
+// lose to. Markup for a JS-toggled element must use class="is-hidden" (if
+// it starts hidden) rather than an extracted display:none class.
+window.optisecSetVisible = function (el, visible, displayValue) {
+  if (!el) return;
+  el.classList.toggle('is-hidden', !visible);
+  el.style.display = visible ? (displayValue || '') : '';
+};
+
 const API = {
   async post(url, data) {
     const r = await fetch(url, {
@@ -452,7 +469,6 @@ window.analyzeWithAI = async function(target) {
   if (!out) {
     out = document.createElement('div');
     out.id = 'ai-output';
-    out.style.marginTop = '16px';
     const resultsEl = document.getElementById('scan-results');
     if (resultsEl) resultsEl.appendChild(out);
     else document.querySelector('.content')?.appendChild(out);

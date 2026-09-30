@@ -1171,3 +1171,12 @@ textarea { resize: vertical; min-height: 80px; }
   min-width: 280px;
   animation: fadeIn 0.2s;
 }
+
+/* Single source of truth for JS-driven show/hide. inline-extracted.css
+   classes carry !important on every declaration to reproduce the old
+   inline style="" cascade precedence -- correct for static values, but it
+   would permanently block any later element.style.display assignment from
+   JS. Any element whose visibility is toggled by JS must use this class
+   (via main.js's optisecSetVisible()) instead of a static extracted
+   display:none class. See README's CSP section for the full rule. */
+.is-hidden { display: none !important; }

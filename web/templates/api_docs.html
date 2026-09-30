@@ -155,7 +155,7 @@
           <span class="api-group-toggle">▼</span>
         </div>
       </div>
-      <div class="api-group-body iecb458930" >
+      <div class="api-group-body is-hidden" >
         {% for ep in group.endpoints %}
         <div class="api-endpoint-row" data-path="{{ ep.path|lower }}" data-summary="{{ ep.summary|lower }}">
           <span class="api-method api-method-{{ ep.method|lower }}">{{ ep.method }}</span>
@@ -258,8 +258,8 @@ function toggleGroup() {
   const header = this;
   const body = header.nextElementSibling;
   const toggle = header.querySelector('.api-group-toggle');
-  const open = body.style.display === 'none';
-  body.style.display = open ? 'block' : 'none';
+  const open = body.classList.contains('is-hidden');
+  optisecSetVisible(body, open, 'block');
   toggle.textContent = open ? '▲' : '▼';
 }
 
@@ -282,7 +282,7 @@ function filterEndpoints(q) {
     group.style.display = groupVisible ? 'block' : 'none';
     if (q && groupVisible) {
       const body = group.querySelector('.api-group-body');
-      if (body) body.style.display = 'block';
+      if (body) optisecSetVisible(body, true, 'block');
     }
   });
 }
