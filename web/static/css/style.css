@@ -294,6 +294,10 @@ textarea { resize: vertical; min-height: 80px; }
   text-decoration: none;
 }
 
+/* Inline SVG icons used in place of emoji glyphs the host's font stack
+   may not cover (see .btn label usage in red_team.html). */
+.ie-icon-inline { flex-shrink: 0; vertical-align: -2px; }
+
 .btn-primary {
   background: var(--accent);
   color: #000;
@@ -1163,9 +1167,13 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .demo-banner-exit:hover { color: var(--red); text-decoration: none; }
 
+/* Anchored just under the sticky topbar (height 56px, z-index:50) instead
+   of the viewport bottom-right corner, where it used to land on top of
+   whatever page content (e.g. the license info card) happened to end up
+   in that corner. */
 .optisec-toast {
   position: fixed;
-  bottom: 20px;
+  top: 72px;
   right: 20px;
   z-index: 9999;
   min-width: 280px;
