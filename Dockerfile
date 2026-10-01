@@ -36,14 +36,27 @@ RUN pip install --upgrade pip && \
 #
 # OQS_MINIMAL_BUILD restricts the build to only the algorithms this app uses
 # (modules/quantum/encryption.py's PQC_ALGORITHMS) instead of liboqs' full ~40
-# algorithm suite — this cuts build time from ~15min to ~30s and the resulting
-# .so from a full build down to ~1-2MB.
+# algorithm suite — liboqs applies this filter identically regardless of
+# OQS_DIST_BUILD (see upstream .CMake/alg_support.cmake), so these 5
+# algorithms are ALL that ever get compiled here, on Render or anywhere else.
+# Measured locally (liboqs 0.16.0, this exact flag set): ~38s wall time,
+# ~292 object files — this is "minutes", not the hours a full ~40-algorithm
+# build would take. If a Render build is still taking far longer than that,
+# the liboqs step above is very unlikely to be the cause; look at Docker
+# layer-cache reuse between deploys and apt-get/pip mirror speed instead.
 # OQS_USE_OPENSSL=OFF statically embeds liboqs' own crypto primitives instead
 # of dynamically linking system OpenSSL, so the runtime image needs no libssl
 # package and there's no builder/runtime OpenSSL-version mismatch risk.
 # OQS_DIST_BUILD=ON bakes in runtime CPU-feature detection (AVX2/AVX512/etc.)
 # so one build works correctly regardless of which specific x86_64 the builder
-# ran on vs. the host Render eventually schedules the container onto.
+# ran on vs. the host Render eventually schedules the container onto. Turning
+# it OFF was evaluated as a further speedup (measured ~46% less liboqs build
+# time: ~236 objects / ~20s instead of ~292 / ~38s) but was rejected: per
+# liboqs' own CONFIGURE.md, OQS_DIST_BUILD=OFF auto-detects and bakes in
+# whatever CPU features the BUILD machine has, with no runtime check — if
+# Render's builder and the host it schedules the container onto ever differ
+# in CPU generation, that produces a SIGILL crash in production. The ~18s
+# saved isn't worth that risk.
 RUN git clone --depth 1 --branch 0.16.0 https://github.com/open-quantum-safe/liboqs.git /build/liboqs-src && \
     cmake -GNinja -S /build/liboqs-src -B /build/liboqs-src/build \
         -DCMAKE_BUILD_TYPE=Release \
