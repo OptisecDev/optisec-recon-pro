@@ -45,6 +45,12 @@
     </div>
     {% endfor %}
   </div>
+  {% if not manager_status.enabled %}
+  <div class="hp-warn">
+    ⓘ Listeners are disabled on this hosted demo — they require self-hosting with open, non-standard inbound ports (set <code>HONEYPOT_ENABLED=true</code>). This is expected, not a fault.
+    المستمعات معطّلة في هذه النسخة التجريبية المستضافة — فتح منافذ واردة غير قياسية يتطلب استضافة ذاتية (<code>HONEYPOT_ENABLED=true</code>). هذا سلوك متوقّع وليس عطلاً.
+  </div>
+  {% endif %}
 </div>
 
 <!-- Stats row -->
