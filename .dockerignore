@@ -1,0 +1,14 @@
+eternal_data/
+venv/
+.git/
+.claude/
+.pytest_cache/
+__pycache__/
+**/__pycache__/
+*.pyc
+logs/
+data/*.db
+data/quantum_keys/
+data/wordlists/
+reports/
+docs/screenshots/

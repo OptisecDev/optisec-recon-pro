@@ -6,6 +6,9 @@
 <div class="ie54a09571">
   <button class="btn btn-primary" data-onclick="showTab" data-onclick-args='["keygen"]'>🔑 Key Generation</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["encrypt"]'>🔒 Encrypt/Decrypt</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["sign"]'>✍️ Sign/Verify</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["hybrid"]'>🔀 Hybrid</button>
+  <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["proof"]'>✅ Live Proof</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["assess"]'>🔍 Crypto Assessment</button>
   <button class="btn btn-secondary" data-onclick="showTab" data-onclick-args='["keys"]'>📋 Key Store</button>
 </div>
@@ -99,6 +102,116 @@
       <div id="kem-result" class="ie002535c2"></div>
     </div>
   </div>
+  <div class="card ie002535c2">
+    <div class="card-header"><div class="card-title">🔓 Decrypt Data</div></div>
+    <div class="form-group">
+      <label>Ciphertext (base64)</label>
+      <textarea id="dec-ciphertext" rows="3" placeholder="base64 ciphertext..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Nonce (base64)</label>
+      <input type="text" id="dec-nonce" placeholder="base64 nonce..." />
+    </div>
+    <div class="form-group">
+      <label>Shared Secret (base64, from KEM decapsulation)</label>
+      <input type="text" id="dec-secret" placeholder="base64 shared secret..." />
+    </div>
+    <button class="btn btn-primary ied6167dca" data-onclick="decryptData">🔓 Decrypt (AES-256-GCM)</button>
+    <div id="dec-result" class="ie002535c2"></div>
+  </div>
+</div>
+
+<!-- Sign/Verify -->
+<div id="tab-sign" class="is-hidden">
+  <div class="grid-2 ie2a4dac26">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">✍️ Sign Message</div>
+        <div class="card-subtitle">ML-DSA-65 / SLH-DSA (SPHINCS+) / FN-DSA (Falcon)</div>
+      </div>
+      <div class="form-group">
+        <label>Algorithm</label>
+        <select id="sign-algo">
+          <option value="dilithium3">ML-DSA-65 (Dilithium) — FIPS 204</option>
+          <option value="sphincs_sha2">SLH-DSA-SHA2-128s (SPHINCS+) — FIPS 205</option>
+          <option value="falcon512">FN-DSA-512 (Falcon)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Private Key (base64)</label>
+        <textarea id="sign-privkey" rows="3" placeholder="base64 private key (from the demo/proof tab, or your own)..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea id="sign-message" rows="3" placeholder="Message to sign..."></textarea>
+      </div>
+      <button class="btn btn-primary ied6167dca" data-onclick="signMessage">✍️ Sign</button>
+      <div id="sign-result" class="ie002535c2"></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔍 Verify Signature</div></div>
+      <div class="form-group">
+        <label>Algorithm</label>
+        <select id="verify-algo">
+          <option value="dilithium3">ML-DSA-65 (Dilithium)</option>
+          <option value="sphincs_sha2">SLH-DSA-SHA2-128s (SPHINCS+)</option>
+          <option value="falcon512">FN-DSA-512 (Falcon)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Public Key (base64)</label>
+        <textarea id="verify-pubkey" rows="3" placeholder="base64 public key..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Message</label>
+        <textarea id="verify-message" rows="3" placeholder="Message that was signed..."></textarea>
+      </div>
+      <div class="form-group">
+        <label>Signature (base64)</label>
+        <textarea id="verify-signature" rows="3" placeholder="base64 signature..."></textarea>
+      </div>
+      <button class="btn btn-primary ied6167dca" data-onclick="verifySignature">🔍 Verify</button>
+      <div id="verify-result" class="ie002535c2"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Hybrid -->
+<div id="tab-hybrid" class="is-hidden">
+  <div class="card ie3e9d9c4c">
+    <div class="card-header">
+      <div class="card-title">🔀 Generate Hybrid Keypair</div>
+      <div class="card-subtitle">Real PQC + real classical cryptography combined — defense-in-depth</div>
+    </div>
+    <div class="form-group">
+      <label>Scheme</label>
+      <select id="hybrid-scheme">
+        {% for key, scheme in hybrid_schemes.items() %}
+        <option value="{{ key }}">{{ scheme.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn btn-primary ied6167dca" data-onclick="generateHybridKeypair">🔀 Generate Hybrid Keypair</button>
+    <div id="hybrid-result" class="ie002535c2"></div>
+  </div>
+</div>
+
+<!-- Live Proof -->
+<div id="tab-proof" class="is-hidden">
+  <div class="card ie3e9d9c4c">
+    <div class="card-header">
+      <div class="card-title">✅ Live Round-Trip Proof</div>
+      <div class="card-subtitle">Runs the full operation server-side (keygen → operation → verification) against real liboqs and shows the result — private keys never leave the server.</div>
+    </div>
+    <div class="ie54a09571">
+      <button class="btn btn-secondary" data-onclick="runDemo" data-onclick-args='["kem"]'>🔐 Prove KEM Round-Trip</button>
+      <button class="btn btn-secondary" data-onclick="runDemo" data-onclick-args='["sign"]'>✍️ Prove Sign/Verify</button>
+      <button class="btn btn-secondary" data-onclick="runDemo" data-onclick-args='["encrypt"]'>🔒 Prove Encrypt/Decrypt</button>
+      <button class="btn btn-secondary" data-onclick="runHybridDemo" data-onclick-args='["kyber768_x25519"]'>🔀 Prove Hybrid KEM</button>
+      <button class="btn btn-secondary" data-onclick="runHybridDemo" data-onclick-args='["dilithium3_ed25519"]'>🔀 Prove Hybrid Sign</button>
+    </div>
+    <div id="proof-result" class="ie002535c2"></div>
+  </div>
 </div>
 
 <!-- Crypto Assessment -->
@@ -112,6 +225,7 @@
       <label>Algorithm in Use</label>
       <select id="assess-algo">
         <option value="rsa-2048">RSA-2048 (Classical)</option>
+        <option value="rsa-3072">RSA-3072 (Classical)</option>
         <option value="rsa-4096">RSA-4096 (Classical)</option>
         <option value="ecdsa-p256">ECDSA P-256 (Classical)</option>
         <option value="ecdh-p256">ECDH P-256 (Classical)</option>
@@ -165,7 +279,7 @@
 {% block scripts %}
 <script nonce="{{ request.state.csp_nonce }}">
 function showTab(name) {
-  ['keygen','encrypt','assess','keys'].forEach(t => {
+  ['keygen','encrypt','sign','hybrid','proof','assess','keys'].forEach(t => {
     optisecSetVisible(document.getElementById(`tab-${t}`), t === name);
   });
   document.querySelectorAll('[data-onclick="showTab"]').forEach(btn => {
@@ -174,15 +288,27 @@ function showTab(name) {
   });
 }
 
+async function apiCall(url, body) {
+  const r = await fetch(url, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body || {}),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    return {error: data.detail || data.error || `Request failed (HTTP ${r.status})`};
+  }
+  return data;
+}
+
+function renderError(elId, message) {
+  document.getElementById(elId).innerHTML = `<div class="alert alert-high">⚠️ ${escHtml(message)}</div>`;
+}
+
 async function generateKeypair() {
   const el = document.getElementById('keygen-result');
   el.innerHTML = '<div class="alert alert-info">🔑 Generating keypair...</div>';
-  const r = await fetch('/quantum/api/keypair', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({algorithm: document.getElementById('keygen-algo').value})
-  });
-  const data = await r.json();
-  if (data.error) { el.innerHTML = `<div class="alert alert-high">${escHtml(data.error)}</div>`; return; }
+  const data = await apiCall('/quantum/api/keypair', {algorithm: document.getElementById('keygen-algo').value});
+  if (data.error) { renderError('keygen-result', data.error); return; }
   el.innerHTML = `
     <div class="card ieecff2bab" >
       <div class="iee5f82b53">✅ KEYPAIR GENERATED</div>
@@ -192,18 +318,14 @@ async function generateKeypair() {
       <div class="ie54f9f2c9"><strong>Security Level:</strong> ${data.security_level}</div>
       <div class="ief90bc2b9"><strong>Public Key (base64):</strong></div>
       <textarea class="ie70790ba5" readonly>${escHtml(data.public_key)}</textarea>
-      ${data.note ? `<div class="alert alert-info ieadc41014" >${escHtml(data.note)}</div>` : ''}
     </div>`;
 }
 
 async function encapsulate() {
   const pubkey = document.getElementById('kem-pubkey').value.trim();
   if (!pubkey) { alert('Enter public key'); return; }
-  const r = await fetch('/quantum/api/encapsulate', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({public_key: pubkey, algorithm: document.getElementById('kem-algo').value})
-  });
-  const data = await r.json();
+  const data = await apiCall('/quantum/api/encapsulate', {public_key: pubkey, algorithm: document.getElementById('kem-algo').value});
+  if (data.error) { renderError('kem-result', data.error); return; }
   document.getElementById('kem-result').innerHTML = `
     <div class="ie8b685211">
       <div class="ie2937bfc9"><strong>Ciphertext:</strong><br><code class="ieea465f6e">${escHtml(data.ciphertext?.slice(0,80))}...</code></div>
@@ -214,11 +336,7 @@ async function encapsulate() {
 }
 
 async function encryptData() {
-  const r = await fetch('/quantum/api/encrypt', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({data: document.getElementById('enc-data').value, shared_secret: document.getElementById('enc-secret').value})
-  });
-  const data = await r.json();
+  const data = await apiCall('/quantum/api/encrypt', {data: document.getElementById('enc-data').value, shared_secret: document.getElementById('enc-secret').value});
   document.getElementById('enc-result').innerHTML = `
     <div class="ie8b685211">
       ${data.error ? `<div class="alert alert-high">${escHtml(data.error)}</div>` : `
@@ -227,6 +345,108 @@ async function encryptData() {
         <div class="iea18ac805"><strong>Ciphertext:</strong><br><code class="ieea465f6e">${escHtml(data.ciphertext)}</code></div>
       `}
     </div>`;
+}
+
+async function decryptData() {
+  const data = await apiCall('/quantum/api/decrypt', {
+    ciphertext: document.getElementById('dec-ciphertext').value,
+    nonce: document.getElementById('dec-nonce').value,
+    shared_secret: document.getElementById('dec-secret').value,
+  });
+  if (data.error) { renderError('dec-result', data.error); return; }
+  document.getElementById('dec-result').innerHTML = data.success
+    ? `<div class="alert alert-info"><strong>✅ Decrypted:</strong><br>${escHtml(data.plaintext)}</div>`
+    : `<div class="alert alert-high">⚠️ Decryption failed: ${escHtml(data.error || 'authentication tag mismatch')}</div>`;
+}
+
+async function signMessage() {
+  const data = await apiCall('/quantum/api/sign', {
+    private_key: document.getElementById('sign-privkey').value.trim(),
+    message: document.getElementById('sign-message').value,
+    algorithm: document.getElementById('sign-algo').value,
+  });
+  if (data.error) { renderError('sign-result', data.error); return; }
+  document.getElementById('sign-result').innerHTML = `
+    <div class="ie8b685211">
+      <div><strong>Signature (base64):</strong></div>
+      <textarea class="ie70790ba5" readonly>${escHtml(data.signature)}</textarea>
+    </div>`;
+}
+
+async function verifySignature() {
+  const data = await apiCall('/quantum/api/verify', {
+    public_key: document.getElementById('verify-pubkey').value.trim(),
+    message: document.getElementById('verify-message').value,
+    signature: document.getElementById('verify-signature').value.trim(),
+    algorithm: document.getElementById('verify-algo').value,
+  });
+  if (data.error) { renderError('verify-result', data.error); return; }
+  document.getElementById('verify-result').innerHTML = data.valid
+    ? `<div class="alert alert-info">✅ SIGNATURE VALID</div>`
+    : `<div class="alert alert-high">❌ SIGNATURE INVALID</div>`;
+}
+
+async function generateHybridKeypair() {
+  const el = document.getElementById('hybrid-result');
+  el.innerHTML = '<div class="alert alert-info">🔀 Generating hybrid keypair...</div>';
+  const data = await apiCall('/quantum/api/hybrid/keypair', {scheme: document.getElementById('hybrid-scheme').value});
+  if (data.error) { renderError('hybrid-result', data.error); return; }
+  el.innerHTML = `
+    <div class="card ieecff2bab">
+      <div class="iee5f82b53">✅ HYBRID KEYPAIR GENERATED</div>
+      <div class="ie54f9f2c9"><strong>Scheme:</strong> ${escHtml(data.scheme_name)}</div>
+      <div class="ie54f9f2c9"><strong>PQC half:</strong> ${escHtml(data.pqc_algorithm)} — <strong>Classical half:</strong> ${escHtml(data.classical_algorithm)}</div>
+      <div class="ief90bc2b9"><strong>PQC Public Key (base64):</strong></div>
+      <textarea class="ie70790ba5" readonly>${escHtml(data.pqc_public_key)}</textarea>
+      <div class="ief90bc2b9"><strong>Classical Public Key (base64):</strong></div>
+      <textarea class="ie70790ba5" readonly>${escHtml(data.classical_public_key)}</textarea>
+    </div>`;
+}
+
+async function runDemo(kind) {
+  const el = document.getElementById('proof-result');
+  el.innerHTML = '<div class="alert alert-info">⏳ Running real liboqs round-trip...</div>';
+  const data = await apiCall(`/quantum/api/demo/${kind}`, {});
+  if (data.error) { renderError('proof-result', data.error); return; }
+
+  if (kind === 'kem') {
+    el.innerHTML = `<div class="ie8b685211">
+      <div>${data.match ? '✅' : '❌'} <strong>KEM round-trip (${escHtml(data.algorithm)}):</strong> MATCH = ${data.match}</div>
+      <div class="ie5b3cc826">encapsulate() and decapsulate() independently derived the identical shared secret.</div>
+    </div>`;
+  } else if (kind === 'sign') {
+    el.innerHTML = `<div class="ie8b685211">
+      <div>${data.verified_correct_message ? '✅' : '❌'} Verify(correct message) = ${data.verified_correct_message}</div>
+      <div>${!data.verified_tampered_message ? '✅' : '❌'} Verify(tampered message) rejected = ${!data.verified_tampered_message}</div>
+      <div class="ie5b3cc826">Algorithm: ${escHtml(data.algorithm)}</div>
+    </div>`;
+  } else if (kind === 'encrypt') {
+    el.innerHTML = `<div class="ie8b685211">
+      <div>${data.round_trip_success ? '✅' : '❌'} Recovered plaintext matches original = ${data.round_trip_success}</div>
+      <div>${data.wrong_key_rejected ? '✅' : '❌'} Decryption with wrong key rejected = ${data.wrong_key_rejected}</div>
+      <div class="ie5b3cc826">Recovered: "${escHtml(data.recovered_plaintext)}"</div>
+    </div>`;
+  }
+}
+
+async function runHybridDemo(scheme) {
+  const el = document.getElementById('proof-result');
+  el.innerHTML = '<div class="alert alert-info">⏳ Running real hybrid round-trip...</div>';
+  const data = await apiCall('/quantum/api/demo/hybrid', {scheme});
+  if (data.error) { renderError('proof-result', data.error); return; }
+
+  if ('match' in data) {
+    el.innerHTML = `<div class="ie8b685211">
+      <div>${data.match ? '✅' : '❌'} <strong>Hybrid KEM round-trip (${escHtml(data.scheme)}):</strong> MATCH = ${data.match}</div>
+      <div class="ie5b3cc826">Real ML-KEM encapsulation + real X25519 ECDH, combined via SHA-256.</div>
+    </div>`;
+  } else {
+    el.innerHTML = `<div class="ie8b685211">
+      <div>${data.valid ? '✅' : '❌'} Hybrid signature valid (PQC AND classical) = ${data.valid}</div>
+      <div>${data.tampered_rejected ? '✅' : '❌'} Tampered message rejected = ${data.tampered_rejected}</div>
+      <div class="ie5b3cc826">PQC valid: ${data.pqc_valid} | Classical valid: ${data.classical_valid}</div>
+    </div>`;
+  }
 }
 
 async function assessCrypto() {
@@ -248,6 +468,9 @@ async function assessCrypto() {
       <div class="ie95e42c06">
         Shor's algorithm: ${escHtml(data.shor_attack_time)} | Grover's: ${escHtml(data.grover_attack_time||'N/A')}
       </div>` : ''}
+      ${data.shor_estimated_logical_qubits ? `<div class="ie95e42c06">Estimated logical qubits to break (Shor's): ~${data.shor_estimated_logical_qubits.toLocaleString()} (key size: ${data.key_bits}-bit)</div>` : ''}
+      ${data.grover_effective_security_bits ? `<div class="ie95e42c06">Effective security under Grover's algorithm: ~${data.grover_effective_security_bits}-bit (from ${data.key_bits}-bit key)</div>` : ''}
+      ${data.estimated_classical_security_bits ? `<div class="ie95e42c06">NIST PQC category-equivalent classical security: ~${data.estimated_classical_security_bits}-bit</div>` : ''}
     </div>`;
   optisecApplyDynStyles(assessResultEl);
 }
