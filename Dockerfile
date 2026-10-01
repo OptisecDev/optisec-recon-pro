@@ -1,16 +1,36 @@
+# syntax=docker/dockerfile:1.7
 # ============================================================
 # OPTISEC Recon Pro v4.0 SINGULARITY — Production Dockerfile
 # ============================================================
-FROM python:3.12-slim AS base
+# Pinned by digest, not just the "3.12-slim" tag: Docker Hub repoints that
+# tag whenever Debian/Python ship a point release, and an unpinned FROM
+# invalidates every downstream layer (apt, pip, the liboqs build) on
+# whichever deploy happens to race that repoint -- indistinguishable from a
+# cold build even though nothing in this repo changed. Bump deliberately:
+# `docker pull python:3.12-slim && docker inspect python:3.12-slim --format
+# '{{index .RepoDigests 0}}'`.
+FROM python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f AS base
 
 # System dependencies (nmap for scanning, curl for health checks)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+#
+# --mount=type=cache persists apt's downloaded .deb files and package index
+# across builds, on any builder that retains its BuildKit cache between
+# invocations (confirmed: local `docker buildx` with a docker-container
+# builder, and most CI runners). docker-clean is the stock Debian image's
+# post-install hook that deletes /var/cache/apt/archives/*.deb right after
+# each install -- without disabling it first, the cache mount would stay
+# permanently empty. If a given builder does NOT retain the mount between
+# invocations, this is a safe no-op: apt just re-downloads, identical to
+# today.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && apt-get install -y --no-install-recommends \
     nmap \
     curl \
     dnsutils \
     whois \
-    wireguard-tools \
-    && rm -rf /var/lib/apt/lists/*
+    wireguard-tools
 
 # ---- Build stage ----
 FROM base AS builder
@@ -21,13 +41,24 @@ COPY requirements.txt .
 
 # git is required to install theHarvester from GitHub (git+https dependency);
 # cmake/ninja-build/build-essential build liboqs (PQC) as a native C library below.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends git cmake ninja-build build-essential && \
-    rm -rf /var/lib/apt/lists/*
+# Same cache-mount reasoning as the base stage's apt RUN above (shares that
+# RUN's cache bucket, since both mounts target the same paths).
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git cmake ninja-build build-essential
 
-# Install Python packages into /install prefix
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Install Python packages into /install prefix.
+# --mount=type=cache on pip's cache dir (not --no-cache-dir, which would
+# disable that cache outright) lets pip skip re-downloading/rebuilding
+# wheels for an unchanged requirements.txt across builds, on a builder that
+# retains the mount. The final image still only gets /install (COPY
+# --from=builder below, runtime stage) -- the pip cache itself never leaves
+# the mount, so this doesn't add anything to image size either way.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install --prefix=/install -r requirements.txt
 
 # ---- liboqs (Open Quantum Safe) — native C library backing liboqs-python ----
 # Pinned to the release matching the liboqs-python version in requirements.txt
