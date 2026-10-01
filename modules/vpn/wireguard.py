@@ -88,6 +88,25 @@ def _wg_genpsk() -> str:
         return base64.b64encode(secrets.token_bytes(32)).decode()
 
 
+def _get_or_create_server_keys() -> tuple[str, str]:
+    """Return (private_key, public_key) for the server, generating and
+    persisting a new keypair on first use. Shared by generate_server_config
+    and add_peer so a client config always embeds a real PublicKey instead
+    of a placeholder, regardless of which endpoint is hit first."""
+    server_priv_file = WG_CONFIG_DIR / "server_private.key"
+    server_pub_file = WG_CONFIG_DIR / "server_public.key"
+    WG_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    if server_priv_file.exists() and server_pub_file.exists():
+        return server_priv_file.read_text().strip(), server_pub_file.read_text().strip()
+
+    server_priv, server_pub = _wg_genkey()
+    server_priv_file.write_text(server_priv)
+    server_priv_file.chmod(0o600)
+    server_pub_file.write_text(server_pub)
+    return server_priv, server_pub
+
+
 def generate_server_config(
     endpoint: str = "YOUR_SERVER_IP",
     port: int = DEFAULT_PORT,
@@ -96,18 +115,7 @@ def generate_server_config(
     post_down: str = "",
 ) -> dict:
     """Generate server wg0.conf."""
-    server_priv_file = WG_CONFIG_DIR / "server_private.key"
-    server_pub_file = WG_CONFIG_DIR / "server_public.key"
-    WG_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-    if server_priv_file.exists():
-        server_priv = server_priv_file.read_text().strip()
-        server_pub = server_pub_file.read_text().strip()
-    else:
-        server_priv, server_pub = _wg_genkey()
-        server_priv_file.write_text(server_priv)
-        server_priv_file.chmod(0o600)
-        server_pub_file.write_text(server_pub)
+    server_priv, server_pub = _get_or_create_server_keys()
 
     post_up_rule = post_up or f"iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE"
     post_down_rule = post_down or f"iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE"
@@ -148,6 +156,23 @@ PostDown = {post_down_rule}
     }
 
 
+def _normalize_endpoint(endpoint: str, port: int) -> str:
+    """Accept either 'host' or 'host:port' for a WireGuard Endpoint and
+    always return exactly one port — appending the listen port only when
+    the caller didn't already include one (avoids 'host:51820:51820')."""
+    endpoint = endpoint.strip()
+    if endpoint.startswith("["):
+        # Bracketed IPv6, e.g. "[::1]:51820" or "[::1]".
+        closing = endpoint.find("]")
+        if closing != -1 and endpoint[closing + 1:closing + 2] == ":" and endpoint[closing + 2:].isdigit():
+            return endpoint
+        return f"{endpoint}:{port}"
+    _, sep, maybe_port = endpoint.rpartition(":")
+    if sep and maybe_port.isdigit():
+        return endpoint
+    return f"{endpoint}:{port}"
+
+
 def add_peer(name: str, endpoint: str = "YOUR_SERVER_IP", port: int = DEFAULT_PORT) -> dict:
     if not is_safe_peer_name(name):
         return {"error": "Peer name must be 1-64 characters, letters/digits/-/_ only"}
@@ -161,9 +186,10 @@ def add_peer(name: str, endpoint: str = "YOUR_SERVER_IP", port: int = DEFAULT_PO
     peer_priv, peer_pub = _wg_genkey()
     psk = _wg_genpsk()
 
-    # Get server public key
-    server_pub_file = WG_CONFIG_DIR / "server_public.key"
-    server_pub = server_pub_file.read_text().strip() if server_pub_file.exists() else "SERVER_PUBLIC_KEY"
+    try:
+        _, server_pub = _get_or_create_server_keys()
+    except Exception as e:
+        return {"error": f"Could not generate server keys: {e}"}
 
     peer = {
         "name": name,
@@ -187,7 +213,7 @@ DNS = {DEFAULT_DNS}
 [Peer]
 PublicKey = {server_pub}
 PresharedKey = {psk}
-Endpoint = {endpoint}:{port}
+Endpoint = {_normalize_endpoint(endpoint, port)}
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25
 """
