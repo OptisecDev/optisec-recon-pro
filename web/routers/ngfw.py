@@ -34,7 +34,7 @@ async def inspect(request: Request, user: User = Depends(_user)):
     require_feature_or_402("ngfw", user)
     data = await request.json()
     from modules.firewall.ngfw_v2 import deep_inspect
-    return deep_inspect(
+    return await deep_inspect(
         method=data.get("method", "GET"),
         path=data.get("path", "/"),
         headers=data.get("headers", {}),
@@ -59,7 +59,7 @@ async def simulate_traffic(request: Request, user: User = Depends(_user)):
     data = await request.json()
     n = min(int(data.get("count", 20)), 50)
     from modules.firewall.ngfw_v2 import simulate_traffic_burst
-    results = simulate_traffic_burst(n)
+    results = await simulate_traffic_burst(n)
     return {"results": results, "count": len(results)}
 
 

@@ -21,6 +21,13 @@ stores -- only `recent_log` (the raw per-submission content) is scoped.
 
 Same direct-router-call convention as tests/test_idor_quantum_keys.py;
 the module's DATA_FILE is monkeypatched to an isolated tmp_path file.
+
+deep_inspect() became async when _geo_lookup() started doing a real
+(cached, rate-limited) geo_intel lookup instead of a hardcoded IP-range
+table -- see tests/test_ngfw_v2_real_geo.py for that. This file only
+needed `await`/_run() added at each call site; no assertion changed.
+geolocate_ip() is stubbed so these calls (none of which assert on geo
+contents, and several use public IPs like 8.8.8.8) stay off the network.
 """
 
 import asyncio
@@ -40,6 +47,10 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+async def _stub_geolocate_ip(ip):
+    return {"error": "stubbed in tests — no real network calls"}
+
+
 def _fake_user(user_id: int, role: str = "analyst") -> User:
     return User(id=user_id, username=f"u{user_id}", email=f"u{user_id}@example.com",
                 password_hash="x", role=role, subscription_tier="pro")
@@ -48,13 +59,15 @@ def _fake_user(user_id: int, role: str = "analyst") -> User:
 @pytest.fixture(autouse=True)
 def _isolated_data_file(tmp_path, monkeypatch):
     monkeypatch.setattr(ngfw_module, "DATA_FILE", tmp_path / "ngfw_v2_state.json")
+    monkeypatch.setattr(ngfw_module, "GEO_CACHE_FILE", tmp_path / "ngfw_geo_cache.json")
+    monkeypatch.setattr(ngfw_module, "geolocate_ip", _stub_geolocate_ip)
 
 
 def _inspect(marker: str, user_id: int | None) -> dict:
-    return ngfw_module.deep_inspect(
+    return _run(ngfw_module.deep_inspect(
         method="POST", path=f"/api/login?marker={marker}", headers={}, body="",
         src_ip="8.8.8.8", user_id=user_id,
-    )
+    ))
 
 
 class TestTrafficLogIsolation:
@@ -100,8 +113,8 @@ class TestTrafficLogIsolation:
 
 class TestNgfwRouterThreadsUserContext:
     def test_stats_endpoint_scopes_recent_log_by_user(self):
-        ngfw_module.deep_inspect(method="GET", path="/x", headers={}, body="",
-                                  src_ip="1.1.1.1", user_id=1)
+        _run(ngfw_module.deep_inspect(method="GET", path="/x", headers={}, body="",
+                                       src_ip="1.1.1.1", user_id=1))
         attacker = _fake_user(2)
 
         result = _run(ngfw_router.traffic_stats(user=attacker))

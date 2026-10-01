@@ -15,12 +15,26 @@ import json
 import time
 import hashlib
 import random
+import logging
+import ipaddress
 from collections import defaultdict, deque
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 
+from modules.osint.geo_intel import geolocate_ip
+
+logger = logging.getLogger(__name__)
+
 DATA_FILE = Path("data/ngfw_v2_state.json")
+GEO_CACHE_FILE = Path("data/ngfw_geo_cache.json")
+GEO_CACHE_TTL = 12 * 3600  # same TTL as modules/threat_intel/global_feed.py's geo cache
+
+# Sliding-window limiter on live geo lookups so a DPI traffic burst can't
+# blow through ip-api.com's free-tier ~45 req/min cap.
+_GEO_RATE_WINDOW = 60
+_GEO_RATE_MAX = 40
+_geo_call_times: deque = deque()
 
 # ── Protocol / Port Intelligence ───────────────────────────────────────────────
 
@@ -42,29 +56,6 @@ HIGH_RISK_COUNTRY_CODES = {
     "KP": "North Korea", "IR": "Iran", "RU": "Russia (sanctioned IPs)",
     "CN": "China (high-risk ASNs)", "SY": "Syria", "CU": "Cuba",
 }
-
-# ── IP Geolocation Database (sampled) ─────────────────────────────────────────
-
-IP_GEO_RANGES: List[Tuple[str, str, str, str]] = [
-    ("1.0.0.0",   "1.255.255.255",   "AU", "Australia"),
-    ("5.0.0.0",   "5.255.255.255",   "RU", "Russia"),
-    ("31.0.0.0",  "31.255.255.255",  "RU", "Russia"),
-    ("37.0.0.0",  "37.255.255.255",  "RU", "Russia"),
-    ("45.0.0.0",  "45.255.255.255",  "US", "United States"),
-    ("46.0.0.0",  "46.255.255.255",  "RU", "Russia"),
-    ("58.0.0.0",  "58.255.255.255",  "CN", "China"),
-    ("59.0.0.0",  "59.255.255.255",  "CN", "China"),
-    ("60.0.0.0",  "60.255.255.255",  "CN", "China"),
-    ("61.0.0.0",  "61.255.255.255",  "CN", "China"),
-    ("62.0.0.0",  "62.255.255.255",  "IR", "Iran"),
-    ("91.0.0.0",  "91.255.255.255",  "RU", "Russia"),
-    ("103.0.0.0", "103.255.255.255", "CN", "China"),
-    ("175.0.0.0", "175.255.255.255", "CN", "China"),
-    ("178.0.0.0", "178.255.255.255", "RU", "Russia"),
-    ("185.0.0.0", "185.255.255.255", "RU", "Russia"),
-    ("192.168.0.0","192.168.255.255","LAN","Internal Network"),
-    ("10.0.0.0",  "10.255.255.255",  "LAN","Internal Network"),
-]
 
 # ── Heuristic Feature Extractors (entropy/pattern-based, not ML) ──────────────
 
@@ -197,27 +188,79 @@ DPI_SIGNATURES = [
 ]
 
 
-def _geo_lookup(ip: str) -> dict:
-    """Approximate geo lookup by IP range."""
+def _is_private_ip(ip: str) -> bool:
     try:
-        parts = [int(x) for x in ip.split(".")]
-        ip_int = (parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return addr.is_private or addr.is_loopback or addr.is_link_local
+
+
+def _load_geo_cache() -> dict:
+    if GEO_CACHE_FILE.exists():
+        try:
+            return json.loads(GEO_CACHE_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_geo_cache(cache: dict) -> None:
+    try:
+        GEO_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        GEO_CACHE_FILE.write_text(json.dumps(cache))
     except Exception:
-        return {"country": "Unknown", "country_code": "??", "is_high_risk": False}
+        logger.warning("failed to persist NGFW geo cache", exc_info=True)
 
-    for start, end, code, country in IP_GEO_RANGES:
-        s_parts = [int(x) for x in start.split(".")]
-        e_parts = [int(x) for x in end.split(".")]
-        s_int = (s_parts[0] << 24) | (s_parts[1] << 16) | (s_parts[2] << 8) | s_parts[3]
-        e_int = (e_parts[0] << 24) | (e_parts[1] << 16) | (e_parts[2] << 8) | e_parts[3]
-        if s_int <= ip_int <= e_int:
-            return {
-                "country": country, "country_code": code,
-                "is_high_risk": code in HIGH_RISK_COUNTRY_CODES,
-                "risk_reason": HIGH_RISK_COUNTRY_CODES.get(code, ""),
-            }
 
-    return {"country": "Unknown", "country_code": "??", "is_high_risk": False, "risk_reason": ""}
+_UNKNOWN_GEO = {"country": "Unknown", "country_code": "??", "is_high_risk": False, "risk_reason": ""}
+
+
+async def _geo_lookup(ip: str) -> dict:
+    """Real geo lookup via modules.osint.geo_intel (ip-api.com, with an
+    ipinfo.io fallback -- the same provider Threat Map uses), backed by a
+    TTL disk cache so repeated DPI hits from the same source IP don't
+    re-query the provider, and a sliding-window limiter so a traffic burst
+    can't blow through ip-api.com's free-tier rate limit. Private/loopback/
+    link-local source IPs are classified locally (no provider can
+    geolocate an RFC1918 address anyway). Anything that can't be
+    confidently geolocated -- private-but-unrecognized, provider failure,
+    or the limiter is saturated -- gets an honest "Unknown", never a
+    guess."""
+    if _is_private_ip(ip):
+        return {"country": "Internal Network", "country_code": "LAN", "is_high_risk": False, "risk_reason": ""}
+
+    now = time.time()
+    cache = _load_geo_cache()
+    entry = cache.get(ip)
+    if entry and now - entry.get("_cached_at", 0) < GEO_CACHE_TTL:
+        return {k: v for k, v in entry.items() if k != "_cached_at"}
+
+    while _geo_call_times and now - _geo_call_times[0] > _GEO_RATE_WINDOW:
+        _geo_call_times.popleft()
+    if len(_geo_call_times) >= _GEO_RATE_MAX:
+        return dict(_UNKNOWN_GEO)
+    _geo_call_times.append(now)
+
+    try:
+        geo = await geolocate_ip(ip)
+    except Exception:
+        logger.warning("geo lookup failed for %s", ip, exc_info=True)
+        geo = None
+
+    if not geo or geo.get("error") or not geo.get("country_code"):
+        return dict(_UNKNOWN_GEO)
+
+    code = geo["country_code"]
+    result = {
+        "country": geo.get("country") or "Unknown",
+        "country_code": code,
+        "is_high_risk": code in HIGH_RISK_COUNTRY_CODES,
+        "risk_reason": HIGH_RISK_COUNTRY_CODES.get(code, ""),
+    }
+    cache[ip] = {**result, "_cached_at": now}
+    _save_geo_cache(cache)
+    return result
 
 
 # ── Rate Limiting ─────────────────────────────────────────────────────────────
@@ -263,7 +306,7 @@ def _save_state(state: dict) -> None:
 
 # ── Main Inspection Engine ────────────────────────────────────────────────────
 
-def deep_inspect(
+async def deep_inspect(
     method: str,
     path: str,
     headers: dict,
@@ -292,7 +335,7 @@ def deep_inspect(
             })
 
     # Geo check
-    geo = _geo_lookup(src_ip)
+    geo = await _geo_lookup(src_ip)
 
     # Rate limit
     rate = _check_rate_limit(src_ip)
@@ -430,7 +473,7 @@ SIMULATED_NOTE_AR = (
 )
 
 
-def simulate_traffic_burst(n: int = 20) -> List[dict]:
+async def simulate_traffic_burst(n: int = 20) -> List[dict]:
     """Generate simulated traffic for visualization/demo."""
     results = []
     sample_ips = [
@@ -465,7 +508,7 @@ def simulate_traffic_burst(n: int = 20) -> List[dict]:
         ip = random.choice(sample_ips)
         path = random.choice(sample_paths)
         body = random.choice(sample_bodies)
-        result = deep_inspect(
+        result = await deep_inspect(
             method=random.choice(["GET", "POST", "PUT"]),
             path=path,
             headers={"User-Agent": random.choice(["Mozilla/5.0", "sqlmap/1.7", "curl/7.68"])},

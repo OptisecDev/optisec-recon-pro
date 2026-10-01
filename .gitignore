@@ -15,6 +15,10 @@ optisec_backup.dump
 
 # Runtime state (generated at startup)
 data/*.json
+# ...except the static MITRE ATT&CK reference data distilled by
+# scripts/build_mitre_data.py — not runtime state, committed on purpose.
+!data/mitre_attack_enterprise_slim.json
+!data/mitre_attack_groups_slim.json
 
 # Virtualenv
 venv/

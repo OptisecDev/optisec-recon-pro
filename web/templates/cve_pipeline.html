@@ -155,18 +155,26 @@ async function draftFromFinding() {
   const findingId = document.getElementById('finding-select').value;
   const el = document.getElementById('finding-draft-result');
   if (!findingId) { el.innerHTML = '<div class="iea7ceb264">اختر ثغرة أولاً / Select a finding first.</div>'; return; }
-  const r = await fetch('/api/cve/draft', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({finding_id: parseInt(findingId, 10)}),
-  });
-  const d = await r.json();
+  let r;
+  try {
+    r = await fetch('/api/cve/draft', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({finding_id: parseInt(findingId, 10)}),
+    });
+  } catch (e) {
+    el.innerHTML = '<div class="iea7ceb264">تعذّر الاتصال بالخادم / Network error — request failed.</div>';
+    return;
+  }
+  let d = {};
+  try { d = await r.json(); } catch (e) { d = {}; }
   if (r.ok) {
     el.innerHTML = `<div class="ie6e17958f">تم إنشاء المسودة ${d.draft_ref} / Draft ${d.draft_ref} created.</div>` +
       (d.hosted_website_notice_en ? `<div class="ie49bd2a6d">ℹ ${d.hosted_website_notice_ar}<br>${d.hosted_website_notice_en}</div>` : '');
     loadCVEDrafts();
   } else {
-    el.innerHTML = `<div class="iea7ceb264">${d.error || d.detail || 'Failed to generate draft.'}</div>`;
+    const reason = d.error || d.detail || `Server error (${r.status})`;
+    el.innerHTML = `<div class="iea7ceb264">${reason} (${r.status})</div>`;
   }
 }
 

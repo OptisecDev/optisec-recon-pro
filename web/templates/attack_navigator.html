@@ -20,21 +20,14 @@
 .tech-item:hover{border-color:var(--accent);background:rgba(0,255,136,0.1)}
 .tech-item.detected{background:rgba(255,107,107,0.25);border-color:#FF6B6B}
 .tech-item.sub{font-size:8.5px;margin-left:8px;opacity:0.8;padding:2px 5px}
-.sev-critical{color:#FF6B6B}.sev-high{color:#FFA726}.sev-medium{color:#FFCA28}.sev-low{color:#66BB6A}
 .apt-card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:16px;
   transition:all 0.2s;cursor:pointer}
 .apt-card:hover{border-color:var(--accent);transform:translateY(-1px)}
-.apt-badge{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;
-  font-size:10px;font-weight:700;text-transform:uppercase}
-.apt-critical{background:rgba(255,107,107,0.2);color:#FF6B6B;border:1px solid #FF6B6B}
-.apt-high{background:rgba(255,167,38,0.2);color:#FFA726;border:1px solid #FFA726}
 .ioc-panel{background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:16px}
 .ioc-row{display:flex;gap:8px;margin-bottom:8px}
 .coverage-bar{height:8px;border-radius:4px;background:var(--bg-secondary);overflow:hidden;margin-top:4px}
 .coverage-fill{height:100%;border-radius:4px;background:var(--accent);transition:width 0.5s}
-.filter-btn{padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;
-  color:var(--text-dim);font-size:11px;cursor:pointer;transition:all 0.2s}
-.filter-btn.active,.filter-btn:hover{background:var(--accent);color:#000;border-color:var(--accent)}
+.data-provenance{font-size:11px;color:var(--text-dim);margin-bottom:12px}
 #detail-modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:1000;
   align-items:center;justify-content:center}
 #detail-modal.open{display:flex}
@@ -61,6 +54,15 @@
   </div>
 </div>
 
+<div class="data-provenance">
+  {% if matrix.data_source.error %}
+    ⚠ {{ matrix.data_source.error }}
+  {% else %}
+    Source: <a href="{{ matrix.data_source.source }}" target="_blank" rel="noopener">MITRE ATT&CK Enterprise</a>
+    (STIX {{ matrix.data_source.stix_spec_version }}) · fetched {{ matrix.data_source.fetched_at }}
+  {% endif %}
+</div>
+
 <div class="tabs ie3019698e" >
   <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["matrix"]'>Matrix View</button>
   <button class="tab-btn" data-onclick="showTab" data-onclick-args='["apt"]'>APT Profiles</button>
@@ -71,11 +73,6 @@
 <!-- MATRIX TAB -->
 <div id="tab-matrix">
   <div class="nav-controls">
-    <span class="ieacac8ae4">Filter severity:</span>
-    <button class="filter-btn active" data-onclick="filterSev" data-onclick-args='["all"]'>All</button>
-    <button class="filter-btn iee22d2807" data-onclick="filterSev" data-onclick-args='["critical"]' >Critical</button>
-    <button class="filter-btn ie78539534" data-onclick="filterSev" data-onclick-args='["high"]' >High</button>
-    <button class="filter-btn iec63e5110" data-onclick="filterSev" data-onclick-args='["medium"]' >Medium</button>
     <input type="text" class="form-control iebe2c09c4"  placeholder="Search technique..." data-oninput="searchMatrixFromInput">
     <button class="btn btn-secondary btn-sm" data-onclick="loadDetections">Refresh Detections</button>
   </div>
@@ -100,11 +97,11 @@
           <td class="tech-cell" data-tactic="{{ tac.id }}">
             {% for tech in tac.techniques %}
             <div class="tech-item{% if tech.sub %} sub{% endif %}"
-                 data-id="{{ tech.id }}" data-sev="{{ tech.severity }}"
+                 data-id="{{ tech.id }}"
                  data-tactic="{{ tac.id }}"
-                 data-onclick="showTechDetail" data-onclick-args='{{ [tech.id, tech.name, tech.severity, tac.name, tac.color] | tojson }}'
+                 data-onclick="showTechDetail" data-onclick-args='{{ [tech.id, tech.name, tac.name, tac.color] | tojson }}'
                  title="{{ tech.id }}: {{ tech.name }}">
-              <span class="sev-{{ tech.severity }}">{% if tech.sub %}↳ {% endif %}{{ tech.id }}</span>
+              <span>{% if tech.sub %}↳ {% endif %}{{ tech.id }}</span>
               <div class="ieab1b1788">{{ tech.name[:28] }}{% if tech.name|length > 28 %}…{% endif %}</div>
             </div>
             {% endfor %}
@@ -124,17 +121,13 @@
       <div class="ie5ad71ab9">
         <div>
           <div class="ie69b3004a">{{ apt.name }}</div>
-          <div class="ie5b3cc826">{{ apt.id }}</div>
+          <div class="ie5b3cc826">{{ apt.id }}{% if apt.aliases %} · {{ apt.aliases[:3] | join(", ") }}{% endif %}</div>
         </div>
-        <span class="apt-badge apt-{{ apt.risk_level }}">{{ apt.risk_level }}</span>
-      </div>
-      <div class="ie1fceb166">
-        <span>🌍 {{ apt.origin }}</span> · <span>🏛️ {{ apt.sponsor }}</span> · <span>📅 Since {{ apt.active_since }}</span>
       </div>
       <div class="ie07f0b52f">{{ apt.description[:100] }}…</div>
       <div class="iea632ba38">
-        {% for sector in apt.target_sectors[:3] %}
-        <span class="badge badge-info ied9e14ae8" >{{ sector }}</span>
+        {% for mal in apt.malware[:3] %}
+        <span class="badge badge-info ied9e14ae8" >{{ mal }}</span>
         {% endfor %}
       </div>
       <div class="ie3122d8b0">
@@ -221,7 +214,6 @@
       </div>
       <button data-onclick="closeModal" class="ie7a4b5a14">×</button>
     </div>
-    <div id="modal-sev" class="iefa3e1c7d"></div>
     <div class="ie8e86974b">
       <button class="btn btn-primary btn-sm" data-onclick="recordFromModal">Record Detection</button>
       <button class="btn btn-secondary btn-sm iec3f83707"  data-onclick="highlightOnMatrix">Highlight on Matrix</button>
@@ -242,14 +234,6 @@ function showTab(tab) {
   if (tab === 'detections') loadDetections();
 }
 
-function filterSev(sev) {
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  event.target.classList.add('active');
-  document.querySelectorAll('.tech-item').forEach(el => {
-    el.style.display = (sev === 'all' || el.dataset.sev === sev) ? '' : 'none';
-  });
-}
-
 function searchMatrixFromInput() {
   searchMatrix(this.value);
 }
@@ -262,16 +246,12 @@ function searchMatrix(q) {
   });
 }
 
-function showTechDetail(id, name, sev, tactic, color) {
-  currentModalTech = {id, name, sev, tactic};
+function showTechDetail(id, name, tactic, color) {
+  currentModalTech = {id, name, tactic};
   document.getElementById('modal-tid').textContent = id;
   document.getElementById('modal-tname').textContent = name;
   document.getElementById('modal-tname').style.color = color;
   document.getElementById('modal-tactic').textContent = 'Tactic: ' + tactic;
-  const sevColors = {critical:'#FF6B6B',high:'#FFA726',medium:'#FFCA28',low:'#66BB6A'};
-  const modalSev = document.getElementById('modal-sev');
-  modalSev.innerHTML = `<span class="badge" data-dyn-style="background:${sevColors[sev]}20;color:${sevColors[sev]};border:1px solid ${sevColors[sev]};text-transform:uppercase;font-size:11px;padding:4px 10px;border-radius:20px">${sev}</span>`;
-  optisecApplyDynStyles(modalSev);
   document.getElementById('detail-modal').classList.add('open');
 }
 
