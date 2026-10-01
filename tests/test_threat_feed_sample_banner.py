@@ -133,15 +133,17 @@ class TestSampleDataBannerInTemplate:
         src = _read_template()
         assert "SAMPLE DATA" in src
 
-    def test_attacks_per_hour_always_carries_a_sample_disclaimer(self):
-        # Unlike the IOC feed (which can be live via OTX/URLhaus), the threat
-        # map's attacks_per_hour is ALWAYS jittered demo data (see
-        # modules/threat_intel/global_feed.py's get_threat_map() /
-        # MAP_JITTER_NOTE_EN) — so this disclaimer must be unconditional,
-        # not gated behind feed.is_live.
+    def test_threat_map_stat_tile_reflects_real_geolocated_data_not_jitter(self):
+        # get_threat_map() no longer jitters a static baseline — it
+        # geolocates real IP IOCs from the local database (see
+        # modules/threat_intel/global_feed.py's MAP_METHOD_NOTE_EN). The
+        # top-of-page stat tile must reflect that real count, not a
+        # "sample"-labeled fabricated figure.
         src = _read_template()
-        assert "Attacks/Hour (sample)" in src
-        assert "jittered demo figure" in src
+        assert "threat_map.total_known_malicious_ips" in src
+        assert "Known-Malicious IPs (geolocated)" in src
+        assert "Attacks/Hour (sample)" not in src
+        assert "jittered demo figure" not in src
 
     def test_live_ioc_stream_heading_is_conditional(self):
         src = _read_template()

@@ -1,4 +1,4 @@
-"""AI Firewall — Deep Packet Inspection + ML-based anomaly detection."""
+"""AI Firewall — Deep Packet Inspection + heuristic/rule-based anomaly detection (signature matching, entropy scoring — no trained model)."""
 
 import re
 import math

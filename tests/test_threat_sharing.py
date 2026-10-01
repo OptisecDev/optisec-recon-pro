@@ -656,3 +656,56 @@ class TestLicenseFeatureRegistered:
         from web.license import TIER_FEATURES, FEATURE_LABELS
         assert "threat_sharing" in TIER_FEATURES["pro"]
         assert "threat_sharing" in FEATURE_LABELS
+
+
+# ── 8. /status honestly surfaces URLhaus connectivity, not just key presence ─
+# Regression: a configured-but-invalid URLHAUS_API_KEY (abuse.ch returns 403
+# unknown_auth_key) used to look identical to a working one anywhere in the
+# UI — nothing distinguished "key present" from "key actually works". The
+# real, cheap-to-compute signal is whether the periodic sync has ever
+# actually stored a urlhaus-sourced row.
+
+def _fake_user() -> User:
+    return User(id=1, username="analyst", email="a@example.com", password_hash="x",
+                role="analyst", subscription_tier="enterprise")
+
+
+class TestSharingStatusSurfacesUrlhausHonesty:
+    def test_not_configured_when_no_key_set(self, db, monkeypatch):
+        monkeypatch.setattr(ts_router, "URLHAUS_API_KEY", "")
+        async def go():
+            async with db() as db_:
+                return await ts_router.sharing_status(user=_fake_user(), db=db_)
+        import json
+        data = json.loads(_run(go()).body)
+        assert data["urlhaus_configured"] is False
+        assert data["urlhaus_synced_count"] == 0
+
+    def test_configured_but_zero_synced_flags_the_invalid_key_case(self, db, monkeypatch):
+        monkeypatch.setattr(ts_router, "URLHAUS_API_KEY", "some-key-that-403s")
+        async def go():
+            async with db() as db_:
+                return await ts_router.sharing_status(user=_fake_user(), db=db_)
+        import json
+        data = json.loads(_run(go()).body)
+        assert data["urlhaus_configured"] is True
+        assert data["urlhaus_synced_count"] == 0
+
+    def test_configured_and_synced_counts_real_urlhaus_rows(self, db, monkeypatch):
+        from modules.ioc.ioc_engine import IOCRepository
+        monkeypatch.setattr(ts_router, "URLHAUS_API_KEY", "a-working-key")
+
+        async def go():
+            async with db() as db_:
+                repo = IOCRepository(db_)
+                await repo.create("url", "http://real-malware.example/x", source="urlhaus", confidence_score=90.0)
+                await repo.create("url", "http://other.example/y", source="urlhaus", confidence_score=80.0)
+                await repo.create("url", "http://not-urlhaus.example/z", source="manual", confidence_score=50.0)
+                await db_.commit()
+            async with db() as db_:
+                return await ts_router.sharing_status(user=_fake_user(), db=db_)
+
+        import json
+        data = json.loads(_run(go()).body)
+        assert data["urlhaus_configured"] is True
+        assert data["urlhaus_synced_count"] == 2

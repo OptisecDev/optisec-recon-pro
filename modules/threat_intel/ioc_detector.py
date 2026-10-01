@@ -7,7 +7,11 @@ import requests
 from typing import Dict, Any, Optional
 
 ABUSEIPDB_KEY = os.environ.get("ABUSEIPDB_API_KEY", "")
-VIRUSTOTAL_KEY = os.environ.get("VIRUSTOTAL_API_KEY", "")
+# Was "VIRUSTOTAL_API_KEY" — a name only this module used, not documented in
+# .env.example and not what modules/osint/unified_engine.py reads for the
+# same VirusTotal key, so a correctly-configured instance (VT_API_KEY, per
+# .env.example) silently never enabled the VT checks below.
+VIRUSTOTAL_KEY = os.environ.get("VT_API_KEY", "")
 SHODAN_KEY = os.environ.get("SHODAN_API_KEY", "")
 
 # Well-known malicious IP ranges / TOR exit node check endpoint

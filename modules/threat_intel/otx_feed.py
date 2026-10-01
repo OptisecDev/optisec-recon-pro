@@ -15,6 +15,11 @@ logger = logging.getLogger(__name__)
 _CACHE: dict = {}
 _CACHE_TTL = 300  # 5 minutes
 
+# Separate cache for fetch_otx_pulse_campaigns() (pulse-level, not
+# indicator-flattened) — same TTL/shape convention, distinct key namespace
+# so the two caches never collide.
+_CAMPAIGN_CACHE: dict = {}
+
 _OTX_BASE = "https://otx.alienvault.com/api/v1"
 _HEADERS_BASE = {
     "User-Agent": "OPTISEC-Platform/4.0 (Security Research)",
@@ -146,6 +151,70 @@ def fetch_otx_pulses(api_key: str, limit: int = 50) -> list:
 
     _CACHE[cache_key] = (now, iocs)
     return iocs[:limit]
+
+
+def fetch_otx_pulse_campaigns(api_key: str, limit: int = 20) -> list:
+    """Fetch latest OTX pulses and return them as pulse-level campaign
+    dicts (one entry per pulse, not flattened to one per indicator like
+    fetch_otx_pulses()).
+
+    Every field below is read straight off OTX's own pulse object — no
+    field here is invented or guessed. `actor` is populated only when
+    `adversary` passes looks_like_threat_actor_name() (same gate as
+    fetch_otx_pulses()'s per-indicator `adversary`); otherwise it's left
+    empty and the raw value is kept separately as `unverified_adversary`
+    for display only, never for scoring. OTX has no "confidence" concept
+    for a pulse, so none is synthesized — callers must not add one.
+    """
+    cache_key = f"campaigns:{api_key[:8]}"
+    now = time.time()
+    if cache_key in _CAMPAIGN_CACHE:
+        ts, cached = _CAMPAIGN_CACHE[cache_key]
+        if now - ts < _CACHE_TTL:
+            return cached[:limit]
+
+    sess = _session(api_key)
+    try:
+        resp = sess.get(
+            f"{_OTX_BASE}/pulses/activity",
+            params={"limit": max(1, min(limit, 50)), "page": 1},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.exceptions.RequestException as exc:
+        logger.error("OTX pulse-campaign fetch failed: %s", exc)
+        raise
+
+    campaigns: list = []
+    for pulse in data.get("results", [])[:limit]:
+        adversary_raw = (pulse.get("adversary") or "").strip()
+        adversary = adversary_raw if looks_like_threat_actor_name(adversary_raw) else ""
+        unverified_adversary = adversary_raw if adversary_raw and not adversary else ""
+
+        campaigns.append({
+            "id": pulse.get("id", ""),
+            "name": pulse.get("name", "Unknown Pulse"),
+            "author": pulse.get("author_name", "OTX"),
+            "actor": adversary,
+            "unverified_adversary": unverified_adversary,
+            "description": pulse.get("description", ""),
+            "created": pulse.get("created", ""),
+            "modified": pulse.get("modified", ""),
+            "target_sectors": pulse.get("industries", []) or [],
+            "countries_targeted": pulse.get("targeted_countries", []) or [],
+            "techniques": pulse.get("attack_ids", []) or [],
+            "tags": pulse.get("tags", []) or [],
+            "malware_families": [
+                m.get("display_name", m) if isinstance(m, dict) else m
+                for m in (pulse.get("malware_families") or [])
+            ],
+            "ioc_count": len(pulse.get("indicators", [])),
+            "references": pulse.get("references", []) or [],
+        })
+
+    _CAMPAIGN_CACHE[cache_key] = (now, campaigns)
+    return campaigns[:limit]
 
 
 def _score_indicator(indicator: dict, pulse: dict) -> int:

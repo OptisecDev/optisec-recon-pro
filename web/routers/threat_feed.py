@@ -112,8 +112,8 @@ async def feed_home(request: Request, user: User = Depends(_user), db: AsyncSess
         "user": user,
         "active": "threat_feed",
         "feed": feed,
-        "threat_map": get_threat_map(),
-        "campaigns": get_campaigns(),
+        "threat_map": await get_threat_map(db),
+        "campaigns": await get_campaigns(OTX_API_KEY),
         "stats": get_feed_stats(),
         "otx_connected": bool(OTX_API_KEY and otx_iocs),
     })
@@ -150,17 +150,17 @@ async def otx_test(user: User = Depends(_user)):
 
 
 @router.get("/api/threat-map")
-async def threat_map(user: User = Depends(_user)):
+async def threat_map(user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("threat_feed", user)
     from modules.threat_intel.global_feed import get_threat_map
-    return get_threat_map()
+    return await get_threat_map(db)
 
 
 @router.get("/api/campaigns")
-async def get_campaigns(user: User = Depends(_user)):
+async def campaigns(user: User = Depends(_user)):
     require_feature_or_402("threat_feed", user)
     from modules.threat_intel.global_feed import get_campaigns
-    return {"campaigns": get_campaigns()}
+    return await get_campaigns(OTX_API_KEY)
 
 
 @router.post("/api/submit-ioc", dependencies=[Depends(_submit_ioc_limiter)])
@@ -182,11 +182,11 @@ async def submit_ioc(request: Request, user: User = Depends(_user)):
 
 
 @router.post("/api/correlate")
-async def correlate(request: Request, user: User = Depends(_user)):
+async def correlate(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("threat_feed", user)
     data = await request.json()
     from modules.threat_intel.global_feed import correlate_iocs
-    return correlate_iocs(data.get("iocs", []))
+    return await correlate_iocs(data.get("iocs", []), db)
 
 
 @router.get("/api/stats")

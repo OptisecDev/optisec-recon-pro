@@ -33,6 +33,9 @@
 .sample-data-banner{border-color:#FFA726;background:#FFA72612;margin-bottom:16px}
 .sample-data-banner-title{font-weight:700;color:#FFA726;font-size:13px}
 .mt4{margin-top:4px}
+.mb8{margin-bottom:8px}
+.mb12{margin-bottom:12px}
+.py20{padding:20px 0}
 </style>
 
 <!-- Sample/demo data disclosure — shown whenever nothing on this page is a
@@ -85,19 +88,18 @@
     <div class="stat-label">Critical</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value ie146bf057" >{{ stats.active_campaigns }}</div>
-    <div class="stat-label">Illustrative Campaigns</div>
+    <div class="stat-value ie146bf057" title="{{ 'Live AlienVault OTX pulses' if campaigns.otx_connected else (campaigns.note or '') }}">{{ campaigns.campaigns|length }}</div>
+    <div class="stat-label">{{ 'Live OTX Campaigns' if campaigns.otx_connected else 'Campaigns (OTX not connected)' }}</div>
   </div>
   <div class="stat-card">
     <div class="stat-value ie29925b1a" >{{ stats.feed_sources }}</div>
     <div class="stat-label">Catalogued Sources</div>
   </div>
   <div class="stat-card">
-    <div class="stat-value ie78539534" title="{{ threat_map.note }}">{{ threat_map.total_attacks_per_hour | int }}*</div>
-    <div class="stat-label">Attacks/Hour (sample)</div>
+    <div class="stat-value ie78539534" title="{{ threat_map.note }}">{{ threat_map.total_known_malicious_ips }}</div>
+    <div class="stat-label">Known-Malicious IPs (geolocated)</div>
   </div>
 </div>
-<div class="iebfdf0207">* Attacks/Hour is a randomly jittered demo figure around a static baseline — not real-time attack telemetry. See the Threat Map tab.</div>
 
 <div class="tabs ie3019698e" >
   <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["feed"]'>Live IOC Feed</button>
@@ -151,14 +153,19 @@
 <div id="tab-map" class="is-hidden">
   <div class="tf-card">
     <div class="ie57d669d7">
-      <h3>Global Threat Map — Live Attack Origins</h3>
-      <div class="ieacac8ae4">Top origin: <strong class="iee22d2807">{{ threat_map.top_origin }}</strong></div>
+      <h3>Threat Map — Known-Malicious IP Origins</h3>
+      {% if threat_map.top_origin %}<div class="ieacac8ae4">Top origin: <strong class="iee22d2807">{{ threat_map.top_origin }}</strong></div>{% endif %}
     </div>
-    {% if threat_map.map_jitter %}
     <div class="ie36d24c14" title="{{ threat_map.note }}">
-      <span class="ie3cb878e2">ESTIMATED</span> — attacks/hr and active campaigns below are jittered around a static baseline for a live-feel effect, not real-time attack telemetry.
+      <span class="ie3cb878e2">METHODOLOGY</span> — {{ threat_map.note }}
     </div>
-    {% endif %}
+    {% if not threat_map.points %}
+    <div class="iebfdf0207 py20">
+      No geolocated threat data available yet — this requires IP-type indicators synced from OTX/URLhaus into the local database
+      (see Feed Sources tab for connection status).<br>
+      لا توجد بيانات تهديدات محدَّدة الموقع بعد — يتطلب هذا مؤشرات IP مُزامَنة من OTX/URLhaus بقاعدة البيانات المحلية.
+    </div>
+    {% else %}
     <div class="map-container" id="threat-map">
       <!-- World map SVG approximation using dots -->
       <div class="ie1b249090">
@@ -167,70 +174,78 @@
       {% for point in threat_map.points %}
       {% set x = ((point.lon + 180) / 360 * 100)|round(1) %}
       {% set y = ((90 - point.lat) / 180 * 100)|round(1) %}
-      {% set size = [6, [6, (point.attacks_per_hour / 100)|int]|max]|max %}
-      <div class="map-point" data-dyn-style="left:{{ x }}%;top:{{ y }}%" title="{{ point.country }}: {{ point.attacks_per_hour }} attacks/hr">
+      {% set size = [6, [6, point.known_malicious_ioc_count]|max]|max %}
+      <div class="map-point" data-dyn-style="left:{{ x }}%;top:{{ y }}%" title="{{ point.country }}: {{ point.known_malicious_ioc_count }} known-malicious indicator(s)">
         <div class="map-dot" data-dyn-style="width:{{ [size,20]|min }}px;height:{{ [size,20]|min }}px;
-          background:{{ '#FF6B6B' if point.threat_level == 'critical' else '#FFA726' if point.threat_level == 'high' else '#FFCA28' if point.threat_level == 'medium' else '#66BB6A' }};
+          background:{{ '#FF6B6B' if point.density_tier == 'high' else '#FFA726' if point.density_tier == 'medium' else '#66BB6A' }};
           opacity:0.85"></div>
         <div class="map-label">{{ point.code }}</div>
       </div>
       {% endfor %}
     </div>
     <div class="ie2ec88d80">
-      <span class="ie5b3cc826">Legend:</span>
-      {% for level, color in [('Critical','#FF6B6B'),('High','#FFA726'),('Medium','#FFCA28'),('Low','#66BB6A')] %}
+      <span class="ie5b3cc826">Legend (indicator count):</span>
+      {% for level, color in [('High (≥10)','#FF6B6B'),('Medium (3-9)','#FFA726'),('Low (1-2)','#66BB6A')] %}
       <span class="ie6f65da91"><span data-dyn-style="width:10px;height:10px;border-radius:50%;background:{{ color }};display:inline-block"></span>{{ level }}</span>
       {% endfor %}
     </div>
 
     <div class="iee1389ab0">
       <table class="table ie8b685211" >
-        <thead><tr><th>Country</th><th>Code</th><th>Attacks/hr</th><th>Threat Level</th><th>Active Campaigns</th></tr></thead>
+        <thead><tr><th>Country</th><th>Code</th><th>Known-Malicious IPs</th><th>Density</th></tr></thead>
         <tbody>
-          {% set sorted_map_points = threat_map.points|sort(attribute='attacks_per_hour',reverse=True) %}
-      {% for p in sorted_map_points[:15] %}
+      {% for p in threat_map.points[:15] %}
           <tr>
             <td>{{ p.country }}</td>
             <td><code>{{ p.code }}</code></td>
-            <td><strong data-dyn-style="color:{{ '#FF6B6B' if p.attacks_per_hour > 500 else '#FFA726' if p.attacks_per_hour > 100 else '#FFCA28' }}">{{ p.attacks_per_hour }}</strong></td>
-            <td><span class="badge badge-{{ 'critical' if p.threat_level == 'critical' else 'high' if p.threat_level == 'high' else 'medium' if p.threat_level == 'medium' else 'info' }}">{{ p.threat_level }}</span></td>
-            <td>{{ p.active_campaigns }}</td>
+            <td><strong data-dyn-style="color:{{ '#FF6B6B' if p.density_tier == 'high' else '#FFA726' if p.density_tier == 'medium' else '#66BB6A' }}">{{ p.known_malicious_ioc_count }}</strong></td>
+            <td><span class="badge badge-{{ 'critical' if p.density_tier == 'high' else 'medium' if p.density_tier == 'medium' else 'info' }}">{{ p.density_tier }}</span></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
+    {% endif %}
   </div>
 </div>
 
 <!-- CAMPAIGNS TAB -->
 <div id="tab-campaigns" class="is-hidden">
-  {% for camp in campaigns %}
-  <div class="campaign-card camp-{{ camp.status }}">
+  {% if not campaigns.otx_connected %}
+  <div class="tf-card sample-data-banner">
+    <div class="sample-data-banner-title">⚠ No Live Campaign Data</div>
+    <div class="ie3122d8b0 mt4">{{ campaigns.note }}</div>
+    <div class="ie3122d8b0 mt4">{{ campaigns.note_ar }}</div>
+  </div>
+  {% elif not campaigns.campaigns %}
+  <div class="tf-card"><div class="ie3122d8b0">OTX is connected but returned no recent pulses right now.</div></div>
+  {% else %}
+  <div class="iebfdf0207 mb12">
+    Each card below is a real AlienVault OTX pulse, shown as-is — only fields OTX itself provides (no invented status or confidence score).
+  </div>
+  {% for camp in campaigns.campaigns %}
+  <div class="campaign-card camp-active">
     <div class="ie5ad71ab9">
       <div>
         <div class="ie9535b3b9">{{ camp.name }}</div>
         <div class="ie9287d041">
-          {{ camp.id }} · <span class="ie78539534">{{ camp.actor }}</span> · Since {{ camp.start_date }}
+          by {{ camp.author }} · First seen {{ camp.created[:10] }}{% if camp.modified and camp.modified[:10] != camp.created[:10] %} · Updated {{ camp.modified[:10] }}{% endif %}
+          {% if camp.actor %} · <span class="ie78539534">{{ camp.actor }}</span>{% elif camp.unverified_adversary %} · <span title="OTX's free-text adversary field did not pass the threat-actor-name check — shown unverified.">unverified: {{ camp.unverified_adversary }}</span>{% endif %}
         </div>
       </div>
-      <div class="ief6e3d7fe">
-        <span class="badge badge-{{ 'critical' if camp.status == 'active' else 'medium' }}">{{ camp.status }}</span>
-        <div data-dyn-style="font-size:11px;margin-top:4px;color:{{ '#FF6B6B' if camp.confidence >= 90 else '#FFA726' }}">{{ camp.confidence }}% confidence</div>
-      </div>
     </div>
-    <p class="ie49bd2a6d">{{ camp.description }}</p>
+    {% if camp.description %}<p class="ie49bd2a6d">{{ camp.description[:400] }}{% if camp.description|length > 400 %}…{% endif %}</p>{% endif %}
     <div class="ie49f9cf0e">
       <div>
         <div class="iecaa49e02">Target Sectors</div>
         <div class="ie5e254dbb">
-          {% for s in camp.target_sectors %}<span class="badge badge-info ied9e14ae8" >{{ s }}</span>{% endfor %}
+          {% if camp.target_sectors %}{% for s in camp.target_sectors %}<span class="badge badge-info ied9e14ae8" >{{ s }}</span>{% endfor %}{% else %}<span class="ie3122d8b0">not provided by OTX</span>{% endif %}
         </div>
       </div>
       <div>
         <div class="iecaa49e02">MITRE Techniques</div>
         <div class="ie5e254dbb">
-          {% for t in camp.techniques %}<code class="iecb66e7fe">{{ t }}</code>{% endfor %}
+          {% if camp.techniques %}{% for t in camp.techniques %}<code class="iecb66e7fe">{{ t }}</code>{% endfor %}{% else %}<span class="ie3122d8b0">not provided by OTX</span>{% endif %}
         </div>
       </div>
       <div>
@@ -239,11 +254,12 @@
       </div>
       <div>
         <div class="iecaa49e02">Countries Targeted</div>
-        <div>{% for c in camp.countries_targeted %}<code class="ie265c146b">{{ c }}</code>{% endfor %}</div>
+        <div>{% if camp.countries_targeted %}{% for c in camp.countries_targeted %}<code class="ie265c146b">{{ c }}</code>{% endfor %}{% else %}<span class="ie3122d8b0">not provided by OTX</span>{% endif %}</div>
       </div>
     </div>
   </div>
   {% endfor %}
+  {% endif %}
 </div>
 
 <!-- FEED SOURCES TAB -->
@@ -251,10 +267,13 @@
   <div class="tf-card">
     <h3 class="ie8e86974b">Intelligence Feed Sources</h3>
     {% for src in feed.feed_sources %}
+    {% set live_count = feed.stats.by_source.get(src.id, 0) %}
     <div class="feed-source">
       <div class="ie306ee34c">{{ src.name }}</div>
       <span class="badge badge-{{ 'info' if src.type == 'open' else 'medium' if src.type == 'community' else 'high' if src.type == 'government' else 'critical' }} ied9e14ae8" >{{ src.type }}</span>
-      {% if src.is_sample %}<span class="badge badge-medium sample-badge" title="Fabricated sample/demo data — not a live feed integration.">Sample / Demo data</span>{% else %}<span class="badge badge-high">Live</span>{% endif %}
+      {% if src.is_sample %}<span class="badge badge-medium sample-badge" title="Fabricated sample/demo data — not a live feed integration.">Sample / Demo data</span>
+      {% elif live_count > 0 %}<span class="badge badge-high" title="{{ live_count }} indicator(s) from this source in the current feed">Live ({{ live_count }})</span>
+      {% else %}<span class="badge badge-medium" title="This source can be live, but 0 of its indicators are in the current feed right now — check the key/connection (see Threat Sharing tab for URLhaus/OTX status).">0 synced — check connection</span>{% endif %}
       <div class="ieda5cd676">
         <div class="ie395bd0fb">Reliability: {{ (src.reliability * 100)|int }}%</div>
         <div class="source-rel"><div class="source-rel-fill" data-dyn-style="width:{{ (src.reliability * 100)|int }}%"></div></div>
@@ -313,7 +332,7 @@
 
     <div class="submit-panel">
       <h3 class="ieb3c688e0">IOC Correlation Engine</h3>
-      <p class="ief8957c25">Paste multiple IOCs (one per line) to correlate against known campaigns and TTPs.</p>
+      <p class="ief8957c25">Paste multiple IOCs (one per line) to check each against this platform's real local threat database and the structural relationships between them.</p>
       <textarea id="correlate-input" class="form-control iee15dd117" rows="8"  placeholder="ip:185.234.216.45&#10;domain:evil-c2.ru&#10;hash_md5:d41d8cd98f00b204e9800998ecf8427e&#10;cve:CVE-2021-44228"></textarea>
       <button class="btn btn-primary ief322cfc1"  data-onclick="correlateIOCs">Correlate IOCs</button>
       <div id="correlate-result" class="ie553a645f"></div>
@@ -386,6 +405,11 @@ async function loadSharingStatus() {
     <div><strong data-dyn-style="color:${data.enabled ? '#00ff88' : '#8b949e'}">${data.enabled ? '✓ مفعّلة / Enabled' : '✕ معطّلة / Disabled'}</strong>
       — ${escHtml(data.message_ar)}</div>
     <div class="ied605eae1">OTX: ${data.otx_configured ? 'configured' : 'not configured'}</div>
+    <div class="ied605eae1">URLhaus: ${
+      !data.urlhaus_configured ? 'not configured'
+      : data.urlhaus_synced_count > 0 ? `connected (${data.urlhaus_synced_count} synced)`
+      : 'key configured but 0 synced — key may be invalid (abuse.ch returns 403 unknown_auth_key)'
+    }</div>
   </div>`;
   optisecApplyDynStyles(el);
 }
@@ -522,16 +546,21 @@ async function correlateIOCs() {
     <div class="ie492d0a4e">Correlation Results</div>
     <div class="ie199c6711">
       <div class="ie8b421434">
-        <div class="ie40a22946">${data.campaign_matches?.length||0}</div>
-        <div class="ie3122d8b0">Campaign Matches</div>
+        <div class="ie40a22946">${data.known_matches?.length||0}</div>
+        <div class="ie3122d8b0">Known-Indicator Matches</div>
       </div>
-      <div class="ie8b421434">
-        <div class="ie6f3d53fc">${Math.round(data.attribution_confidence||0)}%</div>
-        <div class="ie3122d8b0">Attribution Confidence</div>
+      <div class="ie8b421434" title="${escHtml(data.match_rate_note||'')}">
+        <div class="ie6f3d53fc">${Math.round(data.match_rate||0)}%</div>
+        <div class="ie3122d8b0">Match Rate*</div>
       </div>
     </div>
-    ${data.campaign_matches?.length ? data.campaign_matches.map(m=>`<div class="ie97d94fe4"><strong>${m.campaign}</strong> — <span class="ie78539534">${m.actor}</span> (${m.confidence}%)</div>`).join('') : '<div class="ie5b3cc826">No campaign matches found.</div>'}
-    ${data.pattern_analysis?.likely_ttps?.length ? `<div class="ie5371db16"><div class="ie4fd68982">Likely TTPs:</div>${data.pattern_analysis.likely_ttps.map(t=>`<div class="ie31f9f0ad">${t}</div>`).join('')}</div>` : ''}
+    <div class="iebfdf0207 mb8">* Share of submitted IOCs already present in this platform's real local threat database — not an attribution/confidence score.</div>
+    ${data.known_matches?.length ? data.known_matches.map(m=>`<div class="ie97d94fe4">
+      <code>${escHtml(m.ioc.type)}:${escHtml(m.ioc.value)}</code> — known since ${escHtml((m.first_seen||'').slice(0,10))}, source <span class="ie78539534">${escHtml(m.source)}</span>
+      ${m.pulses?.length ? `· OTX pulse: ${m.pulses.map(escHtml).join(', ')}` : ''}
+    </div>`).join('') : '<div class="ie5b3cc826">No submitted IOC matches a real indicator already in this platform\'s database.</div>'}
+    ${data.relationships?.length ? `<div class="ie5371db16"><div class="ie4fd68982">Structural Relationships (between submitted IOCs):</div>${data.relationships.map(r=>`<div class="ie31f9f0ad">${r.type === 'shared_subnet' ? `Shared subnet ${escHtml(r.subnet)}: ${r.values.map(escHtml).join(', ')}` : `${escHtml(r.url)} hosted on submitted domain ${escHtml(r.domain)}`}</div>`).join('')}</div>` : ''}
+    ${data.pattern_analysis?.indicator_type_ttp_reference?.length ? `<div class="ie5371db16" title="${escHtml(data.pattern_analysis.ttp_reference_note||'')}"><div class="ie4fd68982">Indicator-Type TTP Reference (general, not specific to this submission):</div>${data.pattern_analysis.indicator_type_ttp_reference.map(t=>`<div class="ie31f9f0ad">${escHtml(t)}</div>`).join('')}</div>` : ''}
   </div>`;
 }
 

@@ -27,15 +27,15 @@ from datetime import datetime
 
 from fastapi import APIRouter, Request, Depends, Query
 from fastapi.responses import JSONResponse, PlainTextResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.database import get_db
-from web.models import User, ThreatShare
+from web.models import User, ThreatShare, Ioc
 from web.auth import get_current_user
 from web.license import require_feature_or_402
 from web.rate_limit import rate_limiter
-from config import OTX_API_KEY, ENABLE_THREAT_SHARING
+from config import OTX_API_KEY, URLHAUS_API_KEY, ENABLE_THREAT_SHARING
 from modules.threat_intel import threat_sharing as sharing
 
 router = APIRouter(prefix="/api/threat-feed", tags=["threat_sharing"])
@@ -126,13 +126,23 @@ async def get_threat_feed(limit: int = 50, user: User = Depends(_user), db: Asyn
 @router.get(
     "/status",
     summary="Threat sharing configuration status",
-    description="Whether outbound threat sharing is enabled (ENABLE_THREAT_SHARING) and whether OTX_API_KEY is configured — read this before showing any sharing UI.",
+    description="Whether outbound threat sharing is enabled (ENABLE_THREAT_SHARING), whether OTX_API_KEY is configured, and whether URLhaus actually has synced data — read this before showing any sharing UI.",
 )
-async def sharing_status(user: User = Depends(_user)):
+async def sharing_status(user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("threat_sharing", user)
+    # URLHAUS_API_KEY being set only means a key is configured, not that it
+    # is valid (abuse.ch can 403 an unrecognized/revoked key) — the real
+    # signal is whether the periodic sync has actually stored any URLhaus
+    # rows, so surface both rather than claiming "connected" from presence
+    # of the env var alone.
+    urlhaus_synced_count = (await db.execute(
+        select(func.count()).select_from(Ioc).where(Ioc.source == "urlhaus", Ioc.is_active == True)  # noqa: E712
+    )).scalar_one()
     return JSONResponse({
         "enabled": ENABLE_THREAT_SHARING,
         "otx_configured": bool(OTX_API_KEY),
+        "urlhaus_configured": bool(URLHAUS_API_KEY),
+        "urlhaus_synced_count": urlhaus_synced_count,
         "message_en": "Threat sharing is enabled." if ENABLE_THREAT_SHARING else
                       "Threat sharing is disabled by default — set ENABLE_THREAT_SHARING=true in .env to enable it.",
         "message_ar": "مشاركة التهديدات مفعّلة." if ENABLE_THREAT_SHARING else

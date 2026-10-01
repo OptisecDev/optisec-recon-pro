@@ -5,13 +5,16 @@ get_live_ioc_feed() enriches every real IOC (from _SAMPLE_IOCS, a caller-
 supplied urlhaus_iocs list from fetch_real_urlhaus_iocs(), or a previously
 submit_ioc()'d entry) with a TLP classification (random.choice) and
 first_seen/last_seen dates (random day offsets) that are NOT part of the
-original indicator. get_threat_map() jitters attacks_per_hour and fabricates
-active_campaigns per point on every call for a "live" visual effect.
+original indicator.
 
-Every such fabricated value must be tagged (tlp_source/date_source per IOC,
-map_jitter at the threat-map root) plus a bilingual note/note_ar, following
-the same convention as tests/test_darkweb_simulated_tagging.py and
+Every such fabricated value must be tagged (tlp_source/date_source per IOC)
+plus a bilingual note/note_ar, following the same convention as
+tests/test_darkweb_simulated_tagging.py and
 modules/quantum/encryption.py's mode="simulated".
+
+get_threat_map() no longer jitters anything — see
+test_global_feed_real_threat_map.py for coverage of its current,
+real-geolocated-IP-based behavior.
 
 Real fields that pass straight through from the original IOC/source data
 (type, value, malware, confidence, source for IOCs; lat/lon/country/code/
@@ -98,36 +101,6 @@ def test_submit_ioc_result_is_not_retroactively_tagged(monkeypatch, tmp_path):
     assert result["tlp"] == "GREEN"
     assert "tlp_source" not in result
     assert "date_source" not in result
-
-
-# ── get_threat_map(): jitter must be tagged at the root ──────────────────────
-
-def test_threat_map_is_tagged_jitter_at_root():
-    result = gf.get_threat_map()
-    assert result["map_jitter"] is True
-    assert isinstance(result.get("note"), str) and result["note"]
-    assert isinstance(result.get("note_ar"), str) and result["note_ar"]
-    assert "jitter" in result["note"].lower()
-    assert any(ch in result["note_ar"] for ch in ("تقدير", "عشوائ", "مُهتز", "مهتز"))
-
-
-def test_threat_map_points_preserve_real_baseline_fields():
-    result = gf.get_threat_map()
-    baseline_by_code = {p["code"]: p for p in gf.THREAT_MAP_POINTS}
-
-    for point in result["points"]:
-        baseline = baseline_by_code[point["code"]]
-        assert point["country"] == baseline["country"]
-        assert point["lat"] == baseline["lat"]
-        assert point["lon"] == baseline["lon"]
-        assert point["threat_level"] == baseline["threat_level"]
-        # Points themselves are not individually tagged — only the response root.
-        assert "map_jitter" not in point
-        assert "note" not in point
-        # attacks_per_hour is baseline +/- 50, clamped at 0.
-        assert point["attacks_per_hour"] >= 0
-        assert abs(point["attacks_per_hour"] - baseline["attacks_per_hour"]) <= 50
-        assert 0 <= point["active_campaigns"] <= 5
 
 
 # ── Real, live-queried OTX surface must stay completely untouched ────────────

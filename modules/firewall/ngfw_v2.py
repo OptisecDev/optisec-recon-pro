@@ -1,4 +1,14 @@
-"""Next-Gen Firewall v2 — ML-based DPI, AI threat blocking, geo-intelligence, real-time traffic analysis."""
+"""Next-Gen Firewall v2 — heuristic/rule-based DPI (entropy + pattern signatures), geo-intelligence, real-time traffic analysis.
+
+Despite the historical "ml_"-prefixed names below (ml_score, ml_category,
+_ml_threat_score, kept as-is since they're part of the persisted
+traffic_log shape and API response consumed elsewhere), scoring is
+deterministic rule-based heuristics (Shannon entropy, character-class
+density, regex signature matches) — no trained model. See commit
+512307e/7eab737 for the same correction applied to this module's
+user-facing labels; this docstring update extends it to the module's own
+internal documentation.
+"""
 import re
 import math
 import json
@@ -56,7 +66,7 @@ IP_GEO_RANGES: List[Tuple[str, str, str, str]] = [
     ("10.0.0.0",  "10.255.255.255",  "LAN","Internal Network"),
 ]
 
-# ── ML Feature Extractors ─────────────────────────────────────────────────────
+# ── Heuristic Feature Extractors (entropy/pattern-based, not ML) ──────────────
 
 def _shannon_entropy(data: str) -> float:
     if not data:
@@ -97,7 +107,7 @@ def _extract_ml_features(payload: str, headers: dict, method: str, path: str) ->
 
 
 def _ml_threat_score(features: dict) -> Tuple[float, str]:
-    """Compute a 0-100 ML-based threat score and category."""
+    """Compute a 0-100 heuristic (rule-based, not ML) threat score and category."""
     score = 0.0
 
     if features["entropy"] > 4.5:
@@ -263,7 +273,7 @@ def deep_inspect(
     protocol: str = "HTTP",
     user_id: Optional[int] = None,
 ) -> dict:
-    """Full DPI + ML analysis of an incoming request/packet."""
+    """Full DPI + heuristic analysis of an incoming request/packet."""
     combined = f"{method} {path} {body}"
     features = _extract_ml_features(body, headers, method, path)
     ml_score, ml_category = _ml_threat_score(features)
@@ -395,27 +405,28 @@ def get_traffic_stats(user_id: Optional[int] = None, is_admin: bool = False) -> 
 
 # simulate_traffic_burst() below generates synthetic demo traffic (randomly
 # sampled IPs, paths and bodies) and runs it through the REAL DPI signature
-# engine and ML entropy scorer (deep_inspect(), untouched — same 30+ regex
-# signatures and Shannon-entropy-based scoring used for genuine traffic). Only
-# the traffic being analyzed is fabricated, not the detection logic. Because
-# deep_inspect() persists every result (real or simulated) into the same
-# shared traffic_log, results produced here are tagged simulated=True + a
-# bilingual note — after the fact, not inside deep_inspect() itself, so real
-# traffic stays untagged — following the `_ar`-suffixed bilingual convention
-# used elsewhere in the project (see modules/darkweb/intelligence.py and
+# engine and heuristic entropy scorer (deep_inspect(), untouched — same 30+
+# regex signatures and Shannon-entropy-based scoring used for genuine
+# traffic). Only the traffic being analyzed is fabricated, not the
+# detection logic. Because deep_inspect() persists every result (real or
+# simulated) into the same shared traffic_log, results produced here are
+# tagged simulated=True + a bilingual note — after the fact, not inside
+# deep_inspect() itself, so real traffic stays untagged — following the
+# `_ar`-suffixed bilingual convention used elsewhere in the project (see
+# modules/darkweb/intelligence.py and
 # app/services/recon/recon_engine.py's SIMULATED_NOTE_EN/AR).
 SIMULATED_NOTE_EN = (
     "Simulated data — this traffic burst is synthetic demo input (randomly "
     "sampled source IPs, request paths and bodies), not real network traffic. "
-    "It is scored by the same real DPI signature engine and ML entropy scorer "
-    "used for live traffic (deep_inspect), but the traffic itself is "
+    "It is scored by the same real DPI signature engine and heuristic entropy "
+    "scorer used for live traffic (deep_inspect), but the traffic itself is "
     "fabricated for visualization/demo purposes only."
 )
 SIMULATED_NOTE_AR = (
     "بيانات محاكاة — دفعة الحركة هذه إدخال تجريبي اصطناعي (عناوين IP مصدر "
     "ومسارات طلبات ونصوص عشوائية)، وليست حركة شبكة حقيقية. تُقيَّم بواسطة نفس "
-    "محرك توقيعات الفحص العميق الحقيقي ومحرك تسجيل الإنتروبيا المستخدم للحركة "
-    "الحية (deep_inspect)، لكن الحركة نفسها مُصطنعة لأغراض العرض التوضيحي فقط."
+    "محرك توقيعات الفحص العميق الحقيقي ومحرك تسجيل الإنتروبيا الاستدلالي المستخدم "
+    "للحركة الحية (deep_inspect)، لكن الحركة نفسها مُصطنعة لأغراض العرض التوضيحي فقط."
 )
 
 

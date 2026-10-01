@@ -1,8 +1,11 @@
 """Global Threat Intelligence Feed — federated IOC sharing, threat scoring, attack correlation, live threat map."""
+import asyncio
 import json
 import hashlib
+import logging
 import random
 import re
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, TYPE_CHECKING
@@ -10,7 +13,11 @@ from typing import Dict, List, Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
+
 DATA_FILE = Path("data/global_threat_feed.json")
+GEO_CACHE_FILE = Path("data/threat_map_geo_cache.json")
+GEO_CACHE_TTL = 12 * 3600  # geolocation is stable enough not to re-query ip-api.com every page load
 
 # ── Threat Feed Sources (simulated OSINT/commercial feeds) ────────────────────
 
@@ -96,17 +103,21 @@ IOC_ESTIMATED_NOTE_AR = (
     "فقط هي: النوع والقيمة والبرمجية الخبيثة ومستوى الثقة والمصدر."
 )
 
-# get_threat_map() jitters attacks_per_hour around a static baseline and
-# fabricates active_campaigns per point on every call, purely for a "live"
-# visual effect — none of it is real-time attack telemetry.
-MAP_JITTER_NOTE_EN = (
-    "attacks_per_hour and active_campaigns for every point are randomly "
-    "jittered around a static baseline on each request — a decorative "
-    "live-feel effect, not real-time attack telemetry."
+# get_threat_map() now plots real geolocated IP IOCs from the local `iocs`
+# table (see _geolocate_ips() below) — this note explains the map's actual
+# methodology/limits to the UI instead of disclosing fabrication.
+MAP_METHOD_NOTE_EN = (
+    "Points are real IP indicators from the local threat database, "
+    "geolocated via ip-api.com/ipinfo.io and grouped by country. The count "
+    "shown is the number of distinct known-malicious indicators from that "
+    "country currently in the database — not a real-time attack rate. "
+    "Countries with no geolocated IP indicators are not shown."
 )
-MAP_JITTER_NOTE_AR = (
-    "قيم attacks_per_hour وactive_campaigns لكل نقطة مُهتزة عشوائياً حول خط أساس "
-    "ثابت في كل طلب — تأثير تجميلي لإيهام الحيوية، وليست بيانات هجمات حية حقيقية."
+MAP_METHOD_NOTE_AR = (
+    "النقاط هي مؤشرات IP حقيقية من قاعدة بيانات التهديدات المحلية، مُحدَّدة "
+    "الموقع عبر ip-api.com/ipinfo.io ومجمَّعة حسب الدولة. العدد المعروض هو عدد "
+    "المؤشرات الخبيثة المعروفة فعلياً من تلك الدولة في القاعدة حالياً — وليس "
+    "معدل هجمات لحظي. الدول بلا مؤشرات IP محدَّدة الموقع لا تُعرض."
 )
 
 # Every IOC below is tagged is_sample=True/False per FEED_SOURCES/provenance —
@@ -122,87 +133,15 @@ SAMPLE_DATA_NOTE_AR = (
     "الحية في هذه التغذية."
 )
 
-# ── Threat Map Nodes (global attack origins/targets) ─────────────────────────
-
-THREAT_MAP_POINTS = [
-    {"lat": 55.7558,  "lon": 37.6176,  "country": "Russia",       "code": "RU", "attacks_per_hour": 847,  "threat_level": "critical"},
-    {"lat": 39.9042,  "lon": 116.4074, "country": "China",        "code": "CN", "attacks_per_hour": 1203, "threat_level": "critical"},
-    {"lat": 35.6892,  "lon": 51.3890,  "country": "Iran",         "code": "IR", "attacks_per_hour": 312,  "threat_level": "high"},
-    {"lat": 37.5665,  "lon": 126.9780, "country": "North Korea",  "code": "KP", "attacks_per_hour": 189,  "threat_level": "critical"},
-    {"lat": 40.7128,  "lon": -74.0060, "country": "USA",          "code": "US", "attacks_per_hour": 2341, "threat_level": "high"},
-    {"lat": 51.5074,  "lon": -0.1278,  "country": "UK",           "code": "GB", "attacks_per_hour": 234,  "threat_level": "medium"},
-    {"lat": 52.5200,  "lon": 13.4050,  "country": "Germany",      "code": "DE", "attacks_per_hour": 198,  "threat_level": "medium"},
-    {"lat": 48.8566,  "lon": 2.3522,   "country": "France",       "code": "FR", "attacks_per_hour": 167,  "threat_level": "medium"},
-    {"lat": 35.6762,  "lon": 139.6503, "country": "Japan",        "code": "JP", "attacks_per_hour": 145,  "threat_level": "medium"},
-    {"lat": -33.8688, "lon": 151.2093, "country": "Australia",    "code": "AU", "attacks_per_hour": 89,   "threat_level": "low"},
-    {"lat": 28.6139,  "lon": 77.2090,  "country": "India",        "code": "IN", "attacks_per_hour": 421,  "threat_level": "high"},
-    {"lat": -23.5505, "lon": -46.6333, "country": "Brazil",       "code": "BR", "attacks_per_hour": 276,  "threat_level": "high"},
-    {"lat": 43.6532,  "lon": -79.3832, "country": "Canada",       "code": "CA", "attacks_per_hour": 134,  "threat_level": "medium"},
-    {"lat": 41.9028,  "lon": 12.4964,  "country": "Italy",        "code": "IT", "attacks_per_hour": 123,  "threat_level": "medium"},
-    {"lat": 40.4168,  "lon": -3.7038,  "country": "Spain",        "code": "ES", "attacks_per_hour": 98,   "threat_level": "low"},
-    {"lat": 25.2048,  "lon": 55.2708,  "country": "UAE",          "code": "AE", "attacks_per_hour": 145,  "threat_level": "medium"},
-    {"lat": 32.0853,  "lon": 34.7818,  "country": "Israel",       "code": "IL", "attacks_per_hour": 112,  "threat_level": "medium"},
-    {"lat": 59.9139,  "lon": 10.7522,  "country": "Norway",       "code": "NO", "attacks_per_hour": 34,   "threat_level": "low"},
-    {"lat": -34.6037, "lon": -58.3816, "country": "Argentina",    "code": "AR", "attacks_per_hour": 67,   "threat_level": "low"},
-    {"lat": 19.4326,  "lon": -99.1332, "country": "Mexico",       "code": "MX", "attacks_per_hour": 189,  "threat_level": "medium"},
-]
-
-# ── Attack Pattern Correlation ────────────────────────────────────────────────
-
-ATTACK_CAMPAIGNS = [
-    {
-        "id": "CAMP-2024-001",
-        "name": "Operation GhostNet Redux",
-        "actor": "APT41",
-        "start_date": "2024-01-15",
-        "status": "active",
-        "target_sectors": ["Healthcare", "Finance", "Government"],
-        "ioc_count": 847,
-        "countries_targeted": ["US", "UK", "DE", "AU", "JP"],
-        "techniques": ["T1190", "T1505.003", "T1486", "T1041"],
-        "confidence": 87,
-        "description": "Large-scale intrusion campaign targeting healthcare records and financial data.",
-    },
-    {
-        "id": "CAMP-2024-002",
-        "name": "DarkVortex Ransomware Wave",
-        "actor": "LockBit 3.0",
-        "start_date": "2024-03-08",
-        "status": "active",
-        "target_sectors": ["Manufacturing", "Education", "Legal"],
-        "ioc_count": 1240,
-        "countries_targeted": ["US", "CA", "AU", "GB", "FR"],
-        "techniques": ["T1566.001", "T1486", "T1490", "T1048"],
-        "confidence": 94,
-        "description": "Aggressive double-extortion ransomware campaign with data leak threats.",
-    },
-    {
-        "id": "CAMP-2024-003",
-        "name": "CloudSerpent Supply Chain",
-        "actor": "APT29 (NOBELIUM)",
-        "start_date": "2024-02-20",
-        "status": "active",
-        "target_sectors": ["Technology", "Defense", "Think Tanks"],
-        "ioc_count": 312,
-        "countries_targeted": ["US", "EU", "UA"],
-        "techniques": ["T1195.001", "T1078", "T1573", "T1105"],
-        "confidence": 91,
-        "description": "Sophisticated supply chain attack targeting cloud service providers and MSPs.",
-    },
-    {
-        "id": "CAMP-2024-004",
-        "name": "IronFist Critical Infrastructure",
-        "actor": "Sandworm (GRU)",
-        "start_date": "2024-04-01",
-        "status": "monitoring",
-        "target_sectors": ["Energy", "Utilities", "OT/ICS"],
-        "ioc_count": 189,
-        "countries_targeted": ["UA", "PL", "DE", "US"],
-        "techniques": ["T1485", "T1561", "T1490", "T1499"],
-        "confidence": 78,
-        "description": "Destructive campaign targeting European energy infrastructure.",
-    },
-]
+# ── Threat Map / Campaigns — now built from real data, see get_threat_map()
+# and get_campaigns() below. The hardcoded THREAT_MAP_POINTS (20 countries
+# with fabricated attacks_per_hour) and ATTACK_CAMPAIGNS (4 invented APT
+# campaigns with made-up 78-94% confidence) that used to live here are gone:
+# get_threat_map() now geolocates real IP IOCs from the local `iocs` table
+# via modules/osint/geo_intel.py, and get_campaigns() now reads real OTX
+# pulses via otx_feed.fetch_otx_pulse_campaigns(). Neither has a static
+# fallback table — an unconfigured/empty source means an honest empty
+# result, not fabricated data.
 
 
 def _load_data() -> dict:
@@ -455,65 +394,247 @@ def submit_ioc(
     return ioc
 
 
-def get_threat_map() -> dict:
-    """Return geo data for the live threat map visualization."""
-    # Add some randomness to simulate live data
-    points = []
-    for p in THREAT_MAP_POINTS:
-        points.append({
-            **p,
-            "attacks_per_hour": max(0, p["attacks_per_hour"] + random.randint(-50, 50)),
-            "active_campaigns": random.randint(0, 5),
+async def _geolocate_ips(ips: List[str]) -> Dict[str, dict]:
+    """Geolocate real IPs via modules.osint.geo_intel (ip-api.com, with an
+    ipinfo.io fallback — neither requires an API key), backed by a local
+    TTL file cache so repeat Threat Map loads don't re-hit the geolocation
+    service for IPs already resolved recently. An IP that fails to
+    geolocate (both providers down/rate-limited) is simply absent from the
+    result — never given a guessed or interpolated location."""
+    cache: dict = {}
+    if GEO_CACHE_FILE.exists():
+        try:
+            cache = json.loads(GEO_CACHE_FILE.read_text())
+        except Exception:
+            cache = {}
+
+    now = time.time()
+    result: Dict[str, dict] = {}
+    to_fetch = []
+    for ip in ips:
+        entry = cache.get(ip)
+        if entry and now - entry.get("_cached_at", 0) < GEO_CACHE_TTL:
+            result[ip] = entry
+        else:
+            to_fetch.append(ip)
+
+    if to_fetch:
+        from modules.osint.geo_intel import geolocate_ip
+
+        fetched = await asyncio.gather(*(geolocate_ip(ip) for ip in to_fetch), return_exceptions=True)
+        for ip, geo in zip(to_fetch, fetched):
+            if isinstance(geo, Exception) or not isinstance(geo, dict) or geo.get("error"):
+                continue
+            if geo.get("lat") is None or geo.get("lon") is None:
+                continue
+            entry = {
+                "lat": geo["lat"],
+                "lon": geo["lon"],
+                "country": geo.get("country") or "Unknown",
+                "country_code": geo.get("country_code") or "??",
+                "_cached_at": now,
+            }
+            cache[ip] = entry
+            result[ip] = entry
+
+    try:
+        GEO_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        GEO_CACHE_FILE.write_text(json.dumps(cache))
+    except Exception:
+        logger.warning("failed to persist threat-map geo cache", exc_info=True)
+
+    return result
+
+
+async def get_threat_map(db: "AsyncSession") -> dict:
+    """Threat map built from real geolocated IP indicators in the local
+    `iocs` table (web.models.Ioc, populated by modules/ioc/scheduler.py's
+    OTX/URLhaus sync) — see MAP_METHOD_NOTE_EN/AR for exactly what each
+    field means. Returns an empty `points` list, not a guessed one, when
+    no IP IOCs are active yet (e.g. feeds never synced)."""
+    from modules.ioc.ioc_engine import IOCRepository
+
+    repo = IOCRepository(db)
+    rows = await repo.list_active(ioc_type="ip", limit=200)
+    ips = sorted({row.ioc_value for row in rows})
+
+    if not ips:
+        return {
+            "points": [],
+            "total_known_malicious_ips": 0,
+            "updated_at": datetime.utcnow().isoformat(),
+            "top_origin": None,
+            "note": MAP_METHOD_NOTE_EN,
+            "note_ar": MAP_METHOD_NOTE_AR,
+        }
+
+    geo = await _geolocate_ips(ips)
+
+    by_country: Dict[str, dict] = {}
+    for row in rows:
+        g = geo.get(row.ioc_value)
+        if not g:
+            continue  # couldn't geolocate this one — omitted, not guessed
+        bucket = by_country.setdefault(g["country_code"], {
+            "country": g["country"], "code": g["country_code"],
+            "lat_sum": 0.0, "lon_sum": 0.0, "n": 0, "known_malicious_ioc_count": 0,
         })
+        bucket["lat_sum"] += g["lat"]
+        bucket["lon_sum"] += g["lon"]
+        bucket["n"] += 1
+        bucket["known_malicious_ioc_count"] += 1
+
+    points = []
+    for bucket in by_country.values():
+        n = bucket["n"]
+        count = bucket["known_malicious_ioc_count"]
+        # Display-only bucketing of the real count above (not a threat
+        # assessment) so the UI can color-code markers.
+        density_tier = "high" if count >= 10 else "medium" if count >= 3 else "low"
+        points.append({
+            "country": bucket["country"],
+            "code": bucket["code"],
+            "lat": round(bucket["lat_sum"] / n, 4),
+            "lon": round(bucket["lon_sum"] / n, 4),
+            "known_malicious_ioc_count": count,
+            "density_tier": density_tier,
+        })
+    points.sort(key=lambda p: p["known_malicious_ioc_count"], reverse=True)
 
     return {
         "points": points,
-        "total_attacks_per_hour": sum(p["attacks_per_hour"] for p in points),
+        "total_known_malicious_ips": len(ips),
         "updated_at": datetime.utcnow().isoformat(),
-        "top_origin": max(points, key=lambda x: x["attacks_per_hour"])["country"],
-        # attacks_per_hour/active_campaigns on every point above are jittered
-        # decoration, not live telemetry — see MAP_JITTER_NOTE_EN/AR.
-        "map_jitter": True,
-        "note": MAP_JITTER_NOTE_EN,
-        "note_ar": MAP_JITTER_NOTE_AR,
+        "top_origin": points[0]["country"] if points else None,
+        "note": MAP_METHOD_NOTE_EN,
+        "note_ar": MAP_METHOD_NOTE_AR,
     }
 
 
-def get_campaigns() -> List[dict]:
-    return ATTACK_CAMPAIGNS
+CAMPAIGNS_UNAVAILABLE_NOTE_EN = "OTX_API_KEY is not configured — no live campaign data available."
+CAMPAIGNS_UNAVAILABLE_NOTE_AR = "لم يتم ضبط OTX_API_KEY — لا تتوفر بيانات حملات حية."
 
 
-def correlate_iocs(ioc_list: List[dict]) -> dict:
-    """Correlate submitted IOCs against known campaigns."""
-    matches = []
+async def get_campaigns(api_key: str) -> dict:
+    """Live AlienVault OTX pulses, presented as campaign-like entries — see
+    otx_feed.fetch_otx_pulse_campaigns() for exactly which fields are real
+    (name, actor when verified, dates, sectors, countries, MITRE technique
+    IDs, IOC count) versus deliberately omitted (there is no "confidence"
+    field — OTX has no such concept for a pulse, so none is invented here).
+    No local fallback table: an unconfigured key or an OTX outage returns
+    an empty, clearly-labeled result, never a stand-in fabricated campaign.
+    """
+    if not api_key:
+        return {
+            "campaigns": [], "otx_connected": False,
+            "note": CAMPAIGNS_UNAVAILABLE_NOTE_EN, "note_ar": CAMPAIGNS_UNAVAILABLE_NOTE_AR,
+        }
+    from modules.threat_intel.otx_feed import fetch_otx_pulse_campaigns
+
+    try:
+        campaigns = await asyncio.to_thread(fetch_otx_pulse_campaigns, api_key, 20)
+    except Exception as exc:
+        logger.warning("OTX pulse-campaign fetch failed: %s", exc)
+        return {
+            "campaigns": [], "otx_connected": False,
+            "note": f"OTX fetch failed: {exc}",
+            "note_ar": f"فشل جلب بيانات OTX: {exc}",
+        }
+    return {"campaigns": campaigns, "otx_connected": True, "note": None, "note_ar": None}
+
+
+TTP_REFERENCE_NOTE_EN = (
+    "General MITRE ATT&CK technique associations by indicator type "
+    "(e.g. IP indicators commonly relate to T1071/T1090) — a reference "
+    "list, not an analysis finding derived from these specific IOCs."
+)
+TTP_REFERENCE_NOTE_AR = (
+    "ارتباطات عامة بتقنيات MITRE ATT&CK حسب نوع المؤشر (مثال: مؤشرات IP ترتبط "
+    "عادة بـT1071/T1090) — قائمة مرجعية عامة، وليست نتيجة تحليل مستخلصة من هذه "
+    "المؤشرات تحديداً."
+)
+
+
+async def correlate_iocs(ioc_list: List[dict], db: "AsyncSession") -> dict:
+    """Correlate submitted IOCs against indicators this platform actually
+    knows about (the local `iocs` table — real OTX/URLhaus-synced data,
+    see web.models.Ioc) and against each other's real structural overlap
+    (shared /24 subnet, a URL hosted on a submitted domain). Replaces the
+    old version, which matched against four hardcoded fictional APT
+    campaigns and returned an invented 78-94%-range "confidence" —  see
+    CAMPAIGNS_UNAVAILABLE_NOTE_EN and this function's git history. There is
+    no campaign attribution here any more: a match only ever reports real
+    evidence (which local record, from which source, since when), and
+    `match_rate` is a real ratio (matched / submitted), not a confidence
+    score standing in for one.
+    """
+    from modules.ioc.ioc_engine import IOCRepository
+    from modules.ioc_correlation import _ip_subnet, _extract_domain_from_url
+
+    repo = IOCRepository(db)
+    known_matches = []
     for ioc in ioc_list:
-        for campaign in ATTACK_CAMPAIGNS:
-            if ioc.get("value", "").lower() in [i.get("value", "").lower() for i in _SAMPLE_IOCS
-                                                 if i.get("malware", "").lower() in campaign["actor"].lower()
-                                                 or campaign["actor"].lower() in i.get("malware", "").lower()]:
-                matches.append({
-                    "ioc": ioc,
-                    "campaign": campaign["name"],
-                    "actor": campaign["actor"],
-                    "confidence": campaign["confidence"],
-                })
-                break
+        ioc_type = (ioc.get("type") or "").strip().lower()
+        value = (ioc.get("value") or "").strip()
+        if not ioc_type or not value:
+            continue
+        row = await repo.get_by_value(ioc_type, value)
+        if row is None:
+            continue
+        pulses = [t[len("pulse:"):] for t in (row.tags or []) if t.startswith("pulse:")]
+        known_matches.append({
+            "ioc": ioc,
+            "source": row.source,
+            "confidence_score": row.confidence_score,
+            "first_seen": row.first_seen.isoformat() if row.first_seen else None,
+            "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+            "pulses": pulses,
+            "tags": row.tags or [],
+        })
 
-    # Pattern analysis
+    # Structural relationships between the *submitted* IOCs themselves —
+    # deterministic, same helpers modules/ioc_correlation.py uses for its
+    # own clustering (not duplicated here).
+    relationships = []
+    subnet_map: Dict[str, List[str]] = {}
+    submitted_domains = {i.get("value", "").lower() for i in ioc_list if i.get("type") == "domain"}
+    for ioc in ioc_list:
+        t = (ioc.get("type") or "").lower()
+        value = ioc.get("value", "")
+        if t == "ip":
+            subnet = _ip_subnet(value)
+            if subnet:
+                subnet_map.setdefault(subnet, []).append(value)
+        elif t == "url":
+            d = _extract_domain_from_url(value)
+            if d and d in submitted_domains:
+                relationships.append({"type": "hosted_on", "url": value, "domain": d})
+    for subnet, members in subnet_map.items():
+        if len(members) >= 2:
+            relationships.append({"type": "shared_subnet", "subnet": subnet, "values": members})
+
     ip_count = sum(1 for i in ioc_list if i.get("type") == "ip")
     domain_count = sum(1 for i in ioc_list if i.get("type") == "domain")
-    hash_count = sum(1 for i in ioc_list if "hash" in i.get("type", ""))
+    hash_count = sum(1 for i in ioc_list if "hash" in (i.get("type") or ""))
 
     return {
         "submitted_count": len(ioc_list),
-        "campaign_matches": matches,
+        "known_matches": known_matches,
+        "match_rate": round((len(known_matches) / max(len(ioc_list), 1)) * 100, 1),
+        "match_rate_note": (
+            "Share of submitted IOCs that exactly match a real indicator "
+            "already in this platform's local threat database — not an "
+            "attribution or confidence score."
+        ),
+        "relationships": relationships,
         "pattern_analysis": {
             "ip_indicators": ip_count,
             "domain_indicators": domain_count,
             "file_indicators": hash_count,
-            "likely_ttps": _infer_ttps(ioc_list),
+            "indicator_type_ttp_reference": _infer_ttps(ioc_list),
+            "ttp_reference_note": TTP_REFERENCE_NOTE_EN,
+            "ttp_reference_note_ar": TTP_REFERENCE_NOTE_AR,
         },
-        "attribution_confidence": (len(matches) / max(len(ioc_list), 1)) * 100,
         "correlated_at": datetime.utcnow().isoformat(),
     }
 
@@ -537,7 +658,6 @@ def get_feed_stats() -> dict:
     return {
         **data.get("feed_stats", {}),
         "feed_sources": len(FEED_SOURCES),
-        "active_campaigns": len([c for c in ATTACK_CAMPAIGNS if c["status"] == "active"]),
         "sample_ioc_count": len(_SAMPLE_IOCS),
         "shared_ioc_count": len(data.get("shared_iocs", [])),
         "updated_at": datetime.utcnow().isoformat(),

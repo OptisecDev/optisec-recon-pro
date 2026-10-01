@@ -135,4 +135,10 @@ def test_template_renders_live_or_sample_badge_for_feed_sources_tab():
     sources_tab = src.split('<div id="tab-sources"')[1].split("<!-- SUBMIT IOC TAB -->")[0]
     assert "src.is_sample" in sources_tab
     assert "Sample / Demo data" in sources_tab
-    assert re.search(r">Live<", sources_tab)
+    # A non-sample source only shows "Live" when it actually has indicators
+    # in the current feed right now (live_count > 0) — a static "Live"
+    # badge regardless of whether anything ever synced would itself be a
+    # false claim (see the URLhaus-invalid-key case this guards against).
+    assert "live_count" in sources_tab
+    assert re.search(r">Live \(", sources_tab)
+    assert "0 synced — check connection" in sources_tab
