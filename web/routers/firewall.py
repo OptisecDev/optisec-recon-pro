@@ -1,4 +1,4 @@
-"""AI Firewall router — DPI, ML anomaly detection, rate limiting."""
+"""Firewall router — heuristic DPI, rule-based anomaly detection, rate limiting."""
 
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse

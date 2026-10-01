@@ -64,7 +64,7 @@
       </p>
       <div class="api-code-block">
         <div class="api-code-label">POST /api/auth/login</div>
-        <pre>curl -X POST http://localhost:8000/api/auth/login \
+        <pre>curl -X POST https://optisec-recon-pro.onrender.com/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Optisec123!"}'</pre>
       </div>
@@ -78,7 +78,7 @@
       </div>
       <div class="api-code-block ie002535c2" >
         <div class="api-code-label">Use the token</div>
-        <pre>curl http://localhost:8000/api/scans \
+        <pre>curl https://optisec-recon-pro.onrender.com/api/scans \
   -H "Authorization: Bearer eyJhbGci..."</pre>
       </div>
     </div>
@@ -118,7 +118,7 @@
         <span>Or use WebSocket for live updates</span>
       </div>
       <div class="api-code-block">
-        <div class="api-code-label">ws://localhost:8000/ws/{scan_id}</div>
+        <div class="api-code-label">wss://optisec-recon-pro.onrender.com/ws/{scan_id}</div>
         <pre>{"type":"progress","step":"xss","progress":58}</pre>
       </div>
     </div>

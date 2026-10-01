@@ -78,7 +78,7 @@ and post-quantum-ready cryptography tooling in active development ([roadmap](#ro
 |--------|-------------|------|
 | **Reconnaissance** | Subdomain enumeration (wordlist + DNS brute), DNS lookup (A/MX/TXT/NS/CNAME), WHOIS, Nmap service detection, SSL/TLS analysis, Security headers grading, Port scanning | FREE+ |
 | **Vulnerability Scanner** | XSS (reflected/stored), SQL Injection, SSRF (cloud metadata bypass), LFI (path traversal), Open Redirect | FREE+ |
-| **OSINT Engine v5.0** | Unified 8-source intelligence search (Amass, theHarvester, Maigret, Holehe, crt.sh, Wayback, DNS Full, WHOIS) with confidence scoring + correlation engine — see [deep dive](#osint-engine-v50--world-class-intelligence) — plus email discovery, social media footprint, phone intelligence, IP geolocation, username search (200+ platforms), device fingerprinting, national ID lookup (Iraq), vehicle plate recon, cell tower triangulation | FREE/PRO |
+| **OSINT Engine v5.0** | Unified 8-source intelligence search (Amass, theHarvester, Maigret, Holehe, crt.sh, Wayback, DNS Full, WHOIS) with confidence scoring + correlation engine — see [deep dive](#osint-engine-v50--world-class-intelligence) — plus email discovery, social media footprint, phone intelligence, IP geolocation, username search (200+ platforms), device fingerprinting, vehicle plate recon, cell tower carrier identification (MCC/MNC) | FREE/PRO |
 
 ### AI & Intelligence
 
@@ -948,7 +948,7 @@ over that target.
 
 | Use Case | Why It's Prohibited |
 |----------|----------------------|
-| **Profiling individuals without consent** | Running username/phone/email/national-ID/vehicle-plate OSINT modules against a private person who has not authorized the search is stalking-adjacent and may violate harassment and privacy statutes regardless of intent |
+| **Profiling individuals without consent** | Running username/phone/email/vehicle-plate OSINT modules against a private person who has not authorized the search is stalking-adjacent and may violate harassment and privacy statutes regardless of intent |
 | **Unlawful private-data collection** | Aggregating PII beyond what a target has knowingly made public, or combining sources to deanonymize someone, violates data-protection law (GDPR, CCPA, and local equivalents) even when each individual data point is technically public |
 | **Out-of-scope or unauthorized targets** | Scanning any domain, IP range, account, or person not explicitly covered by your authorization — including "adjacent" infrastructure discovered mid-engagement — without first getting written sign-off to expand scope |
 | **Mass / indiscriminate targeting** | Bulk-running OSINT or vulnerability modules across targets with no individual authorization, including speculative "see what turns up" sweeps |

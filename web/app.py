@@ -192,13 +192,13 @@ OPENAPI_TAGS = [
         "name": "osint",
         "description": (
             "OSINT intelligence modules: phone lookup, IP geolocation, domain recon, "
-            "national ID (Iraq), vehicle plates, username search, device fingerprinting, "
-            "and cell tower triangulation."
+            "vehicle plates, username search, device fingerprinting, and cell tower "
+            "carrier identification (MCC/MNC lookup)."
         ),
     },
     {
         "name": "firewall",
-        "description": "AI-powered application firewall — manage rules, whitelist/blacklist IPs.",
+        "description": "Heuristic / rule-based application firewall — manage rules, whitelist/blacklist IPs.",
     },
     {
         "name": "vpn",
@@ -229,7 +229,7 @@ OPENAPI_TAGS = [
     },
     {
         "name": "ngfw",
-        "description": "Next-Generation Firewall v2 with ML-based DPI and anomaly detection.",
+        "description": "Next-Generation Firewall v2 with heuristic/rule-based DPI (entropy & signature analysis) and anomaly detection.",
     },
     {
         "name": "threat_feed",
