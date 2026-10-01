@@ -89,6 +89,39 @@ def _resolve_jwt_secret() -> str:
 JWT_SECRET = _resolve_jwt_secret()
 JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
 
+_INSECURE_DEV_LICENSE_SECRET = "optisec-INSECURE-dev-default-license-key-do-not-use-in-production"
+
+
+def _resolve_license_secret() -> str:
+    secret = os.environ.get("OPTISEC_LICENSE_SECRET")
+    if secret:
+        return secret
+
+    is_production = os.environ.get("GROQ_ENV") == "production" or bool(os.environ.get("RENDER"))
+    is_dev_or_testing = os.environ.get("GROQ_ENV") in _DEV_TESTING_ENV_VALUES
+
+    if is_dev_or_testing:
+        logging.getLogger("optisec").warning(
+            "OPTISEC_LICENSE_SECRET is not set — using an INSECURE default signing "
+            "key because GROQ_ENV=%r explicitly opts into dev/testing mode. Never "
+            "do this in production.", os.environ.get("GROQ_ENV"),
+        )
+        return _INSECURE_DEV_LICENSE_SECRET
+
+    reason = (
+        "production mode (GROQ_ENV=production or RENDER is set)" if is_production
+        else "GROQ_ENV is not explicitly set to development/dev/test/testing"
+    )
+    raise RuntimeError(
+        f"OPTISEC_LICENSE_SECRET environment variable is not set, and {reason}. "
+        "Refusing to start: set OPTISEC_LICENSE_SECRET to a long random string, or "
+        "set GROQ_ENV=development (or dev/test/testing) to explicitly opt into an "
+        "insecure default for local development only."
+    )
+
+
+LICENSE_SECRET = _resolve_license_secret()
+
 # First-run admin credentials (used only when DB is empty)
 FIRST_ADMIN_USER = os.environ.get("FIRST_ADMIN_USER", "admin")
 FIRST_ADMIN_EMAIL = os.environ.get("FIRST_ADMIN_EMAIL", "admin@optisec.local")
