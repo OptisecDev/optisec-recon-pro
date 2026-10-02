@@ -9,10 +9,16 @@ silently guessing.
 
 web/license.py no longer reads OPTISEC_LICENSE_SECRET from os.environ with a
 silent hardcoded fallback -- it imports LICENSE_SECRET from config.
-Signatures are produced with LICENSE_SECRET only; verification accepts the
-old public default secret ("optisec-license-engine-v4-singularity-2026")
-only as a deprecated, explicitly-logged legacy path for keys issued before
-this fix.
+Signatures are produced with, and verified against, LICENSE_SECRET only.
+
+Phase 3 (final closure, this file's current state): the deprecated
+fallback that additionally accepted a key signed with the old hardcoded
+public default secret ("optisec-license-engine-v4-singularity-2026") has
+been deleted outright -- that secret sat in the public repo, so any key
+forged with it must now be rejected unconditionally, with no legacy
+acceptance path and no verified_via_legacy_secret flag left anywhere in
+web/license.py. See test_key_signed_with_the_old_public_default_secret_is_now_rejected
+below for the regression guard.
 
 Calls config._resolve_license_secret() directly (rather than reimporting
 the config module, whose module-level LICENSE_SECRET is only computed once
@@ -99,45 +105,81 @@ def test_generate_then_verify_with_current_secret_succeeds():
     assert lic.tier == "pro"
 
 
-def _sign_with_legacy_secret(payload: dict) -> str:
-    from web.license import _LEGACY_LICENSE_SECRET
+# The old hardcoded public default secret web/license.py used to accept as a
+# deprecated fallback -- deliberately still hardcoded here (not imported;
+# the constant no longer exists in web/license.py) so this test proves a key
+# forged with that exact, previously-public value is rejected now that the
+# fallback branch is gone.
+_OLD_PUBLIC_DEFAULT_SECRET = "optisec-license-engine-v4-singularity-2026"
 
-    data_bytes = json.dumps(payload, separators=(",", ":")).encode()
-    sig = hmac.new(_LEGACY_LICENSE_SECRET.encode(), data_bytes, hashlib.sha256).hexdigest()
-    encoded = base64.urlsafe_b64encode(data_bytes).decode().rstrip("=")
-    return f"OPS4-{payload['tier'].upper()}-{encoded}.{sig[:16]}"
 
-
-def test_key_signed_with_legacy_secret_is_accepted_and_logs_warning(caplog):
-    import logging
+def _sample_license_payload(tier: str = "pro") -> dict:
     from datetime import datetime, timedelta
-    from web.license import verify_license_key, TIER_FEATURES, TIER_LIMITS
+    from web.license import TIER_FEATURES, TIER_LIMITS
 
     now = datetime.utcnow()
-    limits = TIER_LIMITS["pro"]
-    payload = {
-        "tier": "pro",
-        "issued_to": "Legacy Co",
-        "email": "legacy@example.com",
+    limits = TIER_LIMITS[tier]
+    return {
+        "tier": tier,
+        "issued_to": "Test Co",
+        "email": "test@example.com",
         "issued_at": now.isoformat(),
         "expires_at": (now + timedelta(days=30)).isoformat(),
-        "features": TIER_FEATURES["pro"],
+        "features": TIER_FEATURES[tier],
         "max_targets": limits["max_targets"],
         "max_scans_day": limits["max_scans_day"],
         "max_users": limits["max_users"],
         "version": "4.0",
     }
-    legacy_key = _sign_with_legacy_secret(payload)
 
-    with caplog.at_level(logging.WARNING, logger="optisec"):
-        valid, err, lic = verify_license_key(legacy_key)
 
+def _sign_with(secret: str, payload: dict) -> str:
+    data_bytes = json.dumps(payload, separators=(",", ":")).encode()
+    sig = hmac.new(secret.encode(), data_bytes, hashlib.sha256).hexdigest()
+    encoded = base64.urlsafe_b64encode(data_bytes).decode().rstrip("=")
+    return f"OPS4-{payload['tier'].upper()}-{encoded}.{sig[:16]}"
+
+
+def test_legacy_secret_constant_and_flag_are_gone_from_web_license():
+    """Regression guard for the security closure itself: no trace of the
+    deprecated legacy-secret path (constant, flag, or the word "legacy")
+    may remain in web/license.py's source."""
+    import inspect
+    import web.license as license_mod
+
+    assert not hasattr(license_mod, "_LEGACY_LICENSE_SECRET")
+    source = inspect.getsource(license_mod)
+    assert "legacy" not in source.lower()
+    assert "verified_via_legacy_secret" not in source
+
+
+def test_key_signed_with_the_old_public_default_secret_is_now_rejected():
+    """The old default secret sat in the public repo -- a key forged with
+    it must be rejected unconditionally, with no fallback acceptance path
+    left at all."""
+    from web.license import verify_license_key
+
+    payload = _sample_license_payload()
+    forged_key = _sign_with(_OLD_PUBLIC_DEFAULT_SECRET, payload)
+
+    valid, err, lic = verify_license_key(forged_key)
+    assert valid is False
+    assert lic is None
+    assert "invalid" in err.lower() or "forged" in err.lower()
+
+
+def test_key_signed_with_the_current_secret_is_still_accepted():
+    import config
+    from web.license import verify_license_key
+
+    payload = _sample_license_payload()
+    real_key = _sign_with(config.LICENSE_SECRET, payload)
+
+    valid, err, lic = verify_license_key(real_key)
     assert valid is True
     assert err == ""
     assert lic is not None
-    assert any(
-        "legacy default secret" in record.message for record in caplog.records
-    )
+    assert lic.tier == "pro"
 
 
 def test_key_with_bad_signature_under_both_secrets_is_rejected():

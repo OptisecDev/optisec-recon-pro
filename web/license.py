@@ -5,8 +5,6 @@ import base64
 import hashlib
 import hmac
 import json
-import logging
-import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,11 +13,6 @@ from typing import List, Optional
 from config import LICENSE_SECRET
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-
-# TODO(SECURITY): REMOVE legacy-secret verification before public launch — the
-# legacy default is forgeable (public repo). Re-issue all keys under
-# OPTISEC_LICENSE_SECRET first, then delete this branch.
-_LEGACY_LICENSE_SECRET = "optisec-license-engine-v4-singularity-2026"
 
 _LICENSE_FILE = Path(__file__).parent.parent / "data" / "license.json"
 
@@ -240,23 +233,8 @@ def verify_license_key(key: str) -> tuple[bool, str, Optional[License]]:
             LICENSE_SECRET.encode(), data_bytes, hashlib.sha256
         ).hexdigest()[:16]
 
-        verified_via_legacy_secret = False
         if not hmac.compare_digest(expected_sig, sig_part.lower()):
-            # TODO(SECURITY): REMOVE legacy-secret verification before public
-            # launch — the legacy default is forgeable (public repo). Re-issue
-            # all keys under OPTISEC_LICENSE_SECRET first, then delete this
-            # branch.
-            legacy_sig = hmac.new(
-                _LEGACY_LICENSE_SECRET.encode(), data_bytes, hashlib.sha256
-            ).hexdigest()[:16]
-            if not hmac.compare_digest(legacy_sig, sig_part.lower()):
-                return False, "License signature invalid — key may be tampered or forged", None
-            verified_via_legacy_secret = True
-
-        if verified_via_legacy_secret:
-            logging.getLogger("optisec").warning(
-                "license verified via legacy default secret — reissue recommended"
-            )
+            return False, "License signature invalid — key may be tampered or forged", None
 
         payload = json.loads(data_bytes)
         lic = License(
