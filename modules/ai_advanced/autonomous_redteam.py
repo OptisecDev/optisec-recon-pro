@@ -634,7 +634,7 @@ def generate_pentest_report(session: dict) -> dict:
             "assessment_type": "Autonomous Red Team Simulation",
             "started": session.get("started_at"),
             "completed": session.get("completed_at"),
-            "tester": "OPTISEC Autonomous Red Team Engine v4.0",
+            "tester": "OPTISEC Autonomous Red Team Engine",
         },
         "executive_summary": {
             "overall_risk": overall_rating,

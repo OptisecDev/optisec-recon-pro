@@ -1014,20 +1014,19 @@ We do not operate a formal bug bounty program for OPTISEC itself at this time, b
 > above, alongside exactly what each one does and doesn't do today. The
 > items below are the next tier out: not started yet.
 
-### v4.1 — Horizon *(Q3 2026)*
+### Next
 - [ ] Nuclei template integration — run community templates via OPTISEC UI
 - [ ] Shodan / Censys passive recon module
 - [ ] Scheduled recurring scans with email/webhook alerts
 - [ ] CVSS v4.0 scoring engine
 
-### v4.2 — Phantom *(Q4 2026)*
+### Later
 - [ ] Full SIEM integration (Elastic / Splunk / Wazuh)
 - [ ] Playwright-based JavaScript-rendered XSS/DOM scanning
 - [ ] Mobile app (React Native) for scan monitoring
 - [ ] Multi-tenant organization support
 
-### v5.0 — NEXUS *(2027)*
-> Platform-wide milestone — independent of the [OSINT Engine v5.0](#osint-engine-v50--world-class-intelligence), which already shipped as a module-level upgrade.
+### Future
 - [ ] Distributed agent network for global passive monitoring
 - [ ] On-device local LLM support (Ollama / LM Studio)
 - [ ] Real liboqs PQC library integration (CRYSTALS-Dilithium signatures)
