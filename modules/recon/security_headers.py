@@ -92,7 +92,8 @@ def check_security_headers(url: str) -> dict:
                 candidate, timeout=DEFAULT_TIMEOUT,
                 allow_redirects=True,
                 headers={"User-Agent": "Mozilla/5.0 (compatible; OPTISEC/2.0 SecurityScanner)"},
-                verify=False,
+                # B501 reviewed: security-header scan must reach targets with invalid/self-signed certs (it inspects headers, not the cert chain)
+                verify=False,  # nosec B501
             )
             url = candidate
             break

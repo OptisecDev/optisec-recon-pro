@@ -63,7 +63,8 @@ def is_enabled() -> bool:
 
 
 def get_bind_host() -> str:
-    return os.environ.get("HONEYPOT_BIND_HOST", "0.0.0.0")
+    # B104 reviewed: honeypot must accept external connections; opt-in only, off unless HONEYPOT_ENABLED=true
+    return os.environ.get("HONEYPOT_BIND_HOST", "0.0.0.0")  # nosec B104
 
 
 def service_config() -> dict[str, dict]:

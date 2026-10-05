@@ -672,7 +672,8 @@ async def _fingerprint_http(host: str, port: int, use_tls: bool) -> dict:
     scheme = "https" if use_tls else "http"
     url = f"{scheme}://{host}:{port}/"
     try:
-        async with httpx.AsyncClient(timeout=8.0, verify=False, follow_redirects=False) as client:
+        # B501 reviewed: scanner fingerprints the target's own TLS service; must not fail on self-signed/invalid certs
+        async with httpx.AsyncClient(timeout=8.0, verify=False, follow_redirects=False) as client:  # nosec B501
             resp = await client.get(url)
             headers = dict(resp.headers)
             present_lower = {k.lower() for k in headers}

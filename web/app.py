@@ -815,7 +815,8 @@ def _write_initial_credentials_file(role: str, username: str, password: str) -> 
     """
     import stat
     ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    path = f"/tmp/optisec_initial_creds_{role}_{ts}.txt"
+    # B108 reviewed: created with O_CREAT|O_EXCL and mode 0600 below: no pre-created/symlinked file is followed
+    path = f"/tmp/optisec_initial_creds_{role}_{ts}.txt"  # nosec B108
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, stat.S_IRUSR | stat.S_IWUSR)
     with os.fdopen(fd, "w") as f:
         f.write(f"role={role}\nusername={username}\npassword={password}\n")
@@ -834,7 +835,8 @@ def _cleanup_stale_initial_creds(role: str) -> None:
     error here must not affect the caller (auth flow or startup).
     """
     try:
-        matches = glob.glob(f"/tmp/optisec_initial_creds_{role}_*.txt")
+        # B108 reviewed: cleanup of the O_EXCL/0600 file written by the function above; only deletes
+        matches = glob.glob(f"/tmp/optisec_initial_creds_{role}_*.txt")  # nosec B108
         removed = 0
         for path in matches:
             try:
