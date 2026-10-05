@@ -1,5 +1,20 @@
 # Security Notes
 
+## Responsible Disclosure
+
+We follow coordinated disclosure. Please report security issues in OPTISEC
+**privately**. Do not open a public GitHub issue or pull request.
+
+- **Email:** [ahssanali84.syber@gmail.com](mailto:ahssanali84.syber@gmail.com),
+  subject `[SECURITY] Brief description`
+- **Response time:** within 48 hours.
+- **Disclosure window:** 90-day coordinated disclosure.
+- **Scope:** vulnerabilities in OPTISEC itself.
+
+We do not operate a formal bug bounty program for OPTISEC itself at this
+time, but we credit all responsibly reported vulnerabilities in the
+[CHANGELOG](CHANGELOG.md).
+
 ## Initial admin / demo passwords
 
 On first startup (when the `users` table is empty), OPTISEC creates one
