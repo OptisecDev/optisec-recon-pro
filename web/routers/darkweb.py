@@ -21,7 +21,6 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
 @router.get("", response_class=HTMLResponse)
 async def darkweb_home(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("osint_darkweb", user)
-    from modules.darkweb.intelligence import simulate_tor_monitor, get_monitored_keywords, get_breach_intelligence
 
     monitors = (await db.execute(
         select(DarkWebMonitor).where(DarkWebMonitor.user_id == user.id).order_by(DarkWebMonitor.created_at.desc())
@@ -34,15 +33,21 @@ async def darkweb_home(request: Request, user: User = Depends(_user), db: AsyncS
         .limit(20)
     )).all()
 
-    is_admin = user.role == "admin"
+    # Only the live tabs (Continuous Monitoring, Paste Scanner) are rendered.
+    # The simulated legacy tabs (breach/tor/ransomware/keywords/threat report)
+    # are hidden; their /api/* endpoints below stay for existing consumers.
     return templates.TemplateResponse(request, "darkweb.html", {
         "app_name": APP_NAME, "user": user, "active": "darkweb",
-        "tor_monitor": simulate_tor_monitor(),
-        "keywords": get_monitored_keywords(user_id=user.id, is_admin=is_admin),
-        "breach_intel": get_breach_intelligence(user_id=user.id, is_admin=is_admin),
         "monitors": monitors,
         "recent_alerts": recent_alert_rows,
     })
+
+
+# Legacy simulated endpoints (check-domain, check-email, threat-report,
+# tor-monitor): no longer used by the UI. Kept so existing consumers don't
+# break, but every response is flagged deprecated alongside simulated=True.
+def _deprecated(result: dict) -> dict:
+    return {**result, "deprecated": True}
 
 
 @router.post("/api/check-domain")
@@ -50,7 +55,7 @@ async def check_domain(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import check_domain_breach
-    return check_domain_breach(data.get("domain", ""), user_id=user.id)
+    return _deprecated(check_domain_breach(data.get("domain", ""), user_id=user.id))
 
 
 @router.post("/api/check-email")
@@ -58,7 +63,7 @@ async def check_email(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import check_email_breach
-    return check_email_breach(data.get("email", ""))
+    return _deprecated(check_email_breach(data.get("email", "")))
 
 
 @router.post("/api/scan-paste")
@@ -96,14 +101,14 @@ async def threat_report(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     data = await request.json()
     from modules.darkweb.intelligence import generate_threat_report
-    return generate_threat_report(data.get("domain", ""), user_id=user.id, is_admin=user.role == "admin")
+    return _deprecated(generate_threat_report(data.get("domain", ""), user_id=user.id, is_admin=user.role == "admin"))
 
 
 @router.get("/api/tor-monitor")
 async def tor_monitor(user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     from modules.darkweb.intelligence import simulate_tor_monitor
-    return simulate_tor_monitor()
+    return _deprecated(simulate_tor_monitor())
 
 
 @router.get("/api/breach-intel")
