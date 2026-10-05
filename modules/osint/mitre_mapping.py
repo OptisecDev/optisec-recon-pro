@@ -12,7 +12,7 @@ Design notes:
     inferred by a model, so results are reproducible and auditable.
   - The full STIX bundle is ~30MB; rather than caching it verbatim we
     parse it once into a small {technique_id/tactic_id -> name/
-    description/mitigations} index and cache *that* at /tmp/mitre_cache.json
+    description/mitigations} index and cache *that* at data/cache/mitre_cache.json
     for 7 days.
   - If the bundle can't be fetched (offline, GitHub down) and no cache
     exists yet, map_finding_to_attack() still returns correct technique/
@@ -37,7 +37,9 @@ logger = logging.getLogger("osint.mitre_mapping")
 
 MITRE_ATTACK_BUNDLE_URL = "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
 
-_MITRE_CACHE_PATH = Path("/tmp/mitre_cache.json")
+# App-private cache dir (data/cache/), not the shared world-writable /tmp,
+# where another local user could pre-create or tamper with the file.
+_MITRE_CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "cache" / "mitre_cache.json"
 _MITRE_CACHE_TTL_SECONDS = 7 * 24 * 3600
 
 _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=60)
@@ -244,6 +246,7 @@ def _load_index_cache() -> dict | None:
 
 def _save_index_cache(index: dict) -> None:
     try:
+        _MITRE_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
         _MITRE_CACHE_PATH.write_text(json.dumps({"cached_at": time.time(), "index": index}))
     except OSError as exc:
         logger.warning("[mitre] could not write cache file %s: %s", _MITRE_CACHE_PATH, exc)
@@ -252,7 +255,7 @@ def _save_index_cache(index: dict) -> None:
 async def _get_attack_index(force_refresh: bool = False) -> dict:
     """
     Return the {techniques, tactics} lookup index, sourced from (in
-    order): process memo -> /tmp/mitre_cache.json (if <7 days old) ->
+    order): process memo -> data/cache/mitre_cache.json (if <7 days old) ->
     a fresh download of MITRE's STIX bundle. Falls back to an empty index
     (map_finding_to_attack() then uses its static name tables) if none of
     those succeed. Never raises.

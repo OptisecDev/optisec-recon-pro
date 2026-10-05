@@ -8,6 +8,7 @@ __pycache__/
 *.pyc
 logs/
 data/*.db
+data/cache/
 data/quantum_keys/
 data/wordlists/
 reports/

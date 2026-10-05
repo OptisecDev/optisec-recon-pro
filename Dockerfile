@@ -138,7 +138,7 @@ RUN ldconfig
 COPY . .
 
 # Persistent data lives in a volume; pre-create directories
-RUN mkdir -p data/quantum_keys data/wireguard data/wordlists logs reports
+RUN mkdir -p data/cache data/quantum_keys data/wireguard data/wordlists logs reports
 
 # Non-root user for security
 RUN groupadd -r optisec && useradd -r -g optisec optisec && \

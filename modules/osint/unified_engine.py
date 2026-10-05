@@ -1414,13 +1414,16 @@ def _parse_amass(out: str) -> list[dict]:
 async def _run_amass(domain: str) -> dict:
     # amass v5 writes progress bars to stdout — use -oA to write results
     # to a file instead, then read the file after the process exits.
-    import tempfile, uuid
+    import tempfile
     _mark_used("amass")
-    out_prefix = f"/tmp/amass_{uuid.uuid4().hex[:8]}"
     binary = _find_binary("amass")
     if not binary:
         return {"source": "amass", "available": False,
                 "error": "amass not installed or not in PATH/venv", "results": []}
+    # Private 0700 dir from mkdtemp instead of a predictable name in shared
+    # /tmp; removed with everything amass wrote into it (-oA emits several files).
+    out_dir = tempfile.mkdtemp(prefix="amass_")
+    out_prefix = os.path.join(out_dir, "amass")
     try:
         proc = await asyncio.create_subprocess_exec(
             binary, "enum", "-d", domain, "-timeout", "1", "-oA", out_prefix,
@@ -1448,6 +1451,8 @@ async def _run_amass(domain: str) -> dict:
     except Exception as exc:
         logger.error("[amass] error: %s", exc)
         return {"source": "amass", "available": True, "error": str(exc), "results": []}
+    finally:
+        shutil.rmtree(out_dir, ignore_errors=True)
 
 
 # ── theHarvester ──────────────────────────────────────────────────────────────
