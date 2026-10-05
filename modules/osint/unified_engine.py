@@ -202,11 +202,12 @@ def get_sources_status() -> list[dict]:
     Subprocess-based sources (amass/theHarvester/maigret/holehe) are
     "available" only if their binary is found on PATH/venv/~/bin — the same
     resolution _run_tool() itself uses, so this reflects the same truth the
-    next real search would. Direct-API sources (crt.sh/Wayback/DNS/WHOIS and
-    the free-tier sources below) have no external binary dependency, so
-    they're always "available" in the sense that the engine will attempt to
-    run them — `api_key_configured` is what actually gates whether a keyed
-    one returns real data.
+    next real search would. Keyless direct-API sources (crt.sh/Wayback/DNS/
+    WHOIS/network_intel/darkweb_intel, LeakCheck, URLScan) have no external
+    dependency, so they're always "available". Sources that require a key
+    (requires_api_key=True: VirusTotal/AbuseIPDB/FullHunt/SecurityTrails/
+    Google Safe Browsing) are available only when that key is configured;
+    otherwise they report available=False and status="requires_key".
 
     Free-tier sources (VirusTotal/AbuseIPDB/FullHunt/LeakCheck/
     SecurityTrails/URLScan/Google Safe Browsing) additionally report
@@ -233,15 +234,20 @@ def get_sources_status() -> list[dict]:
     for name in _FREE_TIER_SOURCES:
         env_var = _SOURCE_API_KEY_ENV.get(name)
         tier = _SOURCE_FREE_TIER.get(name, {})
-        statuses.append({
+        requires_key = _SOURCE_REQUIRES_API_KEY.get(name, False)
+        key_configured = bool(os.environ.get(env_var)) if env_var else True
+        status = {
             "source": name,
-            "available": True,
-            "requires_api_key": _SOURCE_REQUIRES_API_KEY.get(name, False),
-            "api_key_configured": bool(os.environ.get(env_var)) if env_var else True,
+            "available": key_configured if requires_key else True,
+            "requires_api_key": requires_key,
+            "api_key_configured": key_configured,
             "free_tier_limit": tier.get("limit"),
             "signup_url": tier.get("signup_url"),
             "last_used": _iso(_last_used.get(name)),
-        })
+        }
+        if requires_key and not key_configured:
+            status["status"] = "requires_key"
+        statuses.append(status)
     return statuses
 
 
@@ -292,7 +298,6 @@ async def _run_tool(
     Run an external command, capture stdout/stderr, parse output.
     Never raises — errors are captured in the returned dict.
     """
-    _mark_used(name.lower())
     binary = _find_binary(cmd[0])
     if not binary:
         logger.debug("[%s] binary not found: %s", name, cmd[0])
@@ -302,6 +307,8 @@ async def _run_tool(
             "error": f"{cmd[0]} not installed or not in PATH/venv",
             "results": [],
         }
+    # Only after the guard: a source that never ran must not get a last_used.
+    _mark_used(name.lower())
     cmd = [binary] + cmd[1:]
 
     logger.info("[%s] running: %s", name, " ".join(cmd))
@@ -791,17 +798,24 @@ async def _run_query_source(name: str, coro, to_findings, timeout: int) -> dict[
     additionally honors the source's own `available`/`error` rather than
     always reporting available=True, since these sources can be legitimately
     unavailable (no API key configured).
+
+    last_used is recorded only once the source actually ran: a query that
+    returned available=False from its own missing-key guard never made a
+    request, so it is not marked used.
     """
-    _mark_used(name)
     try:
         data = await asyncio.wait_for(coro, timeout=timeout)
     except asyncio.TimeoutError:
+        _mark_used(name)
         logger.warning("[%s] timed out after %ds", name, timeout)
         return {"source": name, "available": True, "error": f"timed out after {timeout}s", "results": []}
     except Exception as exc:
+        _mark_used(name)
         logger.error("[%s] unexpected error: %s", name, exc)
         return {"source": name, "available": True, "error": str(exc), "results": []}
 
+    if data.get("available", True):
+        _mark_used(name)
     findings = to_findings(data)
     logger.info("[%s] parsed %d results", name, len(findings))
     return {
@@ -1415,11 +1429,11 @@ async def _run_amass(domain: str) -> dict:
     # amass v5 writes progress bars to stdout — use -oA to write results
     # to a file instead, then read the file after the process exits.
     import tempfile
-    _mark_used("amass")
     binary = _find_binary("amass")
     if not binary:
         return {"source": "amass", "available": False,
                 "error": "amass not installed or not in PATH/venv", "results": []}
+    _mark_used("amass")
     # Private 0700 dir from mkdtemp instead of a predictable name in shared
     # /tmp; removed with everything amass wrote into it (-oA emits several files).
     out_dir = tempfile.mkdtemp(prefix="amass_")

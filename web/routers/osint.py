@@ -554,9 +554,11 @@ async def osint_threat_analysis(request: Request, user: User = Depends(_user)):
     summary="OSINT source availability",
     description=(
         "Report every OSINT source's availability (binary installed / "
-        "library reachable), whether it requires an API key, and when it "
-        "was last invoked in this process — lets the UI show which "
-        "sources will actually run before a search is launched."
+        "library reachable / API key configured), whether it requires an "
+        "API key, and when it last actually ran in this process. A source "
+        "that needs a key reports available=false and status=requires_key "
+        "(with signup_url) until that key is configured — lets the UI show "
+        "which sources will actually run before a search is launched."
     ),
 )
 async def osint_sources_status(user: User = Depends(_user)):

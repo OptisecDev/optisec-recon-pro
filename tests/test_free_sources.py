@@ -549,18 +549,69 @@ class TestSourcesStatusFreeSources:
         statuses = {s["source"]: s for s in u.get_sources_status()}
         assert statuses["virustotal"]["api_key_configured"] is False
         assert statuses["virustotal"]["requires_api_key"] is True
+        assert statuses["virustotal"]["available"] is False
+        assert statuses["virustotal"]["status"] == "requires_key"
         assert "signup_url" in statuses["virustotal"]
         assert "free_tier_limit" in statuses["virustotal"]
+
+    def test_every_keyed_source_unavailable_without_key(self, monkeypatch):
+        for env in ("VT_API_KEY", "ABUSEIPDB_API_KEY", "FULLHUNT_API_KEY",
+                    "SECURITYTRAILS_API_KEY", "GOOGLE_API_KEY"):
+            monkeypatch.delenv(env, raising=False)
+        statuses = {s["source"]: s for s in u.get_sources_status()}
+        keyed = {name for name, s in statuses.items() if s["requires_api_key"]}
+        assert keyed == {"virustotal", "abuseipdb", "fullhunt", "securitytrails", "google_safebrowsing"}
+        for name in keyed:
+            assert statuses[name]["available"] is False
+            assert statuses[name]["status"] == "requires_key"
+            assert statuses[name]["signup_url"]
 
     def test_keyless_sources_do_not_require_key(self):
         statuses = {s["source"]: s for s in u.get_sources_status()}
         assert statuses["urlscan"]["requires_api_key"] is False
         assert statuses["leakcheck"]["requires_api_key"] is False
+        assert statuses["urlscan"]["available"] is True
+        assert statuses["leakcheck"]["available"] is True
+        assert "status" not in statuses["urlscan"]
+        assert "status" not in statuses["leakcheck"]
 
     def test_api_key_configured_true_when_env_set(self, monkeypatch):
         monkeypatch.setenv("ABUSEIPDB_API_KEY", "some-key")
         statuses = {s["source"]: s for s in u.get_sources_status()}
         assert statuses["abuseipdb"]["api_key_configured"] is True
+        assert statuses["abuseipdb"]["available"] is True
+        assert "status" not in statuses["abuseipdb"]
+
+
+class TestLastUsedOnlyWhenSourceRan:
+    """last_used must not be recorded for a source that its own guard
+    stopped before it made any request."""
+
+    def test_keyed_source_without_key_is_not_marked_used(self, monkeypatch):
+        monkeypatch.setattr(u, "_last_used", {})
+        monkeypatch.setattr(u, "VT_API_KEY", "")
+        result = _run(u._run_virustotal(TEST_DOMAIN, "domain"))
+        assert result["available"] is False
+        assert "virustotal" not in u._last_used
+
+    def test_missing_binary_is_not_marked_used(self, monkeypatch):
+        monkeypatch.setattr(u, "_last_used", {})
+        monkeypatch.setattr(u, "_find_binary", lambda name: None)
+        result = _run(u._run_tool("maigret", ["maigret", "x"], 5, lambda out: []))
+        assert result["available"] is False
+        assert "maigret" not in u._last_used
+        result = _run(u._run_amass(TEST_DOMAIN))
+        assert result["available"] is False
+        assert "amass" not in u._last_used
+
+    def test_source_that_ran_is_marked_used(self, monkeypatch):
+        monkeypatch.setattr(u, "_last_used", {})
+
+        async def ran():
+            return {"source": "urlscan", "available": True, "error": None}
+
+        _run(u._run_query_source("urlscan", ran(), lambda data: [], 5))
+        assert "urlscan" in u._last_used
 
 
 # ── 10. Confidence scoring ──────────────────────────────────────────────────────
