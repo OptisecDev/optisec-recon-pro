@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # ============================================================
-# OPTISEC Recon Pro v4.0 SINGULARITY — Production Dockerfile
+# OPTISEC Recon Pro v0.9.0 — Production Dockerfile
 # ============================================================
 # Pinned by digest, not just the "3.12-slim" tag: Docker Hub repoints that
 # tag whenever Debian/Python ship a point release, and an unpinned FROM

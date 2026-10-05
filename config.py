@@ -127,8 +127,8 @@ FIRST_ADMIN_USER = os.environ.get("FIRST_ADMIN_USER", "admin")
 FIRST_ADMIN_EMAIL = os.environ.get("FIRST_ADMIN_EMAIL", "admin@optisec.local")
 
 # App
-APP_NAME = "OPTISEC v4.0 SINGULARITY"
-APP_VERSION = "4.0.0-singularity"
+APP_NAME = "OPTISEC Recon Pro"
+APP_VERSION = "0.9.0"
 ACCENT_COLOR = "#00ff88"
 
 # Scanning

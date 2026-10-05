@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================
-# OPTISEC Recon Pro v4.0 SINGULARITY — One-Command Deployer
+# OPTISEC Recon Pro v0.9.0 — One-Command Deployer
 # Usage: ./deploy.sh [--no-ssl] [--update] [--logs] [--down]
 # ============================================================
 set -euo pipefail
@@ -38,7 +38,7 @@ done
 # ── Banner ────────────────────────────────────────────────
 echo -e "${BOLD}${CYAN}"
 echo "  ╔═══════════════════════════════════════════════╗"
-echo "  ║   OPTISEC Recon Pro v4.0 SINGULARITY Deploy  ║"
+echo "  ║   OPTISEC Recon Pro v0.9.0 Deploy            ║"
 echo "  ╚═══════════════════════════════════════════════╝"
 echo -e "${NC}"
 

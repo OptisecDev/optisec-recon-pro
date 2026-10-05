@@ -1,5 +1,5 @@
 ---
-description: Launch OPTISEC v4.0 SINGULARITY web dashboard and verify it's running
+description: Launch OPTISEC Recon Pro web dashboard and verify it's running
 ---
 
 # Run OPTISEC Web Dashboard

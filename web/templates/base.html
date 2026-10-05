@@ -16,7 +16,7 @@
 <nav class="sidebar">
   <div class="sidebar-logo">
     <h1>🛡️ OPTISEC</h1>
-    <div class="version ieab099171" >v4.0 SINGULARITY</div>
+    <div class="version ieab099171" >v0.9.0</div>
     <a href="{{ '/license' if user and user.role == 'admin' else '/redeem' }}" class="lic-sidebar-badge lic-tier-{{ my_tier }}" title="{{ 'License Management' if user and user.role == 'admin' else 'Your plan: ' + user_tier_label(user) }}">
       {{ user_tier_label(user) }}
     </a>
@@ -82,7 +82,7 @@
       {% if not user_has_feature(user, 'ai_red_team') %}<span class="nav-lock">🔒</span>{% endif %}
     </a>
 
-    <div class="nav-section ie38170337" >SINGULARITY v4.0</div>
+    <div class="nav-section ie38170337" >Advanced</div>
     <a href="/attack-navigator" class="nav-item {% if active == 'attack_navigator' %}active{% endif %}">
       <span class="icon">🎯</span><span>ATT&CK Navigator</span>
       <span class="nav-beta-badge">Beta</span>

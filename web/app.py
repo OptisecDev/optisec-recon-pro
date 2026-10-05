@@ -223,7 +223,7 @@ OPENAPI_TAGS = [
     {
         "name": "autonomous_redteam",
         "description": (
-            "Autonomous Red Team engine (v4.0 SINGULARITY) — AI-driven attack sessions, "
+            "Autonomous Red Team engine — AI-driven attack sessions, "
             "payload library, and automated report generation."
         ),
     },
@@ -500,7 +500,7 @@ app.include_router(quantum.router)
 app.include_router(federation.router)
 app.include_router(osint_router.router)
 
-# ─── v4.0 SINGULARITY Routers ─────────────────────────────────────────────────
+# ─── Advanced Module Routers ──────────────────────────────────────────────────
 app.include_router(attack_navigator.router)
 app.include_router(darkweb.router)
 app.include_router(darkweb_monitor.router)
