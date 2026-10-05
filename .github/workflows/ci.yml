@@ -42,10 +42,6 @@ jobs:
 
   security:
     runs-on: ubuntu-latest
-    # Informational for now: bandit/pip-audit have never run against this
-    # codebase, so the existing findings baseline is untriaged. Make this
-    # job blocking (remove continue-on-error) once that baseline is cleared.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -54,7 +50,9 @@ jobs:
           cache: pip
       - run: pip install bandit==1.9.4 pip-audit==2.10.1
       - name: bandit
-        run: bandit -r web modules -ll
+        # Blocking on High severity only (-lll). Next step: move to -ll once
+        # the Medium-severity findings have been triaged.
+        run: bandit -r web modules -lll
       - name: pip-audit
         if: ${{ !cancelled() }}   # still run if bandit reported findings
         # Ignored advisories have no fixed release AND don't apply here:
