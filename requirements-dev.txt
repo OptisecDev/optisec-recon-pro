@@ -1,0 +1,2 @@
+# Test-only tooling (CI and local). Runtime deps live in requirements.txt.
+pytest==9.1.1
