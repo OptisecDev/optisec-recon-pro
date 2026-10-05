@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="docs/screenshots/landing.png" alt="OPTISEC v4.0 SINGULARITY" width="100%">
+<img src="docs/screenshots/landing.png" alt="OPTISEC Recon Pro" width="100%">
 
-# OPTISEC v4.0 SINGULARITY
+# OPTISEC Recon Pro
 
 ### Enterprise Security Intelligence Platform
 
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg?style=for-the-badge)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg?style=for-the-badge)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB.svg?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688.svg?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![Status](https://img.shields.io/badge/Status-Production-00ff88.svg?style=for-the-badge)](https://github.com/OptisecDev/optisec-recon-pro)
-[![Version](https://img.shields.io/badge/Version-4.0.0--SINGULARITY-bc8cff.svg?style=for-the-badge)](https://github.com/OptisecDev/optisec-recon-pro/releases)
+[![Version](https://img.shields.io/badge/Version-0.9.0-bc8cff.svg?style=for-the-badge)](https://github.com/OptisecDev/optisec-recon-pro/releases)
 [![OSINT Engine](https://img.shields.io/badge/OSINT%20Engine-v5.0-bc8cff.svg?style=for-the-badge)](#osint-engine-v50--world-class-intelligence)
 [![OSINT Sources](https://img.shields.io/badge/OSINT%20Sources-8-00d4ff.svg?style=for-the-badge)](#osint-engine-v50--world-class-intelligence)
 [![Tests](https://img.shields.io/badge/Tests-72%20Passing-00ff88.svg?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_unified_osint.py)
@@ -47,15 +47,16 @@ and post-quantum-ready cryptography tooling in active development ([roadmap](#ro
 - [Security & Responsible Disclosure](#security--responsible-disclosure)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
-- [License & Contact](#license--contact)
+- [License](#license)
+- [Contact](#contact)
 
 ---
 
 ## Overview
 
-**OPTISEC v4.0 SINGULARITY** is a comprehensive bug bounty and penetration testing platform that consolidates the entire security research workflow into a single, unified web dashboard: subdomain enumeration, vulnerability scanning, OSINT, and AI-assisted analysis, with several further modules — MITRE ATT&CK mapping, autonomous red-team simulation, quantum-safe crypto, compliance auditing, next-gen firewall DPI, and a global threat feed — already in the codebase and actively being hardened for production (see [Roadmap](#roadmap)).
+**OPTISEC Recon Pro** is a comprehensive bug bounty and penetration testing platform that consolidates the entire security research workflow into a single, unified web dashboard: subdomain enumeration, vulnerability scanning, OSINT, and AI-assisted analysis, with several further modules — MITRE ATT&CK mapping, autonomous red-team simulation, quantum-safe crypto, compliance auditing, next-gen firewall DPI, and a global threat feed — already in the codebase and actively being hardened for production (see [Roadmap](#roadmap)).
 
-> **بالعربية:** **OPTISEC v4.0 SINGULARITY** منصة استخبارات أمنية متكاملة موجهة لصائدي الثغرات (Bug Bounty) وفرق الاختراق الأخلاقي وفرق العمليات الأمنية (SOC)، تجمع وحدات فحص واستخبارات فعلية — من استكشاف النطاقات الفرعية إلى الفحص الأمني والتحليل بالذكاء الاصطناعي — في لوحة تحكم واحدة، مع دعم كامل للغة العربية في واجهة الأوامر الطبيعية (NLP) ووحدات استخبارات مفتوحة المصدر (OSINT) مخصصة للسياق العراقي (البحث بالهوية الوطنية، لوحات المركبات). وحدات أخرى — خريطة MITRE ATT&CK، محاكاة الفريق الأحمر المستقل، التشفير ما بعد الكمّي، تدقيق الامتثال، وخلاصة التهديدات العالمية — موجودة في الكود وقيد التطوير النشط، انظر [خارطة الطريق](#roadmap).
+> **بالعربية:** **OPTISEC Recon Pro** منصة استخبارات أمنية متكاملة موجهة لصائدي الثغرات (Bug Bounty) وفرق الاختراق الأخلاقي وفرق العمليات الأمنية (SOC)، تجمع وحدات فحص واستخبارات فعلية — من استكشاف النطاقات الفرعية إلى الفحص الأمني والتحليل بالذكاء الاصطناعي — في لوحة تحكم واحدة، مع دعم كامل للغة العربية في واجهة الأوامر الطبيعية (NLP) ووحدات استخبارات مفتوحة المصدر (OSINT) مخصصة للسياق العراقي (البحث بالهوية الوطنية، لوحات المركبات). وحدات أخرى — خريطة MITRE ATT&CK، محاكاة الفريق الأحمر المستقل، التشفير ما بعد الكمّي، تدقيق الامتثال، وخلاصة التهديدات العالمية — موجودة في الكود وقيد التطوير النشط، انظر [خارطة الطريق](#roadmap).
 
 ### Why OPTISEC?
 
@@ -355,7 +356,7 @@ pytest tests/test_unified_osint.py -v
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     OPTISEC v4.0 SINGULARITY                        │
+│                     OPTISEC Recon Pro v0.9.0                        │
 │                                                                       │
 │  ┌─────────────┐   ┌──────────────────────────────────────────────┐ │
 │  │   Browser   │◄──│        FastAPI Web Application               │ │
@@ -482,7 +483,7 @@ header comment for the full writeup).
 
 ## Screenshots
 
-> All screenshots are taken live from a running OPTISEC v4.0 SINGULARITY instance.
+> All screenshots are taken live from a running OPTISEC Recon Pro instance.
 
 <details open>
 <summary><strong>Dashboard & Overview</strong></summary>
@@ -961,9 +962,9 @@ over that target.
   violate computer-crime law (e.g. the U.S. CFAA, EU Cybercrime
   Directive, or local equivalents) independent of any OPTISEC license
   terms, and is the operator's personal legal liability.
-- License access may be revoked for credible reports of unauthorized or
-  abusive use; see [Responsible Disclosure](#responsible-disclosure) below
-  to report misuse you become aware of.
+- Accounts on the hosted service may be suspended for credible reports of
+  unauthorized or abusive use; see [Responsible Disclosure](#responsible-disclosure)
+  below to report misuse you become aware of.
 
 ---
 
@@ -1038,6 +1039,8 @@ We do not operate a formal bug bounty program for OPTISEC itself at this time, b
 
 We welcome contributions from the security community. Please read these guidelines before submitting a pull request.
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide: local setup, running the tests, commit style, and the contributor license agreement.
+
 ### Development Setup
 
 ```bash
@@ -1078,20 +1081,15 @@ When reporting bugs, include:
 
 ---
 
-## License & Contact
+## License
 
-```
-Copyright (c) 2026 OptisecDev. All Rights Reserved.
+OPTISEC Recon Pro is open source under the GNU AGPL-3.0 ([LICENSE](LICENSE)). See [NOTICE](NOTICE).
 
-This software is proprietary and confidential. Unauthorized copying,
-modification, distribution, or use of this software, in whole or in
-part, is strictly prohibited without prior written consent from OptisecDev.
+- If you run a modified version as a network service, the AGPL requires you to make your modified source code available to its users.
+- Commercial licenses are available for organizations that do not want to comply with the AGPL terms: [ahssanali84.syber@gmail.com](mailto:ahssanali84.syber@gmail.com).
+- The hosted service and the PRO edition are separate paid offerings.
 
-The FREE tier may be used for personal and educational purposes.
-Commercial use requires a PRO or ENTERPRISE license.
-```
-
-### Contact
+## Contact
 
 | Channel | Address |
 |---------|---------|
@@ -1105,7 +1103,7 @@ Commercial use requires a PRO or ENTERPRISE license.
 
 **Built with dedication for the security community**
 
-*OPTISEC v4.0 SINGULARITY — Redefining Security Intelligence*
+*OPTISEC Recon Pro v0.9.0 — Redefining Security Intelligence*
 
 [![GitHub](https://img.shields.io/badge/GitHub-OptisecDev-181717?style=for-the-badge&logo=github)](https://github.com/OptisecDev)
 
