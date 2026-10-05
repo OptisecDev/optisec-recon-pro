@@ -1,8 +1,7 @@
-"""Tests for modules/threat_intel/global_feed.py's real-URLhaus integration
-(Phase 3 follow-up): _SAMPLE_IOCS no longer hardcodes fake URLHAUS rows,
-fetch_real_urlhaus_iocs() reads them from the local Ioc table instead, and
-get_live_ioc_feed() merges the two without disturbing the still-fabricated
-ABUSE-CH/CISA-KEV/etc. sample rows.
+"""Tests for modules/threat_intel/global_feed.py's real-URLhaus integration:
+fetch_real_urlhaus_iocs() reads URLhaus rows from the local Ioc table and
+get_live_ioc_feed() scores them. The hardcoded sample pool is gone entirely
+(see tests/test_threat_feed_no_sample_data.py).
 
 Mirrors tests/test_ioc_engine.py's DB fixture convention: real in-memory
 SQLite via IOCRepository, no mocking of the DB layer itself.
@@ -56,18 +55,10 @@ def _fake_user() -> User:
 
 
 # ---------------------------------------------------------------------------
-# _SAMPLE_IOCS / FEED_SOURCES — fake URLHAUS rows gone, everything else stays
+# FEED_SOURCES
 # ---------------------------------------------------------------------------
 
-class TestSampleDataNoLongerFakesUrlhaus:
-    def test_no_sample_ioc_claims_to_be_from_urlhaus(self):
-        assert all(ioc.get("source") != "URLHAUS" for ioc in global_feed._SAMPLE_IOCS)
-
-    def test_abuse_ch_and_cisa_kev_sample_rows_are_untouched(self):
-        sources = {ioc["source"] for ioc in global_feed._SAMPLE_IOCS}
-        assert "ABUSE-CH" in sources
-        assert "CISA-KEV" in sources
-
+class TestFeedSources:
     def test_urlhaus_still_listed_as_a_feed_source(self):
         """FEED_SOURCES is descriptive metadata (id/name/reliability), not a
         fabricated indicator — it must stay so real URLhaus rows can still
@@ -237,19 +228,13 @@ class TestFetchRealUrlhausIocs:
 
 
 # ---------------------------------------------------------------------------
-# get_live_ioc_feed — merges real urlhaus_iocs alongside _SAMPLE_IOCS
+# get_live_ioc_feed — scores real urlhaus_iocs
 # ---------------------------------------------------------------------------
 
 class TestGetLiveIocFeed:
     def test_default_call_has_no_urlhaus_rows(self):
         feed = global_feed.get_live_ioc_feed(limit=100)
         assert all(ioc["source"] != "URLHAUS" for ioc in feed["iocs"])
-
-    def test_default_call_still_has_fake_abuse_ch_and_cisa_kev_rows(self):
-        feed = global_feed.get_live_ioc_feed(limit=100)
-        sources = {ioc["source"] for ioc in feed["iocs"]}
-        assert "ABUSE-CH" in sources
-        assert "CISA-KEV" in sources
 
     def test_urlhaus_iocs_are_merged_into_the_feed(self):
         real_row = {"type": "url", "value": "http://evil.com/x", "malware": "Mirai",

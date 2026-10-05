@@ -236,7 +236,8 @@
   {% else %}
   <div class="empty-state ie1b9b41ec" >
     <div class="icon">🔗</div>
-    <div>No correlation data available.</div>
+    <div>{{ data.note or 'No correlation data available.' }}</div>
+    {% if data.note_ar %}<div class="ie3122d8b0">{{ data.note_ar }}</div>{% endif %}
     <button class="btn btn-primary ieb0043ef4"  data-onclick="refreshData">Run Correlation Now</button>
   </div>
   {% endfor %}
@@ -372,12 +373,9 @@ function openDetail(clusterId) {
         <span class="type-chip ${iocTypeClass(ioc.type)} ie5cd105e1" >${ioc.type}</span>
         <code class="ieda163dc1" title="${escHtml(ioc.value)}">${escHtml(ioc.value)}</code>
         <span class="ie12c288ce">${escHtml(ioc.malware || '')}</span>
-        <span class="ie30a7f193" title="${ioc.is_sample ? escHtml(ioc.note || 'Sample IOC') : ''}">${ioc.source || ''}${ioc.is_sample ? '<sup class="ie72cd8085">*</sup>' : ''}</span>
+        <span class="ie30a7f193">${escHtml(ioc.source || '')}</span>
       </div>`;
     });
-    if (cluster.iocs.some(ioc => ioc.is_sample)) {
-      html += `<div class="iebfdf0207">* Sources marked with an asterisk are hardcoded sample IOCs bundled for demonstration, not live OTX/URLhaus indicators.</div>`;
-    }
   } else {
     html += `<div class="ie7d55610f">No IOC details available.</div>`;
   }

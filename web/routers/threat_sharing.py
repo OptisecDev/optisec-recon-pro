@@ -103,7 +103,7 @@ async def already_shared_values(db: AsyncSession) -> set[str]:
 @router.get(
     "",
     summary="Global threat feed (received)",
-    description="Live IOC feed merging AlienVault OTX pulses (if OTX_API_KEY is configured) with the built-in sample feed — the receiving side of Threat Sharing.",
+    description="Live IOC feed merging AlienVault OTX pulses (if OTX_API_KEY is configured) with real URLhaus indicators synced locally — empty (is_live=false) when neither source is connected. The receiving side of Threat Sharing.",
 )
 async def get_threat_feed(limit: int = 50, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("threat_sharing", user)
@@ -120,7 +120,7 @@ async def get_threat_feed(limit: int = 50, user: User = Depends(_user), db: Asyn
         except Exception as exc:
             logger.warning("OTX fetch failed, using fallback: %s", exc)
 
-    return JSONResponse(_build_feed(otx_iocs, fallback))
+    return JSONResponse(_build_feed(otx_iocs, fallback, otx_configured=bool(OTX_API_KEY)))
 
 
 @router.get(

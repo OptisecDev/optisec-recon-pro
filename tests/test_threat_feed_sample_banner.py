@@ -82,15 +82,17 @@ def _read_template() -> str:
 
 
 class TestBuildFeedIsLiveFlag:
-    def test_is_live_false_when_everything_is_sample(self, db_factory, monkeypatch):
+    def test_is_live_false_and_feed_empty_with_no_live_source(self, db_factory, monkeypatch):
+        # The sample pool that used to fill the feed here is gone: with no
+        # OTX key and nothing synced from URLhaus the feed is empty.
         monkeypatch.setattr(threat_feed_router, "OTX_API_KEY", "")
         async def go():
             async with db_factory() as db:
                 return await threat_feed_router.live_feed(limit=50, user=_fake_user(), db=db)
         feed = _run(go())
-        assert feed["iocs"], "expected the fabricated sample pool to fill the feed"
-        assert all(ioc.get("is_sample") for ioc in feed["iocs"])
+        assert feed["iocs"] == []
         assert feed["is_live"] is False
+        assert feed["note"] == global_feed.NO_LIVE_SOURCE_NOTE_EN
 
     def test_is_live_true_when_a_real_urlhaus_row_is_synced(self, db_factory, monkeypatch):
         monkeypatch.setattr(threat_feed_router, "OTX_API_KEY", "")
@@ -125,13 +127,17 @@ class TestBuildFeedIsLiveFlag:
 class TestSampleDataBannerInTemplate:
     def test_top_of_page_banner_is_conditional_on_is_live(self):
         src = _read_template()
-        assert "feed.is_live" in src
-        assert "Sample / Demo Data" in src
-        assert any("؀" <= ch <= "ۿ" for ch in src)
+        assert "{% if not feed.is_live %}" in src
+        assert "feed.note_ar" in src  # bilingual empty-state note
+        assert "Sample / Demo Data" not in src
 
-    def test_global_threat_level_gets_sample_qualifier_when_not_live(self):
+    def test_global_threat_level_is_hidden_when_not_live(self):
+        # No threat level is computed over an empty feed (it is None), so
+        # the banner is only rendered when real data is present.
         src = _read_template()
-        assert "SAMPLE DATA" in src
+        banner = src.split("<!-- Global threat level banner -->")[1]
+        assert banner.lstrip().startswith("{% if feed.is_live %}")
+        assert "SAMPLE DATA" not in src
 
     def test_threat_map_stat_tile_reflects_real_geolocated_data_not_jitter(self):
         # get_threat_map() no longer jitters a static baseline — it

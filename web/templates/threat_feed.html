@@ -30,43 +30,35 @@
 .source-rel{height:6px;border-radius:3px;background:var(--bg-card);overflow:hidden;flex:1}
 .source-rel-fill{height:100%;border-radius:3px;background:var(--accent)}
 .submit-panel{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:18px}
-.sample-data-banner{border-color:#FFA726;background:#FFA72612;margin-bottom:16px}
-.sample-data-banner-title{font-weight:700;color:#FFA726;font-size:13px}
+.notice-banner{border-color:#FFA726;background:#FFA72612;margin-bottom:16px}
+.notice-banner-title{font-weight:700;color:#FFA726;font-size:13px}
 .mt4{margin-top:4px}
 .mb8{margin-bottom:8px}
 .mb12{margin-bottom:12px}
 .py20{padding:20px 0}
 </style>
 
-<!-- Sample/demo data disclosure — shown whenever nothing on this page is a
-     live indicator (see web/routers/threat_feed.py's is_live computation).
-     PRIORITY 1 item 4 of the live-walkthrough audit: this feed must never
-     be mistaken for a live intelligence source when it isn't one. -->
+<!-- Honest empty state — shown whenever neither live source (AlienVault
+     OTX, abuse.ch URLhaus) returned indicators. The feed is then empty;
+     there is no sample/demo pool to fall back on. -->
 {% if not feed.is_live %}
-<div class="tf-card sample-data-banner" id="sample-data-banner">
-  <div class="sample-data-banner-title">⚠ Sample / Demo Data — Not a Live Feed</div>
-  <div class="ie3122d8b0 mt4">
-    This page is currently showing sample/demo threat-intelligence data. No live indicator source
-    (AlienVault OTX, abuse.ch URLhaus) is connected and returning data right now, so nothing below
-    reflects real-time threats.
-  </div>
-  <div class="ie3122d8b0 mt4">
-    هذه الصفحة تعرض حالياً بيانات استخبارات تهديدات تجريبية/عرضية. لا يوجد مصدر مؤشرات حي متصل ويُرجع بيانات
-    حالياً (AlienVault OTX أو abuse.ch URLhaus)، لذا لا شيء أدناه يعكس تهديدات فعلية في الوقت الحقيقي.
-  </div>
+<div class="tf-card notice-banner" id="no-live-source-banner">
+  <div class="notice-banner-title">{{ feed.note }}</div>
+  <div class="ie3122d8b0 mt4">{{ feed.note_ar }}</div>
 </div>
 {% endif %}
 
 <!-- Global threat level banner -->
+{% if feed.is_live %}
 <div data-dyn-style="background:{{ '#FF6B6B18' if feed.global_threat_level == 'CRITICAL' else '#FFA72618' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA18' }};
   border:1px solid {{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }};
   border-radius:10px;padding:16px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between">
   <div>
     <div data-dyn-style="font-size:18px;font-weight:700;color:{{ '#FF6B6B' if feed.global_threat_level == 'CRITICAL' else '#FFA726' if feed.global_threat_level in ('HIGH','ELEVATED') else '#26C6DA' }}">
-      GLOBAL THREAT LEVEL: {{ feed.global_threat_level }}{% if not feed.is_live %} <span class="badge badge-medium" title="Computed over sample/demo IOCs only — not a live measurement.">SAMPLE DATA</span>{% endif %}
+      GLOBAL THREAT LEVEL: {{ feed.global_threat_level }}
     </div>
     <div class="ieebc423f0">
-      {{ feed.total }} IOCs shown across {{ stats.feed_sources }} catalogued sources{% if not feed.is_live %} — mostly sample/demo (see Feed Sources tab){% endif %}
+      {{ feed.total }} live IOCs shown
     </div>
   </div>
   <div class="iede66ae74">
@@ -76,12 +68,13 @@
     <span class="ie79c8ad87">{{ feed.stats.medium_iocs }}</span> Medium
   </div>
 </div>
+{% endif %}
 
 <!-- Stats -->
 <div class="stats-grid ie98c9aa3b" >
   <div class="stat-card">
     <div class="stat-value">{{ feed.total }}</div>
-    <div class="stat-label">{{ 'Sample IOCs' if not feed.is_live else 'Active IOCs' }}</div>
+    <div class="stat-label">Active IOCs</div>
   </div>
   <div class="stat-card">
     <div class="stat-value iee22d2807" >{{ feed.stats.critical_iocs }}</div>
@@ -114,7 +107,7 @@
 <div id="tab-feed">
   <div class="tf-card">
     <div class="ie27a7ccf4">
-      <h3 id="feed-stream-heading">{{ 'Live IOC Stream' if feed.is_live else 'Sample IOC Stream — Demo Data' }}</h3>
+      <h3 id="feed-stream-heading">{{ 'Live IOC Stream' if feed.is_live else 'IOC Stream — no live source connected' }}</h3>
       <div class="iee0e9ec07">
         <input type="text" class="form-control ie1bac07f7"  placeholder="Search IOCs..." data-oninput="filterFeedFromInput" id="feed-search">
         <select class="form-control ie9e7d48a6"  data-onchange="filterFeedTypeFromInput">
@@ -136,15 +129,13 @@
         <span class="ie3578a396">{{ ioc.type }}</span>
         <code class="ie61804484" title="{{ ioc.value }}">{{ ioc.value[:60] }}{% if ioc.value|length > 60 %}…{% endif %}</code>
         <span class="ie3173424d">{{ ioc.malware[:20] }}</span>
-        <span class="tlp-{{ ioc.tlp.lower() }} iee70db8d2"  title="{{ ioc.note if ioc.tlp_source == 'estimated' else '' }}">TLP:{{ ioc.tlp }}{% if ioc.tlp_source == 'estimated' %}<sup class="ie72cd8085">*</sup>{% endif %}</span>
+        {% if ioc.tlp %}<span class="tlp-{{ ioc.tlp.lower() }} iee70db8d2">TLP:{{ ioc.tlp }}</span>{% endif %}
         <span class="ie9298272b">{{ ioc.source }}</span>
-        {% if ioc.is_sample %}<span class="badge badge-medium sample-badge" title="{{ ioc.sample_note }}">Sample / Demo data</span>{% endif %}
-        <span class="iebbd90081" title="{{ ioc.note if ioc.date_source == 'estimated' else '' }}">{{ ioc.last_seen[:10] }}{% if ioc.date_source == 'estimated' %}<sup class="ie72cd8085">*</sup>{% endif %}</span>
+        {% if ioc.last_seen %}<span class="iebbd90081">{{ ioc.last_seen[:10] }}</span>{% endif %}
       </div>
+      {% else %}
+      <div class="ie3122d8b0">{{ feed.note }}</div>
       {% endfor %}
-      {% if feed.iocs and feed.iocs[0].tlp_source == 'estimated' %}
-      <div class="iebfdf0207">* TLP and dates marked with an asterisk are estimated locally, not from the original indicator source.</div>
-      {% endif %}
     </div>
   </div>
 </div>
@@ -212,8 +203,8 @@
 <!-- CAMPAIGNS TAB -->
 <div id="tab-campaigns" class="is-hidden">
   {% if not campaigns.otx_connected %}
-  <div class="tf-card sample-data-banner">
-    <div class="sample-data-banner-title">⚠ No Live Campaign Data</div>
+  <div class="tf-card notice-banner">
+    <div class="notice-banner-title">⚠ No Live Campaign Data</div>
     <div class="ie3122d8b0 mt4">{{ campaigns.note }}</div>
     <div class="ie3122d8b0 mt4">{{ campaigns.note_ar }}</div>
   </div>
@@ -267,13 +258,14 @@
   <div class="tf-card">
     <h3 class="ie8e86974b">Intelligence Feed Sources</h3>
     {% for src in feed.feed_sources %}
-    {% set live_count = feed.stats.by_source.get(src.id, 0) %}
     <div class="feed-source">
       <div class="ie306ee34c">{{ src.name }}</div>
       <span class="badge badge-{{ 'info' if src.type == 'open' else 'medium' if src.type == 'community' else 'high' if src.type == 'government' else 'critical' }} ied9e14ae8" >{{ src.type }}</span>
-      {% if src.is_sample %}<span class="badge badge-medium sample-badge" title="Fabricated sample/demo data — not a live feed integration.">Sample / Demo data</span>
-      {% elif live_count > 0 %}<span class="badge badge-high" title="{{ live_count }} indicator(s) from this source in the current feed">Live ({{ live_count }})</span>
-      {% else %}<span class="badge badge-medium" title="This source can be live, but 0 of its indicators are in the current feed right now — check the key/connection (see Threat Sharing tab for URLhaus/OTX status).">0 synced — check connection</span>{% endif %}
+      {% if src.status == 'connected' %}<span class="badge badge-high" title="{{ src.ioc_count }} indicator(s) returned by this source right now">Connected ({{ src.ioc_count }})</span>
+      {% elif src.status == 'configured_no_data' %}<span class="badge badge-medium" title="OTX_API_KEY is set, but the OTX fetch failed or returned no indicators on this request.">Configured — no data returned</span>
+      {% elif src.status == 'not_configured' %}<span class="badge badge-medium" title="No indicators from this source — configure its API key / sync.">Not configured</span>
+      {% elif src.status == 'community' %}<span class="badge badge-info" title="Indicators submitted by users of this platform via the Submit IOC tab.">Community submissions ({{ src.ioc_count }})</span>
+      {% else %}<span class="badge badge-medium" title="Catalogued only — this platform has no integration with this source, so none of the feed's indicators come from it.">Not integrated</span>{% endif %}
       <div class="ieda5cd676">
         <div class="ie395bd0fb">Reliability: {{ (src.reliability * 100)|int }}%</div>
         <div class="source-rel"><div class="source-rel-fill" data-dyn-style="width:{{ (src.reliability * 100)|int }}%"></div></div>
@@ -493,18 +485,18 @@ async function refreshFeed() {
   const data = await resp.json();
   const scoreColors = s => s>=80?'#FF6B6B':s>=60?'#FFA726':s>=40?'#FFCA28':'#66BB6A';
   const headingEl = document.getElementById('feed-stream-heading');
-  if (headingEl) headingEl.textContent = data.is_live ? 'Live IOC Stream' : 'Sample IOC Stream — Demo Data';
+  if (headingEl) headingEl.textContent = data.is_live ? 'Live IOC Stream' : 'IOC Stream — no live source connected';
   const iocFeedListEl = document.getElementById('ioc-feed-list');
-  iocFeedListEl.innerHTML = data.iocs.map(ioc => `
+  iocFeedListEl.innerHTML = !data.iocs.length ? `<div class="ie3122d8b0">${escHtml(data.note||'')}</div>` : data.iocs.map(ioc => `
     <div class="ioc-row" data-type="${escHtml(ioc.type)}" data-value="${escHtml(ioc.value.toLowerCase())}">
       <div class="ioc-score" data-dyn-style="color:${scoreColors(ioc.threat_score)}">${ioc.threat_score}</div>
       <div class="score-bar"><div class="score-fill" data-dyn-style="width:${ioc.threat_score}%;background:${scoreColors(ioc.threat_score)}"></div></div>
       <span class="ie3578a396">${escHtml(ioc.type)}</span>
       <code class="ie61804484">${escHtml(ioc.value.slice(0,60))}${ioc.value.length>60?'…':''}</code>
       <span class="ie3173424d">${escHtml((ioc.malware||'').slice(0,20))}</span>
-      <span class="tlp-${escHtml((ioc.tlp||'white').toLowerCase())} iee70db8d2"  title="${ioc.tlp_source==='estimated'?escHtml(ioc.note||'Estimated locally'):''}">TLP:${escHtml(ioc.tlp||'WHITE')}${ioc.tlp_source==='estimated'?'<sup class="ie72cd8085">*</sup>':''}</span>
+      ${ioc.tlp?`<span class="tlp-${escHtml(ioc.tlp.toLowerCase())} iee70db8d2">TLP:${escHtml(ioc.tlp)}</span>`:''}
       <span class="ie9298272b">${escHtml(ioc.source||'')}</span>
-      ${ioc.is_sample?`<span class="badge badge-medium sample-badge" title="${escHtml(ioc.sample_note||'Fabricated sample/demo data')}">Sample / Demo data</span>`:''}
+      ${ioc.last_seen?`<span class="iebbd90081">${escHtml(ioc.last_seen.slice(0,10))}</span>`:''}
     </div>`).join('');
   optisecApplyDynStyles(iocFeedListEl);
 }

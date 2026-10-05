@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from modules.threat_intel.actor_naming import looks_like_threat_actor_name
-from modules.threat_intel.global_feed import _SAMPLE_IOCS, FEED_SOURCES
 
 DATA_FILE = Path("data/ioc_correlations.json")
 OTX_API_KEY = os.environ.get("OTX_API_KEY", "")
@@ -51,29 +50,16 @@ _HIGH_RISK_ACTORS = {
     "fin7", "lockbit", "conti", "blackcat", "alphv",
 }
 
-# ── Sample-IOC disclosure note ────────────────────────────────────────────────
-# collect_iocs() merges modules.threat_intel.global_feed._SAMPLE_IOCS (~18
-# hardcoded/fabricated sample IOCs, not sourced from a live feed) with real
-# IOCs from AlienVault OTX (_load_otx_iocs(), only when OTX_API_KEY is set).
-# Every sample IOC is tagged is_sample=True + a bilingual note so callers/UI
-# can tell it apart from real OTX-sourced IOCs — see
-# tests/test_global_feed_estimated_tagging.py and modules/quantum/encryption.py's
-# mode="simulated" for the established convention. Real OTX IOCs are never
-# tagged. Clusters built by correlate_iocs()/_build_relationships()/
-# _detect_patterns() can mix sample + real IOCs (e.g. an adversary cluster
-# attributed via both), so the tag lives on each IOC dict, not at the cluster
-# level — the correlation math itself (weights, bonuses, relationships,
-# patterns) is untouched and operates identically on tagged and untagged IOCs.
-IOC_SAMPLE_NOTE_EN = (
-    "This is a hardcoded sample IOC bundled with the correlation engine for "
-    "demonstration purposes — it is not a live indicator pulled from "
-    "AlienVault OTX or URLhaus. Only IOCs from a live OTX pull (when "
-    "OTX_API_KEY is configured) are real threat intelligence."
+# Shown when no live source returned anything: the correlation result is
+# then empty (is_live=False) — there is no built-in sample pool to cluster.
+# Correlation only pulls from OTX (URLhaus rows live in the DB-backed feed,
+# not here), so the note names OTX specifically.
+NO_LIVE_SOURCE_NOTE_EN = (
+    "No live threat source connected — configure OTX (OTX_API_KEY) to "
+    "correlate live indicators."
 )
-IOC_SAMPLE_NOTE_AR = (
-    "هذا مؤشر اختراق (IOC) نموذجي مُدرَج بشكل ثابت مع محرك الارتباط لأغراض العرض "
-    "التوضيحي، وليس مؤشراً حياً مسحوباً من AlienVault OTX أو URLhaus. المؤشرات "
-    "الحقيقية فقط هي تلك القادمة من سحب OTX الحي (عند ضبط OTX_API_KEY)."
+NO_LIVE_SOURCE_NOTE_AR = (
+    "لا يوجد مصدر تهديدات حي متصل — قم بضبط OTX (OTX_API_KEY) لربط المؤشرات الحية."
 )
 
 
@@ -131,29 +117,9 @@ def _load_otx_iocs() -> List[dict]:
 
 
 def collect_iocs() -> List[dict]:
-    """Merge IOCs from AlienVault OTX and the built-in global feed sample."""
+    """IOCs from AlienVault OTX only — empty when OTX_API_KEY is unset or
+    the fetch fails."""
     iocs: List[dict] = []
-
-    # Built-in global feed (always available, normalised)
-    for raw in _SAMPLE_IOCS:
-        ioc_type = raw.get("type", "unknown")
-        value    = raw.get("value", "")
-        if not value:
-            continue
-        iocs.append({
-            "id":         hashlib.md5(f"{ioc_type}:{value}".encode(), usedforsecurity=False).hexdigest()[:10],
-            "type":       ioc_type,
-            "value":      value,
-            "malware":    raw.get("malware", "Unknown"),
-            "confidence": raw.get("confidence", 70),
-            "source":     raw.get("source", "OPTISEC-GLOBAL"),
-            "adversary":  raw.get("adversary", ""),
-            "tags":       raw.get("tags", []),
-            "threat_score": raw.get("threat_score", raw.get("confidence", 70)),
-            "is_sample":  True,
-            "note":       IOC_SAMPLE_NOTE_EN,
-            "note_ar":    IOC_SAMPLE_NOTE_AR,
-        })
 
     # Live OTX feed (if API key present)
     for otx in _load_otx_iocs():
@@ -417,9 +383,13 @@ def run_correlation(save: bool = True) -> dict:
             seen.add(key)
             type_summary[ioc["type"]] += 1
 
+    is_live = bool(iocs)
     payload = {
         "generated_at":      datetime.utcnow().isoformat() + "Z",
         "otx_enabled":       bool(OTX_API_KEY),
+        "is_live":           is_live,
+        "note":              None if is_live else NO_LIVE_SOURCE_NOTE_EN,
+        "note_ar":           None if is_live else NO_LIVE_SOURCE_NOTE_AR,
         "total_iocs":        total_iocs,
         "unique_iocs":       len(seen),
         "total_clusters":    total_clusters,
@@ -439,10 +409,17 @@ def run_correlation(save: bool = True) -> dict:
 
 
 def load_cached() -> Optional[dict]:
-    """Return the last persisted correlation result, or None if not available."""
+    """Return the last persisted correlation result, or None if not available.
+
+    A cache written before the sample-IOC pool was removed has no `is_live`
+    key and would still hold those fabricated clusters — treat it as absent
+    so callers recompute instead of serving it."""
     if DATA_FILE.exists():
         try:
-            return json.loads(DATA_FILE.read_text())
+            data = json.loads(DATA_FILE.read_text())
         except Exception:
             return None
+        if not isinstance(data, dict) or "is_live" not in data:
+            return None
+        return data
     return None

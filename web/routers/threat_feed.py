@@ -32,26 +32,37 @@ async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
     return await get_current_user(request, db)
 
 
-def _build_feed(otx_iocs: list, fallback_feed: dict) -> dict:
-    """Merge OTX real data with the existing feed structure."""
-    if otx_iocs:
-        iocs = otx_iocs
-    else:
-        iocs = fallback_feed.get("iocs", [])
+def _build_feed(otx_iocs: list, fallback_feed: dict, otx_configured: bool = False) -> dict:
+    """Merge OTX real data with the existing feed structure.
+
+    fallback_feed is get_live_ioc_feed()'s result, which holds only real
+    indicators (URLhaus + community submissions) and is empty when URLhaus
+    has nothing synced. With neither OTX nor URLhaus returning data, the
+    feed is an honest empty state: is_live=False, iocs=[].
+    """
+    from modules.threat_intel.global_feed import (
+        NO_LIVE_SOURCE_NOTE_AR, NO_LIVE_SOURCE_NOTE_EN, feed_source_statuses,
+    )
+
+    fallback_iocs = fallback_feed.get("iocs", [])
+    iocs = otx_iocs if otx_iocs else fallback_iocs
+    is_live = bool(iocs)
 
     critical = sum(1 for i in iocs if i.get("threat_score", 0) >= 80)
     high = sum(1 for i in iocs if 65 <= i.get("threat_score", 0) < 80)
     medium = sum(1 for i in iocs if 40 <= i.get("threat_score", 0) < 65)
 
-    avg = sum(i.get("threat_score", 0) for i in iocs) / max(len(iocs), 1)
-    if avg >= 80:
-        level = "CRITICAL"
-    elif avg >= 65:
-        level = "HIGH"
-    elif avg >= 45:
-        level = "ELEVATED"
-    else:
-        level = "GUARDED"
+    level = None
+    if iocs:
+        avg = sum(i.get("threat_score", 0) for i in iocs) / len(iocs)
+        if avg >= 80:
+            level = "CRITICAL"
+        elif avg >= 65:
+            level = "HIGH"
+        elif avg >= 45:
+            level = "ELEVATED"
+        else:
+            level = "GUARDED"
 
     by_type: dict = {}
     by_source: dict = {}
@@ -61,19 +72,20 @@ def _build_feed(otx_iocs: list, fallback_feed: dict) -> dict:
         by_type[t] = by_type.get(t, 0) + 1
         by_source[s] = by_source.get(s, 0) + 1
 
-    # An OTX pulse or a real (synced) URLhaus row never carries is_sample=True
-    # (OTX rows carry no is_sample key at all; real URLhaus rows are stamped
-    # is_sample=False in get_live_ioc_feed()). So "at least one non-sample
-    # indicator" is exactly "this page is showing real data right now" —
-    # see PRIORITY 1 item 4 of the live-walkthrough audit: the feed must
-    # never present a fully-fabricated dataset as live intelligence.
-    is_live = any(not i.get("is_sample", False) for i in iocs)
+    # Source status counts what each source actually returned this request,
+    # including URLhaus rows not displayed because OTX took precedence.
+    source_counts: dict = {}
+    for ioc in list(otx_iocs) + list(fallback_iocs):
+        src = ioc.get("source", "unknown")
+        source_counts[src] = source_counts.get(src, 0) + 1
 
     return {
         "iocs": iocs,
         "total": len(iocs),
         "otx_live": bool(otx_iocs),
         "is_live": is_live,
+        "note": None if is_live else NO_LIVE_SOURCE_NOTE_EN,
+        "note_ar": None if is_live else NO_LIVE_SOURCE_NOTE_AR,
         "global_threat_level": level,
         "updated_at": datetime.utcnow().isoformat(),
         "stats": {
@@ -83,7 +95,9 @@ def _build_feed(otx_iocs: list, fallback_feed: dict) -> dict:
             "by_type": by_type,
             "by_source": by_source,
         },
-        "feed_sources": fallback_feed.get("feed_sources", []),
+        "feed_sources": feed_source_statuses(
+            source_counts, otx_configured=otx_configured, otx_connected=bool(otx_iocs),
+        ),
     }
 
 
@@ -105,7 +119,7 @@ async def feed_home(request: Request, user: User = Depends(_user), db: AsyncSess
         except Exception as exc:
             logger.warning("OTX fetch failed, using fallback: %s", exc)
 
-    feed = _build_feed(otx_iocs, fallback)
+    feed = _build_feed(otx_iocs, fallback, otx_configured=bool(OTX_API_KEY))
 
     return templates.TemplateResponse(request, "threat_feed.html", {
         "app_name": APP_NAME,
@@ -135,7 +149,7 @@ async def live_feed(limit: int = 50, user: User = Depends(_user), db: AsyncSessi
         except Exception as exc:
             logger.warning("OTX fetch failed: %s", exc)
 
-    return _build_feed(otx_iocs, fallback)
+    return _build_feed(otx_iocs, fallback, otx_configured=bool(OTX_API_KEY))
 
 
 @router.get("/api/otx/test")

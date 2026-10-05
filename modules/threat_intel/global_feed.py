@@ -3,10 +3,9 @@ import asyncio
 import json
 import hashlib
 import logging
-import random
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, TYPE_CHECKING
 
@@ -19,89 +18,32 @@ DATA_FILE = Path("data/global_threat_feed.json")
 GEO_CACHE_FILE = Path("data/threat_map_geo_cache.json")
 GEO_CACHE_TTL = 12 * 3600  # geolocation is stable enough not to re-query ip-api.com every page load
 
-# ── Threat Feed Sources (simulated OSINT/commercial feeds) ────────────────────
+# ── Threat Feed Sources ───────────────────────────────────────────────────────
 
-# is_sample=False means this source's IOCs are live/real (currently only
-# URLHAUS, synced via modules/ioc/scheduler.py — see fetch_real_urlhaus_iocs()
-# below). Every other source here is a label on fabricated _SAMPLE_IOCS
-# entries below, not an actual live feed integration, so it carries
-# is_sample=True in both this catalog and on every IOC tagged with it.
+# `integration` says whether this platform actually pulls indicators from the
+# source: "live" (ALIENVAULT-OTX via OTX_API_KEY, URLHAUS via
+# modules/ioc/scheduler.py's sync), "community" (OPTISEC-GLOBAL = real
+# user submissions via submit_ioc()), or "none" (catalogued only -- no
+# integration exists, so no indicator in the feed ever comes from it).
+# Whether a "live" source is actually connected right now is computed per
+# request by feed_source_statuses(), never stored here.
 FEED_SOURCES = [
-    {"id": "OPTISEC-GLOBAL",  "name": "OPTISEC Global Network",       "type": "internal",   "reliability": 0.95, "is_sample": True},
-    {"id": "ABUSE-CH",        "name": "Abuse.ch ThreatFox",           "type": "open",       "reliability": 0.90, "is_sample": True},
-    {"id": "ALIENVAULT-OTX",  "name": "AlienVault OTX",               "type": "open",       "reliability": 0.85, "is_sample": True},
-    {"id": "MISP-COMMUNITY",  "name": "MISP Threat Sharing",          "type": "community",  "reliability": 0.88, "is_sample": True},
-    {"id": "CISA-KEV",        "name": "CISA Known Exploited Vulns",   "type": "government", "reliability": 0.98, "is_sample": True},
-    {"id": "SPAMHAUS",        "name": "Spamhaus DROP/EDROP",          "type": "commercial", "reliability": 0.92, "is_sample": True},
-    {"id": "FEODO-TRACKER",   "name": "Feodo Tracker (Botnet C2)",    "type": "open",       "reliability": 0.93, "is_sample": True},
-    {"id": "URLHAUS",         "name": "URLhaus Malware URLs",         "type": "open",       "reliability": 0.89, "is_sample": False},
-    {"id": "CIRCL-LU",        "name": "CIRCL Luxembourg",             "type": "government", "reliability": 0.91, "is_sample": True},
-    {"id": "MANDIANT",        "name": "Mandiant Threat Intelligence", "type": "commercial", "reliability": 0.96, "is_sample": True},
+    {"id": "OPTISEC-GLOBAL",  "name": "OPTISEC Global Network",       "type": "internal",   "reliability": 0.95, "integration": "community"},
+    {"id": "ABUSE-CH",        "name": "Abuse.ch ThreatFox",           "type": "open",       "reliability": 0.90, "integration": "none"},
+    {"id": "ALIENVAULT-OTX",  "name": "AlienVault OTX",               "type": "open",       "reliability": 0.85, "integration": "live"},
+    {"id": "MISP-COMMUNITY",  "name": "MISP Threat Sharing",          "type": "community",  "reliability": 0.88, "integration": "none"},
+    {"id": "CISA-KEV",        "name": "CISA Known Exploited Vulns",   "type": "government", "reliability": 0.98, "integration": "none"},
+    {"id": "SPAMHAUS",        "name": "Spamhaus DROP/EDROP",          "type": "commercial", "reliability": 0.92, "integration": "none"},
+    {"id": "FEODO-TRACKER",   "name": "Feodo Tracker (Botnet C2)",    "type": "open",       "reliability": 0.93, "integration": "none"},
+    {"id": "URLHAUS",         "name": "URLhaus Malware URLs",         "type": "open",       "reliability": 0.89, "integration": "live"},
+    {"id": "CIRCL-LU",        "name": "CIRCL Luxembourg",             "type": "government", "reliability": 0.91, "integration": "none"},
+    {"id": "MANDIANT",        "name": "Mandiant Threat Intelligence", "type": "commercial", "reliability": 0.96, "integration": "none"},
 ]
 
-# ── Simulated live IOC stream ─────────────────────────────────────────────────
-# NOTE: URLHAUS entries used to be hardcoded here too. They've been removed —
-# real URLhaus IOCs now come from the local Ioc table via
-# fetch_real_urlhaus_iocs() below, sourced from modules/ioc/scheduler.py's
-# periodic sync (Phase 3). Every other source in this list (ABUSE-CH,
-# CISA-KEV, FEODO-TRACKER, etc.) is still fabricated sample data — untouched.
-
-# Indicator VALUES below are documentation-safe placeholders, not real-world
-# indicators: IPs are drawn from the RFC 5737 documentation ranges
-# (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24), domains from RFC 2606
-# reserved names (example.com/.net/.org, *.test), and hashes are obviously
-# synthetic patterns (deadbeef/cafebabe/abadcafe repeated) rather than any
-# real file's digest — none attributable to a real organization or, for the
-# hashes, colliding with a real malware sample or (in the prior MD5 row's
-# case) the empty file. Threat-actor/malware-family NAMES are kept as
-# illustrative labels; only the indicator values themselves are placeholders.
-# Public CVE IDs (Log4Shell etc.) are real, public facts and are unchanged.
-_SAMPLE_IOCS = [
-    {"type": "ip",         "value": "192.0.2.10",     "malware": "Cobalt Strike",    "confidence": 95, "source": "FEODO-TRACKER"},
-    {"type": "ip",         "value": "192.0.2.55",     "malware": "Emotet",           "confidence": 92, "source": "ABUSE-CH"},
-    {"type": "domain",     "value": "c2-domain-sample.test", "malware": "Qbot",      "confidence": 88, "source": "ALIENVAULT-OTX"},
-    {"type": "hash_sha256","value": "deadbeef" * 8,
-     "malware": "WannaCry",     "confidence": 99, "source": "MISP-COMMUNITY"},
-    {"type": "ip",         "value": "198.51.100.23",  "malware": "TrickBot",         "confidence": 90, "source": "SPAMHAUS"},
-    {"type": "cve",        "value": "CVE-2021-44228", "malware": "Log4Shell",        "confidence": 99, "source": "CISA-KEV"},
-    {"type": "cve",        "value": "CVE-2023-44487", "malware": "HTTP/2 Rapid Reset","confidence": 98,"source": "CISA-KEV"},
-    {"type": "domain",     "value": "malware-distribution.example.net", "malware": "AsyncRAT","confidence": 85,"source": "CIRCL-LU"},
-    {"type": "hash_md5",   "value": "cafebabe" * 4, "malware": "Mirai", "confidence": 88, "source": "ALIENVAULT-OTX"},
-    {"type": "ip",         "value": "203.0.113.5",    "malware": "APT41 Infrastructure","confidence": 94,"source": "MANDIANT"},
-    {"type": "ip",         "value": "203.0.113.80",   "malware": "Lazarus Group",    "confidence": 96, "source": "MANDIANT"},
-    {"type": "domain",     "value": "update-security-notice.example.org","malware":"Phishing","confidence": 82,"source": "OPTISEC-GLOBAL"},
-    {"type": "hash_sha256","value": "abadcafe" * 8,
-     "malware": "Ryuk",         "confidence": 91, "source": "MISP-COMMUNITY"},
-    {"type": "ip",         "value": "198.51.100.77",  "malware": "BlackMatter",      "confidence": 87, "source": "FEODO-TRACKER"},
-    {"type": "cve",        "value": "CVE-2022-30190", "malware": "Follina MSDT",     "confidence": 97, "source": "CISA-KEV"},
-    {"type": "cve",        "value": "CVE-2024-3400",  "malware": "PAN-OS Zero-Day",  "confidence": 99, "source": "CISA-KEV"},
-    {"type": "domain",     "value": "apt-infrastructure.example.com", "malware": "APT28",   "confidence": 93, "source": "MANDIANT"},
-    {"type": "ip",         "value": "203.0.113.200",  "malware": "LockBit",          "confidence": 89, "source": "ABUSE-CH"},
-]
-
-# ── Estimated-field disclosure notes ──────────────────────────────────────────
-# get_live_ioc_feed() enriches every real IOC (whether from _SAMPLE_IOCS, a
-# caller-supplied urlhaus_iocs list, or a previously submit_ioc()'d entry)
-# with a TLP classification (random.choice) and first_seen/last_seen dates
-# (_fake_date() with a random day offset) that are NOT part of the original
-# indicator — the source feed (e.g. OTX, URLhaus) has no such fields at this
-# point. Each scored IOC below is tagged with tlp_source/date_source +
-# bilingual note so callers/UI can tell these apart from the real fields
-# (type, value, malware, confidence, source) that pass through unmodified.
-# Note: OTX-sourced IOCs fetched directly via modules/threat_intel/otx_feed.py
-# carry *real* tlp/first_seen/last_seen from the OTX API and never flow
-# through this function, so they are never tagged.
-IOC_ESTIMATED_NOTE_EN = (
-    "TLP classification and first/last-seen dates are estimated locally "
-    "(randomly assigned/jittered) for display purposes — they are not part "
-    "of the original IOC from the source feed. Only type, value, malware, "
-    "confidence and source come from the real indicator."
-)
-IOC_ESTIMATED_NOTE_AR = (
-    "تصنيف TLP وتواريخ أول/آخر ظهور مُقدَّرة محلياً (مُعيَّنة/مُهتزة عشوائياً) لأغراض "
-    "العرض فقط، وليست جزءاً من بيانات IOC الأصلية من مصدر التغذية. الحقول الحقيقية "
-    "فقط هي: النوع والقيمة والبرمجية الخبيثة ومستوى الثقة والمصدر."
-)
+# Shown (API + UI) whenever neither live source (OTX, URLhaus) returned
+# anything: the feed is then empty, never padded with stand-in indicators.
+NO_LIVE_SOURCE_NOTE_EN = "No live threat source connected — configure OTX or URLhaus."
+NO_LIVE_SOURCE_NOTE_AR = "لا يوجد مصدر تهديدات حي متصل — قم بضبط OTX أو URLhaus."
 
 # get_threat_map() now plots real geolocated IP IOCs from the local `iocs`
 # table (see _geolocate_ips() below) — this note explains the map's actual
@@ -118,19 +60,6 @@ MAP_METHOD_NOTE_AR = (
     "الموقع عبر ip-api.com/ipinfo.io ومجمَّعة حسب الدولة. العدد المعروض هو عدد "
     "المؤشرات الخبيثة المعروفة فعلياً من تلك الدولة في القاعدة حالياً — وليس "
     "معدل هجمات لحظي. الدول بلا مؤشرات IP محدَّدة الموقع لا تُعرض."
-)
-
-# Every IOC below is tagged is_sample=True/False per FEED_SOURCES/provenance —
-# see get_live_ioc_feed(). Only URLhaus-sourced IOCs are is_sample=False.
-SAMPLE_DATA_NOTE_EN = (
-    "This indicator is fabricated sample/demo data shown under the named "
-    "source's label for UI illustration — it is not a live feed from that "
-    "source. Only URLhaus-sourced indicators in this feed are live."
-)
-SAMPLE_DATA_NOTE_AR = (
-    "هذا المؤشر بيانات تجريبية/توضيحية مُلصقة باسم المصدر المذكور لغرض العرض "
-    "فقط، وليست تغذية حية من ذلك المصدر. المؤشرات القادمة من URLhaus فقط هي "
-    "الحية في هذه التغذية."
 )
 
 # ── Threat Map / Campaigns — now built from real data, see get_threat_map()
@@ -165,50 +94,39 @@ def _save_data(data: dict) -> None:
 
 
 def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None) -> dict:
-    """Return the current live IOC feed with aggregated threat scores.
+    """Return the IOC feed built only from real indicators, with threat scores.
 
     urlhaus_iocs: real abuse.ch URLhaus indicators (see
-    fetch_real_urlhaus_iocs()), in the same raw shape as a _SAMPLE_IOCS
-    entry. Callers with a DB session (the threat-feed/threat-sharing
-    routers) fetch these themselves and pass them in — this function stays
-    DB-free so it's still callable with no arguments, same as before.
+    fetch_real_urlhaus_iocs()). Callers with a DB session (the threat-feed/
+    threat-sharing routers) fetch these themselves and pass them in — this
+    function stays DB-free.
+
+    Community submissions (submit_ioc()) are merged in only alongside live
+    URLhaus data. With no live source the result is an honest empty feed
+    (is_live=False, iocs=[]) — there is no built-in sample pool.
+
+    tlp/first_seen/last_seen are passed through only when the indicator
+    itself carries them (a submission's user-chosen TLP); otherwise None.
+    Nothing is randomly assigned or estimated.
     """
-    data = _load_data()
+    urlhaus_iocs = list(urlhaus_iocs or [])
+    is_live = bool(urlhaus_iocs)
 
-    # Merge static + stored + real URLhaus IOCs, tagging provenance up front:
-    # _SAMPLE_IOCS entries are fabricated (is_sample=True); urlhaus_iocs are
-    # real synced indicators (is_sample=False); shared_iocs are real
-    # user submissions via submit_ioc() (is_sample=False, or whatever it was
-    # stamped with — submit_ioc() always stamps False).
-    all_iocs = (
-        [{**ioc, "is_sample": True} for ioc in _SAMPLE_IOCS]
-        + [{**ioc, "is_sample": False} for ioc in (urlhaus_iocs or [])]
-    )
-    for stored in data.get("shared_iocs", [])[:20]:
-        all_iocs.insert(0, {"is_sample": False, **stored})
+    all_iocs: List[dict] = []
+    if is_live:
+        data = _load_data()
+        all_iocs = list(data.get("shared_iocs", [])[:20]) + urlhaus_iocs
 
-    # Add threat scoring
     scored = []
     for ioc in all_iocs[:limit]:
         scored.append({
             **ioc,
             "id": hashlib.md5(f"{ioc['type']}:{ioc['value']}".encode(), usedforsecurity=False).hexdigest()[:10],
             "threat_score": _aggregate_threat_score(ioc),
-            "first_seen": _fake_date(-random.randint(1, 90)),
-            "last_seen": _fake_date(-random.randint(0, 7)),
+            "first_seen": ioc.get("first_seen"),
+            "last_seen": ioc.get("last_seen"),
             "tags": _generate_tags(ioc),
-            "tlp": random.choice(["WHITE", "GREEN", "AMBER", "RED"]),
-            # tlp/first_seen/last_seen just above are randomly generated, not
-            # sourced from the original IOC — see IOC_ESTIMATED_NOTE_EN/AR.
-            "tlp_source": "estimated",
-            "date_source": "estimated",
-            "note": IOC_ESTIMATED_NOTE_EN,
-            "note_ar": IOC_ESTIMATED_NOTE_AR,
-            # is_sample (carried over from the merge above) marks whether
-            # this specific indicator is fabricated demo data — see
-            # SAMPLE_DATA_NOTE_EN/AR.
-            "sample_note": SAMPLE_DATA_NOTE_EN if ioc.get("is_sample") else None,
-            "sample_note_ar": SAMPLE_DATA_NOTE_AR if ioc.get("is_sample") else None,
+            "tlp": ioc.get("tlp"),
         })
 
     total_score = sum(i["threat_score"] for i in scored) / len(scored) if scored else 0
@@ -216,8 +134,11 @@ def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None
     return {
         "iocs": scored,
         "total": len(scored),
+        "is_live": is_live,
+        "note": None if is_live else NO_LIVE_SOURCE_NOTE_EN,
+        "note_ar": None if is_live else NO_LIVE_SOURCE_NOTE_AR,
         "feed_sources": FEED_SOURCES,
-        "global_threat_level": _global_threat_level(total_score),
+        "global_threat_level": _global_threat_level(total_score) if scored else None,
         "updated_at": datetime.utcnow().isoformat(),
         "stats": {
             "critical_iocs": sum(1 for i in scored if i["threat_score"] >= 80),
@@ -229,12 +150,38 @@ def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None
     }
 
 
+def feed_source_statuses(by_source: Dict[str, int], otx_configured: bool, otx_connected: bool) -> List[dict]:
+    """FEED_SOURCES annotated with each source's *current* status, computed
+    from what actually came back this request — never a stored label:
+
+    - connected:      live source returned indicators (count = how many)
+    - configured_no_data: OTX key set, but the fetch failed or returned nothing
+    - not_configured: live source with nothing synced / no key
+    - community:      OPTISEC-GLOBAL user submissions
+    - not_integrated: catalogued only, this platform never pulls from it
+    """
+    out = []
+    for src in FEED_SOURCES:
+        count = by_source.get(src["id"], 0)
+        if src["integration"] == "none":
+            status = "not_integrated"
+        elif src["integration"] == "community":
+            status = "community"
+        elif src["id"] == "ALIENVAULT-OTX":
+            status = "connected" if otx_connected else "configured_no_data" if otx_configured else "not_configured"
+        else:
+            status = "connected" if count > 0 else "not_configured"
+        out.append({**src, "status": status, "ioc_count": count})
+    return out
+
+
 async def fetch_real_urlhaus_iocs(db: "AsyncSession", limit: int = 20) -> List[dict]:
     """Real abuse.ch URLhaus indicators from the local Ioc table (populated
     by modules/ioc/scheduler.py's periodic sync or a manual POST
-    /api/iocs/sync/urlhaus), reshaped into the same raw dict shape a
-    _SAMPLE_IOCS entry has so get_live_ioc_feed() can score/tag them
-    identically to the fabricated rows. Returns [] if nothing has been
+    /api/iocs/sync/urlhaus), reshaped into the raw IOC dict shape
+    get_live_ioc_feed() scores. The Ioc table's first_seen/last_seen are
+    local sync times, not URLhaus values, so they are deliberately not
+    passed on as the indicator's dates. Returns [] if nothing has been
     synced yet (e.g. no URLHAUS_API_KEY configured) — that's a normal,
     expected state, not an error.
     """
@@ -335,11 +282,6 @@ def _count_by_source(iocs: list) -> dict:
     return counts
 
 
-def _fake_date(delta_days: int) -> str:
-    dt = datetime.utcnow() + timedelta(days=delta_days)
-    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 _VALID_IOC_TYPES = {"ip", "domain", "url", "hash_md5", "hash_sha1", "hash_sha256", "email", "cve"}
 _VALID_TLP = {"WHITE", "GREEN", "AMBER", "RED"}
 _MAX_IOC_VALUE_LEN = 300
@@ -382,9 +324,6 @@ def submit_ioc(
         "submitted_at": datetime.utcnow().isoformat(),
         "threat_score": min(100, int(confidence * 0.95)),
         "submitted_by": user_id,
-        # Real data entered by a real user, not fabricated demo data — see
-        # SAMPLE_DATA_NOTE_EN/AR and get_live_ioc_feed()'s provenance tagging.
-        "is_sample": False,
     }
     data["shared_iocs"].insert(0, ioc)
     data["shared_iocs"] = data["shared_iocs"][:200]
@@ -658,7 +597,6 @@ def get_feed_stats() -> dict:
     return {
         **data.get("feed_stats", {}),
         "feed_sources": len(FEED_SOURCES),
-        "sample_ioc_count": len(_SAMPLE_IOCS),
         "shared_ioc_count": len(data.get("shared_iocs", [])),
         "updated_at": datetime.utcnow().isoformat(),
     }

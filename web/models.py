@@ -167,7 +167,7 @@ class Ioc(Base):
     upserted as new evidence arrives (confidence_score/last_seen refreshed,
     first_seen kept). It is a different concern from modules/ioc_correlation.py
     behind the existing /correlations page, which correlates *global
-    threat-feed* IOCs (OTX pulses + a hardcoded sample feed) against each
+    threat-feed* IOCs (OTX pulses) against each
     other and never touches this table or this project's own scan data. A
     future phase may feed confirmed rows from here into that correlation
     engine, but that is out of scope for this table's design.
