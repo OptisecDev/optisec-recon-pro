@@ -13,7 +13,7 @@
 [![Status](https://img.shields.io/badge/Status-Production-00ff88.svg?style=for-the-badge)](https://github.com/OptisecDev/optisec-recon-pro)
 [![Version](https://img.shields.io/badge/Version-0.9.0-bc8cff.svg?style=for-the-badge)](https://github.com/OptisecDev/optisec-recon-pro/releases)
 [![OSINT Engine](https://img.shields.io/badge/OSINT%20Engine-v5.0-bc8cff.svg?style=for-the-badge)](#osint-engine-v50--world-class-intelligence)
-[![OSINT Sources](https://img.shields.io/badge/OSINT%20Sources-8-00d4ff.svg?style=for-the-badge)](#osint-engine-v50--world-class-intelligence)
+[![OSINT Sources](https://img.shields.io/badge/OSINT%20Sources-17-00d4ff.svg?style=for-the-badge)](#osint-engine-v50--world-class-intelligence)
 [![Tests](https://img.shields.io/badge/Tests-72%20Passing-00ff88.svg?style=for-the-badge&logo=pytest&logoColor=white)](tests/test_unified_osint.py)
 [![Stars](https://img.shields.io/github/stars/OptisecDev/optisec-recon-pro?style=for-the-badge&color=00ff88)](https://github.com/OptisecDev/optisec-recon-pro/stargazers)
 
@@ -80,7 +80,7 @@ and post-quantum-ready cryptography tooling in active development ([roadmap](#ro
 |--------|-------------|------|
 | **Reconnaissance** | Subdomain enumeration (wordlist + DNS brute), DNS lookup (A/MX/TXT/NS/CNAME), WHOIS, Nmap service detection, SSL/TLS analysis, Security headers grading, Port scanning | FREE+ |
 | **Vulnerability Scanner** | XSS (reflected/stored), SQL Injection, SSRF (cloud metadata bypass), LFI (path traversal), Open Redirect | FREE+ |
-| **OSINT Engine v5.0** | Unified 8-source intelligence search (Amass, theHarvester, Maigret, Holehe, crt.sh, Wayback, DNS Full, WHOIS) with confidence scoring + correlation engine — see [deep dive](#osint-engine-v50--world-class-intelligence) — plus email discovery, social media footprint, phone intelligence, IP geolocation, username search (200+ platforms), device fingerprinting, vehicle plate recon, cell tower carrier identification (MCC/MNC) | FREE/PRO |
+| **OSINT Engine v5.0** | Unified multi-source intelligence search across 17 sources (12 keyless; 5 need a free API key; Amass is optional and not installed by default) with confidence scoring + correlation engine — see [deep dive](#osint-engine-v50--world-class-intelligence) — plus email discovery, social media footprint, phone intelligence, IP geolocation, username search (200+ platforms), device fingerprinting, vehicle plate recon, cell tower carrier identification (MCC/MNC) | FREE/PRO |
 
 ### AI & Intelligence
 
@@ -170,23 +170,45 @@ applicable source at once, merge what they find into one record per
 real-world entity, and score each one for trust and risk before it ever
 reaches a human.
 
-### 8 Integrated Sources
+### 17 Integrated Sources
 
 Sources are dispatched automatically based on `target_type` (`domain`,
 `email`, `username`, `ip`, or `auto`-detected), and every source runs under
 its own independent timeout so one slow or failing source never blocks the
 rest of the `asyncio.gather()` batch.
 
+**Local tools (subprocess)** — run only if the binary is installed:
+
 | Source | Target Type | What It Finds | Install |
 |--------|:---:|----------------|---------|
-| **Amass** | domain | Passive subdomain enumeration aggregating multiple intel APIs | `go install github.com/owasp-amass/amass/v4/...@master` / `apt install amass` |
-| **theHarvester** | domain, email, ip | Emails and hosts via free OSINT engines (DuckDuckGo, crt.sh, DNSDumpster, HackerTarget, RapidDNS) | `pip install theHarvester` |
-| **Maigret** | username | Username footprint across 500+ social platforms | `pip install maigret` |
-| **Holehe** | email | Checks which online services an email is registered with | `pip install holehe` |
-| **crt.sh** | domain | Subdomains extracted from public Certificate Transparency logs | none — public API |
-| **Wayback Machine** | domain | Historical hostnames pulled from the Internet Archive CDX index | none — public API |
-| **DNS Full** | domain | A / AAAA / MX / TXT / NS / SOA records plus explicit SPF / DMARC presence checks | none — `dnspython` |
-| **WHOIS** | domain | Registrar, creation/expiry/update dates, name servers, registration status | none — `python-whois` |
+| **Amass** | domain | Passive subdomain enumeration aggregating multiple intel APIs | **Optional — not installed by default** (not in `requirements.txt` or the Docker image). Go binary: `go install github.com/owasp-amass/amass/v4/...@master` / `apt install amass` |
+| **theHarvester** | domain, email, ip | Emails and hosts via free OSINT engines (DuckDuckGo, crt.sh, DNSDumpster, HackerTarget, RapidDNS) | Isolated venv from `requirements-tools.txt` (done by the Dockerfile) |
+| **Maigret** | username | Username footprint across 500+ social platforms | `requirements.txt` |
+| **Holehe** | email | Checks which online services an email is registered with | `requirements.txt` |
+
+**Keyless APIs / libraries** — always available:
+
+| Source | Target Type | What It Finds |
+|--------|:---:|----------------|
+| **crt.sh** | domain | Subdomains extracted from public Certificate Transparency logs |
+| **Wayback Machine** | domain | Historical hostnames pulled from the Internet Archive CDX index |
+| **DNS Full** | domain | A / AAAA / MX / TXT / NS / SOA records plus explicit SPF / DMARC presence checks (`dnspython`) |
+| **WHOIS** | domain | Registrar, creation/expiry/update dates, name servers, registration status (`python-whois`) |
+| **Network Intel** | domain, ip | Shodan InternetDB, BGPView/RIPEstat and a raw TLS handshake (`SHODAN_API_KEY`/`CENSYS_*` only enrich) |
+| **Dark Web Intel** | domain, email | psbdmp.ws + GitHub Code Search; HIBP/IntelX/BreachDirectory/Leak-Lookup/OTX sub-queries each run only if their own key is set |
+| **LeakCheck** | email | Public endpoint is keyless; `LEAKCHECK_API_KEY` only upgrades to the richer v2 endpoint |
+| **URLScan** | domain, ip | urlscan.io public search, no key needed |
+
+**Require a free API key** — reported `available: false` with
+`status: "requires_key"` (plus `signup_url`) until the key is set:
+
+| Source | Target Type | Env var | Free tier | Sign up |
+|--------|:---:|---------|-----------|---------|
+| **VirusTotal** | domain, ip | `VT_API_KEY` | 500 requests/day, 4/min | https://www.virustotal.com/gui/join-us |
+| **AbuseIPDB** | ip | `ABUSEIPDB_API_KEY` | 1,000 checks/day | https://www.abuseipdb.com/register |
+| **FullHunt** | domain | `FULLHUNT_API_KEY` | limited monthly lookups | https://fullhunt.io/auth/register/ |
+| **SecurityTrails** | domain | `SECURITYTRAILS_API_KEY` | 50 requests/month | https://securitytrails.com/app/signup |
+| **Google Safe Browsing** | domain | `GOOGLE_API_KEY` | 10,000 requests/day | https://console.cloud.google.com/apis/library/safebrowsing.googleapis.com |
 
 Check what's actually runnable in your environment at any time with:
 
@@ -194,24 +216,30 @@ Check what's actually runnable in your environment at any time with:
 curl -H "Authorization: Bearer $TOKEN" https://your-instance/api/osint/sources-status
 ```
 
+Example from a deployment with no API keys set and Amass not installed
+(abridged — the real response lists all 17 sources):
+
 ```json
 {
   "sources": [
-    { "source": "amass", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:02+00:00" },
+    { "source": "amass", "available": false, "requires_api_key": false, "last_used": null },
     { "source": "theharvester", "available": true, "requires_api_key": false, "last_used": null },
-    { "source": "maigret", "available": false, "requires_api_key": false, "last_used": null },
-    { "source": "holehe", "available": true, "requires_api_key": false, "last_used": null },
     { "source": "crtsh", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:02+00:00" },
-    { "source": "wayback", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:03+00:00" },
-    { "source": "dns_full", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:01+00:00" },
-    { "source": "whois", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:04+00:00" }
+    { "source": "whois", "available": true, "requires_api_key": false, "last_used": "2026-06-30T21:14:04+00:00" },
+    { "source": "urlscan", "available": true, "requires_api_key": false, "api_key_configured": true,
+      "free_tier_limit": "free public search, no signup required", "signup_url": "https://urlscan.io/user/signup", "last_used": null },
+    { "source": "virustotal", "available": false, "requires_api_key": true, "api_key_configured": false,
+      "status": "requires_key", "free_tier_limit": "500 requests/day, 4 requests/min",
+      "signup_url": "https://www.virustotal.com/gui/join-us", "last_used": null },
+    { "source": "abuseipdb", "available": false, "requires_api_key": true, "api_key_configured": false,
+      "status": "requires_key", "free_tier_limit": "1,000 checks/day",
+      "signup_url": "https://www.abuseipdb.com/register", "last_used": null }
   ]
 }
 ```
 
-None of the 8 sources require an API key — the subprocess-based tools
-(Amass, theHarvester, Maigret, Holehe) run as free/local binaries, and the
-direct-API sources (crt.sh, Wayback, DNS, WHOIS) query public endpoints.
+`last_used` is only recorded when a source actually ran — a missing binary
+or a missing key never sets it.
 
 ### Confidence Scoring Engine (0–100)
 
