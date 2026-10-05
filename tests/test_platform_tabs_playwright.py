@@ -202,7 +202,7 @@ def test_red_team_tabs_respond_to_clicks(browser_context):
     buttons = [
         ("🎯 Engagements", "tab-engagements"),
         ("➕ New Engagement", "tab-new"),
-        ("📚 Technique Library", "tab-library"),
+        ("Technique Library", "tab-library"),
     ]
 
     # Initial state: exactly the first tab visible.
