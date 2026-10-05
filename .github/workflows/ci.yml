@@ -57,7 +57,18 @@ jobs:
         run: bandit -r web modules -ll
       - name: pip-audit
         if: ${{ !cancelled() }}   # still run if bandit reported findings
-        run: pip-audit -r requirements.txt
+        # Ignored advisories have no fixed release AND don't apply here:
+        # - CVE-2024-23342 (ecdsa, via python-jose): Minerva timing attack on
+        #   ECDSA signing. Our JWTs are HS256 only (web/auth.py ALGORITHM) --
+        #   no ECDSA key is ever used to sign or verify anything.
+        # - CVE-2023-36464 (PyPDF2, via maigret): infinite loop when parsing a
+        #   crafted PDF. Nothing in our code imports PyPDF2 or reads PDFs with
+        #   it (reports are generated with reportlab). PyPDF2 3.0.1 is its final
+        #   release; the fix only exists in the renamed `pypdf` package.
+        run: >-
+          pip-audit -r requirements.txt
+          --ignore-vuln CVE-2024-23342
+          --ignore-vuln CVE-2023-36464
       - name: pip-audit (tools)
         # Separate step: theHarvester's own isolated venv (requirements-tools.txt)
         # is resolved independently of the app's requirements.txt.
