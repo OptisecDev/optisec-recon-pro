@@ -148,8 +148,11 @@ def deploy_honeypot_endpoint(endpoint_name: str) -> Dict[str, Any]:
 
 
 def _generate_canary_token(seed: str) -> str:
-    import hashlib
-    return hashlib.md5(f"optisec-canary-{seed}".encode()).hexdigest()[:16]
+    # A canary token must be unguessable: the old md5("optisec-canary-<name>")
+    # was derivable by anyone who knew the endpoint name. `seed` is kept for
+    # call-site compatibility but no longer feeds the token.
+    import secrets
+    return secrets.token_hex(8)  # 16 hex chars, same length as before
 
 
 def get_known_scanner_ips() -> list:
