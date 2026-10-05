@@ -37,7 +37,7 @@ FROM base AS builder
 
 WORKDIR /build
 
-COPY requirements.txt .
+COPY requirements.txt requirements-tools.txt ./
 
 # git is required to install theHarvester from GitHub (git+https dependency);
 # cmake/ninja-build/build-essential build liboqs (PQC) as a native C library below.
@@ -59,6 +59,16 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install --prefix=/install -r requirements.txt
+
+# theHarvester gets its own isolated venv (see requirements-tools.txt for why):
+# it hard-pins aiohttp/fastapi/uvicorn/etc. with ==, so installing it into
+# /install alongside the app would force the app onto its versions. Created
+# at the same /opt/theharvester path it is copied to in the runtime stage,
+# since a venv's scripts hard-code their interpreter path in the shebang.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m venv /opt/theharvester && \
+    /opt/theharvester/bin/pip install --upgrade pip && \
+    /opt/theharvester/bin/pip install -r requirements-tools.txt
 
 # ---- liboqs (Open Quantum Safe) — native C library backing liboqs-python ----
 # Pinned to the release matching the liboqs-python version in requirements.txt
@@ -108,6 +118,12 @@ WORKDIR /app
 
 # Copy installed Python packages
 COPY --from=builder /install /usr/local
+
+# Isolated theHarvester venv, exposed on PATH via a symlink so
+# modules/osint/unified_engine.py's _find_binary("theHarvester") (shutil.which)
+# finds it without the venv's own packages ever reaching the app's interpreter.
+COPY --from=builder /opt/theharvester /opt/theharvester
+RUN ln -s /opt/theharvester/bin/theHarvester /usr/local/bin/theHarvester
 
 # Copy the liboqs native shared library and register it with the dynamic
 # linker (ldconfig) so ctypes.util.find_library("oqs"), which liboqs-python

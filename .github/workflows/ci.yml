@@ -58,6 +58,11 @@ jobs:
       - name: pip-audit
         if: ${{ !cancelled() }}   # still run if bandit reported findings
         run: pip-audit -r requirements.txt
+      - name: pip-audit (tools)
+        # Separate step: theHarvester's own isolated venv (requirements-tools.txt)
+        # is resolved independently of the app's requirements.txt.
+        if: ${{ !cancelled() }}
+        run: pip-audit -r requirements-tools.txt
 
   secrets:
     runs-on: ubuntu-latest

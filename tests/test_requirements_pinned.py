@@ -4,8 +4,10 @@ lower bound (e.g. "flask>=3.0.0") rather than an exact pin. An unbounded
 lower bound lets a future `pip install -r requirements.txt` silently pull
 in a newer major version of any dependency and break the app without
 warning. Every real PyPI dependency must be pinned to an exact version
-with "==" (the git+ theHarvester line is exempt -- it is already pinned to
-a fixed tag via @4.11.1, just not through PyPI's == syntax).
+with "==". requirements.txt no longer has any git+ entries: theHarvester
+moved to requirements-tools.txt (pinned to an exact commit SHA and installed
+into its own isolated venv), so the git+ skip below is only a guard in case
+a git-pinned entry is ever added back here.
 """
 
 import os
