@@ -67,7 +67,7 @@ def fetch_urlhaus_recent(api_key: str, limit: int = 50) -> list:
             tags = entry.get("tags") or []
             malware_label = tags[0] if tags else (entry.get("threat") or "Unknown")
             reporter = entry.get("reporter", "anonymous")
-            ioc_id = hashlib.md5(f"url:{value}".encode()).hexdigest()[:10]
+            ioc_id = hashlib.md5(f"url:{value}".encode(), usedforsecurity=False).hexdigest()[:10]
 
             iocs.append({
                 "id": ioc_id,

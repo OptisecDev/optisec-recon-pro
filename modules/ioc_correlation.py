@@ -87,7 +87,7 @@ def _severity(score: float) -> str:
 
 
 def _cluster_id(*parts: str) -> str:
-    return hashlib.sha1("|".join(parts).encode()).hexdigest()[:12]
+    return hashlib.sha1("|".join(parts).encode(), usedforsecurity=False).hexdigest()[:12]
 
 
 def _extract_domain_from_url(url: str) -> Optional[str]:
@@ -141,7 +141,7 @@ def collect_iocs() -> List[dict]:
         if not value:
             continue
         iocs.append({
-            "id":         hashlib.md5(f"{ioc_type}:{value}".encode()).hexdigest()[:10],
+            "id":         hashlib.md5(f"{ioc_type}:{value}".encode(), usedforsecurity=False).hexdigest()[:10],
             "type":       ioc_type,
             "value":      value,
             "malware":    raw.get("malware", "Unknown"),

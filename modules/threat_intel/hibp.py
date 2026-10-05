@@ -84,7 +84,7 @@ def check_email(email: str) -> Dict[str, Any]:
 
 def check_password(password: str) -> Dict[str, Any]:
     """Check a password against the HIBP Pwned Passwords database (k-anonymity)."""
-    sha1 = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+    sha1 = hashlib.sha1(password.encode("utf-8"), usedforsecurity=False).hexdigest().upper()
     prefix, suffix = sha1[:5], sha1[5:]
 
     try:

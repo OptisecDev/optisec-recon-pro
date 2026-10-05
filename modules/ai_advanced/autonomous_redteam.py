@@ -244,7 +244,7 @@ async def start_autonomous_simulation(
     user_id: Optional[int] = None,
 ) -> dict:
     """Start a multi-stage autonomous attack simulation session."""
-    session_id = f"ART-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{hashlib.md5(target.encode()).hexdigest()[:6].upper()}"
+    session_id = f"ART-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{hashlib.md5(target.encode(), usedforsecurity=False).hexdigest()[:6].upper()}"
 
     selected_phases = _select_phases(attack_types)
 
@@ -506,7 +506,7 @@ def _findings_from_web_scan(url: str, scan_results: dict) -> List[dict]:
 
 def _simulate_phase_findings(target: str, attack_types: List[str], stealth: str) -> List[dict]:
     findings = []
-    seed = int(hashlib.md5(f"{target}{''.join(sorted(attack_types))}".encode()).hexdigest(), 16)
+    seed = int(hashlib.md5(f"{target}{''.join(sorted(attack_types))}".encode(), usedforsecurity=False).hexdigest(), 16)
 
     potential_findings = [
         {"vuln": "SQL Injection", "severity": "CRITICAL", "endpoint": f"https://{target}/api/users?id=",

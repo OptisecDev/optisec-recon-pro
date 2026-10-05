@@ -119,7 +119,7 @@ def fetch_otx_pulses(api_key: str, limit: int = 50) -> list:
                     continue
 
                 title = indicator.get("title", "") or malware_label
-                ioc_id = hashlib.md5(f"{ioc_type}:{value}".encode()).hexdigest()[:10]
+                ioc_id = hashlib.md5(f"{ioc_type}:{value}".encode(), usedforsecurity=False).hexdigest()[:10]
 
                 iocs.append({
                     "id": ioc_id,

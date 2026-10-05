@@ -192,7 +192,7 @@ def get_live_ioc_feed(limit: int = 50, urlhaus_iocs: Optional[List[dict]] = None
     for ioc in all_iocs[:limit]:
         scored.append({
             **ioc,
-            "id": hashlib.md5(f"{ioc['type']}:{ioc['value']}".encode()).hexdigest()[:10],
+            "id": hashlib.md5(f"{ioc['type']}:{ioc['value']}".encode(), usedforsecurity=False).hexdigest()[:10],
             "threat_score": _aggregate_threat_score(ioc),
             "first_seen": _fake_date(-random.randint(1, 90)),
             "last_seen": _fake_date(-random.randint(0, 7)),
@@ -372,7 +372,7 @@ def submit_ioc(
 
     data = _load_data()
     ioc = {
-        "id": hashlib.md5(f"{ioc_type}:{value}:{datetime.utcnow().isoformat()}".encode()).hexdigest()[:10],
+        "id": hashlib.md5(f"{ioc_type}:{value}:{datetime.utcnow().isoformat()}".encode(), usedforsecurity=False).hexdigest()[:10],
         "type": ioc_type,
         "value": value,
         "malware": malware,

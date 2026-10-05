@@ -160,7 +160,7 @@ def check_domain_breach(domain: str, user_id: Optional[int] = None) -> dict:
 
     # Simulate probabilistic result for unknown domains
     if not results:
-        seed = int(hashlib.md5(domain.encode()).hexdigest(), 16) % 100
+        seed = int(hashlib.md5(domain.encode(), usedforsecurity=False).hexdigest(), 16) % 100
         if seed < 35:
             results.append({
                 "source": f"darkweb_combo_{seed:02d}",
@@ -194,7 +194,7 @@ def check_email_breach(email: str) -> dict:
     email = email.lower().strip()
     domain = email.split("@")[-1] if "@" in email else ""
 
-    seed = int(hashlib.md5(email.encode()).hexdigest(), 16)
+    seed = int(hashlib.md5(email.encode(), usedforsecurity=False).hexdigest(), 16)
     breaches = []
 
     all_breach_names = list(_KNOWN_BREACH_DOMAINS.keys())
@@ -281,7 +281,7 @@ def add_keyword_alert(keyword: str, category: str = "general", user_id: Optional
     """
     data = _load_data()
     alert = {
-        "id": hashlib.md5(f"{user_id}:{keyword}".encode()).hexdigest()[:8],
+        "id": hashlib.md5(f"{user_id}:{keyword}".encode(), usedforsecurity=False).hexdigest()[:8],
         "keyword": keyword,
         "category": category,
         "added_at": datetime.utcnow().isoformat(),
@@ -359,7 +359,7 @@ def generate_threat_report(domain: str, user_id: Optional[int] = None, is_admin:
     breach_check = check_domain_breach(domain, user_id=user_id)
     keyword_hits = []
     for kw in get_monitored_keywords(user_id=user_id, is_admin=is_admin):
-        seed = int(hashlib.md5(f"{domain}{kw['keyword']}".encode()).hexdigest(), 16) % 100
+        seed = int(hashlib.md5(f"{domain}{kw['keyword']}".encode(), usedforsecurity=False).hexdigest(), 16) % 100
         if seed < 20:
             keyword_hits.append({
                 "keyword": kw["keyword"],

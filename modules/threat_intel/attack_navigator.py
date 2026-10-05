@@ -259,7 +259,7 @@ def add_detection(technique_id: str, confidence: int, source: str, details: str 
 
     state = _load_state()
     detection = {
-        "id": hashlib.md5(f"{technique_id}{datetime.utcnow().isoformat()}".encode()).hexdigest()[:8],
+        "id": hashlib.md5(f"{technique_id}{datetime.utcnow().isoformat()}".encode(), usedforsecurity=False).hexdigest()[:8],
         "technique_id": technique_id,
         "technique_name": tech["name"],
         "confidence": min(100, max(0, confidence)),

@@ -213,7 +213,7 @@ async def collect_local_iocs(db: AsyncSession, per_source_limit: int = 20) -> li
 
     all_iocs = honeypot + darkweb + vuln
     for ioc in all_iocs:
-        ioc["id"] = hashlib.md5(f"{ioc['type']}:{ioc['value']}".encode()).hexdigest()[:12]
+        ioc["id"] = hashlib.md5(f"{ioc['type']}:{ioc['value']}".encode(), usedforsecurity=False).hexdigest()[:12]
     return all_iocs
 
 
@@ -249,7 +249,7 @@ def build_stix_bundle(iocs: list[dict]) -> dict:
         pattern = _stix_pattern(ioc.get("type", ""), ioc.get("value", ""))
         if not pattern:
             continue
-        ioc_id = ioc.get("id") or hashlib.md5(f"{ioc.get('type')}:{ioc.get('value')}".encode()).hexdigest()[:12]
+        ioc_id = ioc.get("id") or hashlib.md5(f"{ioc.get('type')}:{ioc.get('value')}".encode(), usedforsecurity=False).hexdigest()[:12]
         objects.append({
             "type": "indicator",
             "spec_version": "2.1",
