@@ -30,6 +30,11 @@ from web.models import User
 import web.routers.quantum as quantum_router
 import modules.quantum.encryption as quantum_module
 
+pytestmark = pytest.mark.skipif(
+    not quantum_module._liboqs_discoverable(),
+    reason="liboqs not available in this environment",
+)
+
 
 def _run(coro):
     return asyncio.run(coro)

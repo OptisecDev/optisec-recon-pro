@@ -17,8 +17,16 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+
 from web.models import User
 import web.routers.quantum as quantum_router
+import modules.quantum.encryption as qe
+
+pytestmark = pytest.mark.skipif(
+    not qe._liboqs_discoverable(),
+    reason="liboqs not available in this environment",
+)
 
 
 def _run(coro):

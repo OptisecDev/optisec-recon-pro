@@ -25,6 +25,12 @@ import web.routers.quantum as quantum_router
 import modules.quantum.encryption as qe
 
 
+requires_liboqs = pytest.mark.skipif(
+    not qe._liboqs_discoverable(),
+    reason="liboqs not available in this environment",
+)
+
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -51,6 +57,7 @@ def _isolated_keys_dir(tmp_path, monkeypatch):
 # KEM round-trip
 # --------------------------------------------------------------------------
 
+@requires_liboqs
 class TestKemRoundTrip:
     @pytest.mark.parametrize("algorithm", ["kyber768", "kyber1024"])
     def test_encapsulate_decapsulate_match(self, algorithm):
@@ -77,6 +84,7 @@ class TestKemRoundTrip:
 # Sign / verify
 # --------------------------------------------------------------------------
 
+@requires_liboqs
 class TestSignVerify:
     @pytest.mark.parametrize("algorithm", ["dilithium3", "sphincs_sha2", "falcon512"])
     def test_sign_then_verify_succeeds(self, algorithm):
@@ -110,6 +118,7 @@ class TestSignVerify:
 # Encrypt / decrypt (AES-256-GCM keyed by a real KEM-derived shared secret)
 # --------------------------------------------------------------------------
 
+@requires_liboqs
 class TestEncryptDecrypt:
     def test_round_trip_recovers_plaintext(self):
         kp = qe.generate_keypair("kyber768")
@@ -145,6 +154,7 @@ class TestEncryptDecrypt:
 # Hybrid schemes: Kyber+X25519 KEM, Dilithium+Ed25519 signature
 # --------------------------------------------------------------------------
 
+@requires_liboqs
 class TestHybridSchemes:
     def test_hybrid_kem_roundtrip_matches(self):
         kp = qe.generate_hybrid_keypair("kyber768_x25519")
@@ -263,6 +273,7 @@ class TestCryptoAssessment:
 # scoped like the existing keypair/encapsulate endpoints.
 # --------------------------------------------------------------------------
 
+@requires_liboqs
 class TestRouterEndpoints:
     def test_decapsulate_endpoint(self):
         kp = qe.generate_keypair("kyber768")

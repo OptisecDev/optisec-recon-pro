@@ -93,6 +93,10 @@ def client():
 
 # ─── Happy path ─────────────────────────────────────────────────────────────
 
+@pytest.mark.skipif(
+    not os.environ.get("GROQ_API_KEY"),
+    reason="requires live Groq API (GROQ_API_KEY); the local fallback parser does not handle this input",
+)
 def test_arabic_scan_command_parses_action_and_target(client):
     resp = client.post("/api/nlp", json={"text": "افحص ثغرات example.com"})
     assert resp.status_code == 200

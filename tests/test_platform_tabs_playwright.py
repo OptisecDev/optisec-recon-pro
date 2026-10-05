@@ -190,6 +190,10 @@ def _visible_tab_ids(page, ids):
     }
 
 
+@pytest.mark.skipif(
+    os.environ.get("RUN_BROWSER_TESTS") != "1",
+    reason="browser test: set RUN_BROWSER_TESTS=1 to run (requires Playwright Chromium)",
+)
 def test_red_team_tabs_respond_to_clicks(browser_context):
     page = browser_context.new_page()
     page.goto("/ai-security/red-team")
