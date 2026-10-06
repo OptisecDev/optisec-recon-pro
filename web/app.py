@@ -77,6 +77,7 @@ from web.routers import cve_submission as cve_router
 from web.routers import license_routes
 from web.routers import payment_routes
 from web.routers import ioc as ioc_router
+from web.routers import domain_verification as domain_verification_router
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -513,6 +514,7 @@ app.include_router(honeypot_router.page_router)
 app.include_router(threat_sharing_router.router)
 app.include_router(cve_router.router)
 app.include_router(ioc_router.router)
+app.include_router(domain_verification_router.router)
 app.include_router(license_routes.router)
 app.include_router(license_routes.page_router)
 app.include_router(payment_routes.router)
