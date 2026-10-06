@@ -32,6 +32,7 @@ from sqlalchemy.pool import StaticPool
 
 import modules.federation.federated_scan as federated_scan
 import modules.osint.network_intelligence as network_intelligence
+import modules.scan_scope as scan_scope_module
 import web.app as app_module
 import web.domain_verification as dv
 import web.migrate_add_scan_authz_columns as scan_cols_migration
@@ -55,6 +56,8 @@ def _isolation(monkeypatch):
         raise AssertionError("unexpected ownership re-check (seeded records should be fresh)")
     monkeypatch.setattr(dv, "check_dns_txt", no_check)
     monkeypatch.setattr(dv, "check_http_file", no_check)
+    # network_scope_for() resolves the scope's hosts; keep that offline.
+    monkeypatch.setattr(scan_scope_module, "_resolve", lambda host: {"93.184.216.34"})
     yield
     rate_limit._buckets.clear()
 
@@ -149,6 +152,7 @@ def test_api_scan_passive_on_unverified_runs_and_records_basis(env, launched):
     assert scan.authz_basis == "passive_only"
     assert scan.authz_checks == ["dns", "headers"]
     assert launched[0][1]["authorized_checks"] == {"dns", "headers"}
+    assert launched[0][1]["scope"] is None
 
 
 def test_api_scan_verified_run_all(env, launched):
@@ -162,6 +166,9 @@ def test_api_scan_verified_run_all(env, launched):
     assert scan.authz_basis == "verified:dns_txt:example.com"
     assert scan.authz_checks == list(SCAN_STEP_ORDER)
     assert launched[0][1]["authorized_checks"] == set(SCAN_STEP_ORDER)
+    scope = launched[0][1]["scope"]
+    assert scope.suffixes == {"example.com"} and scope.hosts == frozenset()
+    assert scope.allows("shop.example.com") and not scope.allows("evil.test")
 
 
 def test_api_scan_another_users_verification_does_not_count(env, launched):
@@ -176,6 +183,8 @@ def test_api_scan_training_target_within_its_permissions(env, launched):
     r = c.post("/api/scan", json={"target": "scanme.nmap.org", "scan_types": ["nmap", "dns"]}, cookies=_user(sf))
     assert r.status_code == 200, r.text
     assert _scans(sf)[0].authz_basis == "training:scanme.nmap.org"
+    scope = launched[0][1]["scope"]
+    assert scope.hosts == {"scanme.nmap.org"} and not scope.allows("sub.scanme.nmap.org")
 
 
 def test_api_scan_training_target_beyond_its_permissions(env, launched):
@@ -213,6 +222,7 @@ def test_api_scan_log_only_mode_runs_but_marks_unenforced(env, launched, monkeyp
     (scan,) = _scans(sf)
     assert scan.authz_basis == "unenforced:passive_only"
     assert launched[0][1]["authorized_checks"] == {"xss", "dns"}
+    assert launched[0][1]["scope"] is None  # log-only mode must not block
     assert any("enforced=False" in m and "api_scan" in m for m in caplog.messages)
 
 
@@ -244,9 +254,11 @@ def test_denial_is_logged_when_enforced(env, launched, caplog):
 
 # ── _run_scan_task ───────────────────────────────────────────────────────────
 
-def test_run_scan_task_requires_authorized_checks():
+def test_run_scan_task_requires_authorized_checks_and_scope():
     with pytest.raises(TypeError):
         _run(app_module._run_scan_task("s", "example.com", [], 1, None))
+    with pytest.raises(TypeError):
+        _run(app_module._run_scan_task("s", "example.com", [], 1, None, authorized_checks={"dns"}))
 
 
 def test_run_scan_task_runs_only_authorized_steps(env, monkeypatch):
@@ -275,7 +287,7 @@ def test_run_scan_task_runs_only_authorized_steps(env, monkeypatch):
     monkeypatch.setattr(app_module, "scan_sqli", recorder("sqli", []))
 
     _run(app_module._run_scan_task(
-        "scan-authz-1", "example.com", [], 1, None, authorized_checks={"dns", "whois"},
+        "scan-authz-1", "example.com", [], 1, None, authorized_checks={"dns", "whois"}, scope=None,
     ))
     assert sorted(called) == ["dns", "whois"]
 
@@ -333,8 +345,10 @@ def osint_calls(monkeypatch):
     async def social(domain):
         return {}
 
-    def subs(domain):
-        calls.append(domain)
+    def subs(domain, passive=False):
+        calls.append((domain, passive))
+        if passive:
+            return {"subdomains": [], "unconfirmed": [{"subdomain": "www." + domain, "reason": "dns_only"}]}
         return {"subdomains": ["www." + domain], "unconfirmed": []}
     monkeypatch.setattr(app_module, "find_emails", emails)
     monkeypatch.setattr(app_module, "find_social_profiles", social)
@@ -344,15 +358,17 @@ def osint_calls(monkeypatch):
     return calls
 
 
-def test_osint_unverified_skips_subdomains_only(env, osint_calls):
+def test_osint_unverified_uses_passive_subdomains(env, osint_calls):
     c, sf = env
     r = c.post("/api/osint", json={"domain": "unverified.test"}, cookies=_user(sf))
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["subdomains"] == []
-    assert "verif" in body["subdomains_skipped"].lower()
+    assert body["subdomains_unconfirmed"] == [{"subdomain": "www.unverified.test", "reason": "dns_only"}]
+    assert body["subdomains_mode"] == "passive"
+    assert "verif" in body["subdomains_note"].lower()
     assert body["dns"] == {"a": []}
-    assert osint_calls == []
+    assert osint_calls == [("unverified.test", True)]
 
 
 def test_osint_verified_enumerates_subdomains(env, osint_calls):
@@ -360,8 +376,9 @@ def test_osint_verified_enumerates_subdomains(env, osint_calls):
     r = c.post("/api/osint", json={"domain": "example.com"}, cookies=_user(sf, verified=["example.com"]))
     body = r.json()
     assert body["subdomains"] == ["www.example.com"]
-    assert body["subdomains_skipped"] is None
-    assert osint_calls == ["example.com"]
+    assert body["subdomains_mode"] == "active"
+    assert body["subdomains_note"] is None
+    assert osint_calls == [("example.com", False)]
 
 
 # ── /api/osint/network-scan ────────────────────────────────────────────

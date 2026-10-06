@@ -2,7 +2,8 @@
 
 import logging
 import socket
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
+from modules.scan_scope import ScopedThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +75,7 @@ def scan_ports(
     open_ports = []
     closed_count = 0
 
-    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+    with ScopedThreadPoolExecutor(max_workers=max_workers) as ex:
         futures = {ex.submit(_probe_port, host, p, timeout): p for p in port_list}
         for future in as_completed(futures):
             port, is_open, banner = future.result()

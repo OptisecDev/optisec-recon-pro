@@ -1003,10 +1003,23 @@ server-side, on every endpoint that can start a scan (`POST /api/scan`,
 
 A request that includes any active module the target isn't authorized for is
 refused as a whole (HTTP 403 with `denied_checks`) — nothing partial runs.
-`/api/osint` is the one exception: it still returns its passive results and
-reports `subdomains_skipped` instead. In the dashboard, the scan page locks
-the modules a target isn't authorized for, and the Targets page shows each
-target's status with a **Verify** button.
+The OSINT lookups (`/api/osint`, `/api/osint/domain`) are the exception: for
+an unauthorized target they run subdomain enumeration in a **passive,
+DNS-only mode** (no connections to the hosts it finds; every name comes back
+unconfirmed with reason `dns_only`) and say so in `subdomains_mode` /
+`subdomains_note`.
+
+Authorizing the target isn't the end of it: while an active module runs, a
+**network scope guard** (`modules/scan_scope.py`) confines its connections to
+the authorized hosts — the verified domain and its subdomains for a DNS TXT
+verification, the exact host otherwise. A redirect, crawled link or CNAME
+that would take a scanner elsewhere is refused and listed in the scan's
+`scope_blocked` results. It covers `requests` traffic (every redirect hop)
+and raw TCP / `http.client` connections; nmap itself is a subprocess and is
+only ever given the authorized host.
+
+In the dashboard, the scan page locks the modules a target isn't authorized
+for, and the Targets page shows each target's status with a **Verify** button.
 
 ### Verifying a domain
 

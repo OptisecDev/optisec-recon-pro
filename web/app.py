@@ -79,10 +79,16 @@ from web.routers import payment_routes
 from web.routers import ioc as ioc_router
 from web.routers import domain_verification as domain_verification_router
 from web.domain_verification import (
-    check_scan_authorization, denial_response, load_verified_scopes, preview_authorization,
+    check_scan_authorization, denial_response, load_verified_scopes, network_scope_for,
+    preview_authorization,
 )
+from modules.scan_scope import ScanScope, install_scope_guard, run_in_scope
 from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS, SCAN_STEP_ORDER, is_ip_literal, normalize_host
 from modules.ioc_correlation import run_correlation, load_cached
+
+# Confines each active scan's traffic to its authorized hosts (pass-through
+# outside a scan scope) -- see modules/scan_scope.py.
+install_scope_guard()
 
 BASE_DIR = Path(__file__).parent
 
@@ -1808,9 +1814,10 @@ async def run_scan(
     db.add(scan)
     await db.commit()
 
+    scope = await network_scope_for(decision, target_url)
     background_tasks.add_task(
         _run_scan_task, scan_id, target_url, scan_types, user.id, target_id,
-        authorized_checks=decision.allowed,
+        authorized_checks=decision.allowed, scope=scope,
     )
     return JSONResponse({"scan_id": scan_id})
 
@@ -1972,14 +1979,24 @@ async def _extract_and_store_iocs(db: AsyncSession, finding_rows: list) -> None:
 async def _run_scan_task(
     scan_id: str, target: str, scan_types: list,
     user_id: int, target_id: Optional[int],
-    *, authorized_checks: Iterable[str],
+    *, authorized_checks: Iterable[str], scope: Optional[ScanScope],
 ):
     """`authorized_checks` is the AuthzDecision.allowed set from
     check_scan_authorization() (web/domain_verification.py) -- required and
     keyword-only so no caller can reach the scan modules without an
     authorization decision. Only steps in it run; `scan_types` is kept for
-    the record only."""
+    the record only.
+
+    `scope` (network_scope_for() of the same decision) confines every active
+    step's traffic to the authorized hosts -- see modules/scan_scope.py.
+    None only for passive-only or log-only decisions. Also required, so a
+    caller has to decide it explicitly."""
     authorized = frozenset(authorized_checks)
+
+    def _active(fn, *args):
+        """asyncio.to_thread for an active step, run inside the scan scope."""
+        return asyncio.to_thread(run_in_scope, scope, fn, *args)
+
     domain = target.replace("https://", "").replace("http://", "").split("/")[0]
     url = target if target.startswith("http") else f"https://{target}"
     results: dict = {}
@@ -2031,7 +2048,7 @@ async def _run_scan_task(
         if "subdomain" in authorized:
             await push_start("subdomain")
             try:
-                sub_result = await asyncio.wait_for(asyncio.to_thread(enumerate_subdomains, domain), timeout=40)
+                sub_result = await asyncio.wait_for(_active(enumerate_subdomains, domain), timeout=40)
                 d = sub_result["subdomains"]
                 results["subdomains_unconfirmed"] = sub_result["unconfirmed"]
             except asyncio.TimeoutError:
@@ -2063,7 +2080,7 @@ async def _run_scan_task(
         if "nmap" in authorized:
             await push_start("nmap")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(nmap_scan, domain), timeout=120)
+                d = await asyncio.wait_for(_active(nmap_scan, domain), timeout=120)
             except asyncio.TimeoutError:
                 d = {"error": "module_timeout", "timeout_seconds": 120}
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "nmap", 120)
@@ -2096,7 +2113,7 @@ async def _run_scan_task(
             from modules.recon.port_scanner import scan_ports
             await push_start("ports")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(scan_ports, domain), timeout=30)
+                d = await asyncio.wait_for(_active(scan_ports, domain), timeout=30)
             except asyncio.TimeoutError:
                 d = {"error": "module_timeout", "timeout_seconds": 30}
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "ports", 30)
@@ -2113,7 +2130,7 @@ async def _run_scan_task(
             # block the scan: scanners fall back to their url-only behavior.
             try:
                 from modules.vuln.crawler import crawl
-                crawl_result = await asyncio.wait_for(asyncio.to_thread(crawl, url), timeout=30)
+                crawl_result = await asyncio.wait_for(_active(crawl, url), timeout=30)
                 crawled_urls, crawled_forms = crawl_result.urls, crawl_result.forms
             except Exception as e:
                 logger.warning("[scan %s] crawl step failed/timed out: %s", scan_id, e)
@@ -2122,7 +2139,7 @@ async def _run_scan_task(
             await push_start("xss")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_xss, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_xss, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("xss", _STEP_PROGRESS["xss"])
@@ -2134,7 +2151,7 @@ async def _run_scan_task(
             await push_start("sqli")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_sqli, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_sqli, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("sqli", _STEP_PROGRESS["sqli"])
@@ -2146,7 +2163,7 @@ async def _run_scan_task(
             await push_start("ssrf")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_ssrf, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_ssrf, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("ssrf", _STEP_PROGRESS["ssrf"])
@@ -2158,7 +2175,7 @@ async def _run_scan_task(
             await push_start("lfi")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_lfi, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_lfi, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("lfi", _STEP_PROGRESS["lfi"])
@@ -2170,7 +2187,7 @@ async def _run_scan_task(
             await push_start("redirect")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_open_redirect, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_open_redirect, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("redirect", _STEP_PROGRESS["redirect"])
@@ -2202,6 +2219,15 @@ async def _run_scan_task(
         # stay CONFIRMED-only to keep that client-facing surface unchanged.
         confirmed_vulns = [v for v in all_vulns if v.get("verdict") == "CONFIRMED"]
         results["vulnerabilities"] = confirmed_vulns
+
+        if scope is not None and scope.blocked:
+            # Redirects/links/CNAMEs that tried to take an active step off the
+            # authorized target -- refused, and reported rather than hidden.
+            results["scope_blocked"] = list(scope.blocked)
+            logger.warning(
+                "[scan %s] scope guard blocked %d out-of-scope connection(s): %s",
+                scan_id, len(scope.blocked), scope.blocked[:5],
+            )
 
         try:
             from modules.osint.mitre_mapping import finding_type_from_scan_results, generate_attack_path
@@ -2376,7 +2402,8 @@ async def scan_ports(request: Request, user: User = Depends(web_user), db: Async
     decision = await check_scan_authorization(db, user, target, ["nmap"], source="api_scan_ports")
     if not decision.ok:
         return denial_response(decision)
-    result = await asyncio.to_thread(nmap_scan, target)
+    scope = await network_scope_for(decision, target)
+    result = await asyncio.to_thread(run_in_scope, scope, nmap_scan, target)
     return JSONResponse(result)
 
 
@@ -2475,22 +2502,22 @@ async def run_osint(request: Request, user: User = Depends(web_user), db: AsyncS
     if not domain:
         raise HTTPException(400, "Domain is required")
 
-    # Subdomain enumeration probes every name that resolves (an active
-    # check, web/scan_authz.py); the rest of this endpoint is passive. So an
-    # unauthorized target gets everything except subdomains, with the
-    # reason in the response, rather than a 403 for the whole lookup.
+    # Probing subdomain enumeration is the active `subdomain` check
+    # (web/scan_authz.py); the rest of this endpoint is passive. An
+    # unauthorized target gets the DNS-only passive mode instead (with the
+    # reason in the response) rather than a 403 for the whole lookup.
     decision = await check_scan_authorization(db, user, domain, ["subdomain"], source="api_osint")
-    subdomains_skipped = None if decision.ok else decision.reason
-
-    async def _no_subdomains():
-        return {"subdomains": [], "unconfirmed": []}
+    if decision.ok:
+        scope = await network_scope_for(decision, domain)
+        subs_task = asyncio.to_thread(run_in_scope, scope, enumerate_subdomains, domain)
+    else:
+        subs_task = asyncio.to_thread(enumerate_subdomains, domain, passive=True)
 
     # Run all OSINT tasks concurrently
     emails_task = find_emails(domain)
     social_task = find_social_profiles(domain)
     dns_task = asyncio.to_thread(dns_lookup, domain)
     whois_task = asyncio.to_thread(whois_lookup, domain)
-    subs_task = asyncio.to_thread(enumerate_subdomains, domain) if decision.ok else _no_subdomains()
 
     emails, social, dns_data, whois_data, subs = await asyncio.gather(
         emails_task, social_task, dns_task, whois_task, subs_task,
@@ -2505,7 +2532,8 @@ async def run_osint(request: Request, user: User = Depends(web_user), db: AsyncS
         "whois": whois_data if not isinstance(whois_data, Exception) else {},
         "subdomains": subs_ok["subdomains"],
         "subdomains_unconfirmed": subs_ok["unconfirmed"],
-        "subdomains_skipped": subdomains_skipped,
+        "subdomains_mode": "active" if decision.ok else "passive",
+        "subdomains_note": None if decision.ok else decision.reason,
     })
 
 
