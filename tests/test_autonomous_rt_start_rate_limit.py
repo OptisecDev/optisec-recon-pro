@@ -19,6 +19,7 @@ convention as tests/test_ai_security_controls.py.
 """
 
 import asyncio
+from datetime import datetime
 import os
 import sys
 
@@ -31,7 +32,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from web.database import Base, get_db
-from web.models import User, Target
+from web.models import DomainVerification, User, Target
 import web.app as app_module
 import web.rate_limit as rate_limit
 import web.routers.autonomous_rt as art_router
@@ -70,6 +71,12 @@ def client():
             session.add(user)
             await session.flush()
             session.add(Target(user_id=user.id, url="https://example.com", name="t1"))
+            # Fresh verification so /api/start passes scan authorization
+            # without a DNS re-check -- this test is about the rate limit.
+            session.add(DomainVerification(
+                user_id=user.id, domain="example.com", method="dns_txt", token="tok-art",
+                status="verified", verified_at=datetime.utcnow(), last_checked_at=datetime.utcnow(),
+            ))
             await session.commit()
 
     _run(_setup())

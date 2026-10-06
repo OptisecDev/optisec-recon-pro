@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
+from web.domain_verification import check_scan_authorization, denial_response
 from web.license import require_feature_or_402
 from web.rate_limit import rate_limiter
 from web.shared_templates import templates
@@ -389,18 +390,25 @@ async def osint_unified_search(request: Request, user: User = Depends(_user)):
         "the free, keyless Shodan InternetDB if `SHODAN_API_KEY` isn't "
         "configured; Censys is skipped unless both `CENSYS_API_ID` and "
         "`CENSYS_API_SECRET` are set. Set `deep_scan: true` to also "
-        "actively banner-grab the ports Shodan/Censys reported open — "
-        "only do this against hosts you are authorized to test."
+        "actively banner-grab the ports Shodan/Censys reported open; "
+        "that requires a domain verified via `POST /api/domains/verify` "
+        "(or a listed training target), otherwise 403."
     ),
     dependencies=[Depends(_network_scan_limiter)],
 )
-async def osint_network_scan(request: Request, user: User = Depends(_user)):
+async def osint_network_scan(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("osint_advanced", user)
     data = await request.json()
     target = data.get("target", "").strip()
     deep_scan = bool(data.get("deep_scan", False))
     if not target:
         raise HTTPException(400, "target is required")
+    if deep_scan:
+        # Banner-grabs every port Shodan/Censys reported open -- active port
+        # probing, so it needs the same authorization as the `ports` check.
+        decision = await check_scan_authorization(db, user, target, ["ports"], source="osint_network_deep_scan")
+        if not decision.ok:
+            return denial_response(decision)
 
     logger.info(
         "network_scan request user=%s target=%r deep_scan=%s ip=%s",

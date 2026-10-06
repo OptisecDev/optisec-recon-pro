@@ -23,6 +23,7 @@ re-checked first, so removing the TXT record or file revokes access.
 
 import asyncio
 import ipaddress
+import logging
 import os
 import secrets
 import socket
@@ -35,6 +36,7 @@ import dns.asyncresolver
 import dns.exception
 import dns.resolver
 import httpx
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +47,8 @@ from web.scan_authz import (
     is_ip_literal, normalize_host,
 )
 from web.schemas import _is_ssrf_blocked_host
+
+logger = logging.getLogger("optisec.scan_authz")
 
 VERIFY_METHODS = (VERIFY_METHOD_DNS_TXT, VERIFY_METHOD_HTTP_FILE)
 DNS_RECORD_PREFIX = "_optisec-verify"
@@ -273,3 +277,54 @@ async def authorize_scan(
         await db.commit()
 
     return decide(target, checks, scopes)
+
+
+# ── Endpoint gate ─────────────────────────────────────────────────────────────
+
+def scan_authz_enforced() -> bool:
+    """SCAN_AUTHZ_ENFORCE=false is a one-deploy, log-only rollout switch:
+    denials are still logged, but active checks run anyway. Defaults to
+    enforcing; anything other than an explicit false value enforces."""
+    return os.environ.get("SCAN_AUTHZ_ENFORCE", "true").strip().lower() not in ("false", "0", "no", "off")
+
+
+async def check_scan_authorization(
+    db: AsyncSession,
+    user: User,
+    target: str,
+    scan_types: Optional[Iterable[str]],
+    *,
+    source: str,
+) -> AuthzDecision:
+    """What every scan-launching endpoint calls. Logs each denial with the
+    calling `source`, and in log-only mode (see scan_authz_enforced) turns
+    denied active checks into allowed ones -- unknown check names stay
+    denied either way, since nothing could run them."""
+    decision = await authorize_scan(db, user, target, scan_types)
+    if not decision.denied:
+        return decision
+
+    enforced = scan_authz_enforced()
+    logger.warning(
+        "scan_authz denied source=%s user_id=%s target=%r denied=%s basis=%s enforced=%s",
+        source, user.id, target, sorted(decision.denied), decision.basis, enforced,
+    )
+    if enforced:
+        return decision
+
+    bypassed = decision.denied & ACTIVE_CHECKS
+    decision.allowed |= bypassed
+    decision.denied -= bypassed
+    decision.basis = f"unenforced:{decision.basis}"
+    if not decision.denied:
+        decision.reason = None
+    return decision
+
+
+def denial_response(decision: AuthzDecision) -> JSONResponse:
+    return JSONResponse({
+        "error": decision.reason or "Scan not authorized",
+        "denied_checks": sorted(decision.denied),
+        "allowed_checks": sorted(decision.allowed),
+        "verify_endpoint": "/api/domains/verify",
+    }, status_code=403)

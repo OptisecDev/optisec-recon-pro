@@ -24,7 +24,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from web.database import Base
-from web.models import User, Target
+from datetime import datetime
+
+from web.models import DomainVerification, User, Target
 import web.routers.autonomous_rt as art_router
 
 
@@ -48,6 +50,17 @@ def db_factory():
     _run(_setup())
     yield session_factory
     _run(engine.dispose())
+
+
+async def _verify_domain(session_factory, owner_id: int, domain: str) -> None:
+    """A fresh (within-TTL) verified record, so /api/start passes scan
+    authorization without any DNS/HTTP re-check."""
+    async with session_factory() as db:
+        db.add(DomainVerification(
+            user_id=owner_id, domain=domain, method="dns_txt", token=f"tok-{owner_id}-{domain}",
+            status="verified", verified_at=datetime.utcnow(), last_checked_at=datetime.utcnow(),
+        ))
+        await db.commit()
 
 
 def _fake_user(user_id: int = 1) -> User:
@@ -136,6 +149,7 @@ class TestStartSimulationEndpoint:
     def test_own_target_id_starts_simulation(self, db_factory):
         async def go():
             target_id = await _create_target(db_factory, owner_id=1, url="https://mine.example.com")
+            await _verify_domain(db_factory, owner_id=1, domain="mine.example.com")
             async with db_factory() as db:
                 return await art_router.start_simulation(
                     _FakeRequest({"target_id": target_id, "attack_types": ["xss"]}),
@@ -145,3 +159,47 @@ class TestStartSimulationEndpoint:
         assert session["target"] == "https://mine.example.com"
         assert session["status"] == "completed"
         assert "scope" not in session
+
+    def test_unverified_owned_target_is_refused(self, db_factory):
+        """Owning the Target row isn't authorization: without a verified
+        domain, the real recon phase (ports/nmap/subdomain) must not run."""
+        import modules.ai_advanced.autonomous_redteam as art
+
+        async def go():
+            target_id = await _create_target(db_factory, owner_id=1, url="https://unverified.example.com")
+            async with db_factory() as db:
+                return await art_router.start_simulation(
+                    _FakeRequest({"target_id": target_id, "attack_types": ["web"]}),
+                    user=_fake_user(1), db=db,
+                )
+        resp = _run(go())
+        assert resp.status_code == 403
+        import json
+        body = json.loads(resp.body)
+        assert {"ports", "nmap", "subdomain", "xss", "sqli"} <= set(body["denied_checks"])
+        assert art.list_sessions() == []
+
+    def test_training_target_limits_apply(self, db_factory):
+        """scanme.nmap.org permits only port scanning; the recon phase also
+        runs subdomain enumeration, so the simulation is refused there."""
+        async def go():
+            target_id = await _create_target(db_factory, owner_id=1, url="http://scanme.nmap.org")
+            async with db_factory() as db:
+                return await art_router.start_simulation(
+                    _FakeRequest({"target_id": target_id, "attack_types": ["xss"]}),
+                    user=_fake_user(1), db=db,
+                )
+        resp = _run(go())
+        assert resp.status_code == 403
+
+    def test_non_list_attack_types_rejected(self, db_factory):
+        async def go():
+            target_id = await _create_target(db_factory, owner_id=1)
+            async with db_factory() as db:
+                return await art_router.start_simulation(
+                    _FakeRequest({"target_id": target_id, "attack_types": "web"}),
+                    user=_fake_user(1), db=db,
+                )
+        with pytest.raises(HTTPException) as exc_info:
+            _run(go())
+        assert exc_info.value.status_code == 400
