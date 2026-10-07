@@ -1279,7 +1279,8 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     summary="Obtain JWT access token",
     description=(
         "Authenticate with username/email and password. Returns a JWT bearer token "
-        "valid for **30 minutes**. Include as `Authorization: Bearer <token>` on all "
+        "valid for the configured idle lifetime (default 24 hours, `JWT_EXPIRE_HOURS`) "
+        "and refreshed while the user is active. Include as `Authorization: Bearer <token>` on all "
         "subsequent API requests, or it will be set automatically via cookie on web login."
     ),
     responses={

@@ -117,6 +117,26 @@ window.optisecSetVisible = function (el, visible, displayValue) {
   el.style.display = visible ? (displayValue || '') : '';
 };
 
+// Session expiry: /api/* routes answer an expired/missing session with a JSON
+// 401 (page routes get a server-side 302 to /login instead -- see app.py's
+// on_http_exception). Without this, callers treated {"detail": ...} as data
+// and failed silently. Send the browser to /login with the same next= the
+// server uses, and throw so the caller stops instead of rendering the error
+// body. Only 401 -- 403 is a role/permission answer, not an expired session.
+class OptisecAuthExpiredError extends Error {}
+let _optisecAuthRedirecting = false;
+async function _apiJson(r) {
+  if (r.status === 401) {
+    if (!_optisecAuthRedirecting) {
+      _optisecAuthRedirecting = true;
+      const next = encodeURIComponent(location.pathname + location.search);
+      location.href = `/login?next=${next}`;
+    }
+    throw new OptisecAuthExpiredError('Session expired');
+  }
+  return r.json();
+}
+
 const API = {
   async post(url, data) {
     const r = await fetch(url, {
@@ -124,15 +144,15 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return r.json();
+    return _apiJson(r);
   },
   async get(url) {
     const r = await fetch(url);
-    return r.json();
+    return _apiJson(r);
   },
   async delete(url) {
     const r = await fetch(url, { method: 'DELETE' });
-    return r.json();
+    return _apiJson(r);
   },
   async patch(url, data) {
     const r = await fetch(url, {
@@ -140,7 +160,7 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return r.json();
+    return _apiJson(r);
   }
 };
 
@@ -204,7 +224,19 @@ window.startScan = async function() {
     window._currentScanId = scan_id;
 
     const poll = setInterval(async () => {
-      const data = await API.get(`/api/scan/${scan_id}`);
+      let data;
+      try {
+        data = await API.get(`/api/scan/${scan_id}`);
+      } catch (e) {
+        // Session expired mid-scan: stop polling (the redirect is already
+        // under way). Other errors keep the previous behaviour.
+        if (e instanceof OptisecAuthExpiredError) {
+          clearInterval(poll);
+          clearInterval(progInterval);
+          return;
+        }
+        throw e;
+      }
       if (data.status === 'completed' || data.status === 'error') {
         clearInterval(poll);
         clearInterval(progInterval);

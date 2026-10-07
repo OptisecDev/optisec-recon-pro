@@ -28,7 +28,7 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    access_token: str = Field(..., description="JWT bearer token (30-min expiry)")
+    access_token: str = Field(..., description="JWT bearer token (expires after the configured idle lifetime, default 24h; refreshed while active)")
     token_type: str = Field("bearer", example="bearer")
     user: UserShort
 
