@@ -5,6 +5,7 @@ import asyncio
 import logging
 import secrets
 import uuid
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional, List
@@ -37,6 +38,7 @@ from web.schemas import (
 )
 from web.auth import (
     verify_password, hash_password, create_access_token,
+    decode_session_token, refresh_access_token, ABSOLUTE_MAX_SECONDS,
     generate_api_key, hash_api_key, get_current_user, get_ws_user,
     require_admin, require_analyst_or_admin,
     check_rate_limit, record_failed_attempt, clear_attempts,
@@ -704,12 +706,23 @@ async def session_refresh_middleware(request: Request, call_next):
     token = request.cookies.get("access_token")
     if token and response.status_code < 400:
         try:
+            payload = decode_session_token(token)
+            # Never create_access_token() here: that would stamp a fresh
+            # auth_time and let mere activity extend a session forever.
+            new_token = refresh_access_token(payload)
+            if new_token is None:
+                # Absolute cap reached: don't slide either cookie; the
+                # browser drops them at the cap and the user logs in again.
+                return response
             from jose import jwt as jose_jwt
-            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            new_token = create_access_token(int(payload["sub"]), payload["role"])
+            new_auth_time = jose_jwt.get_unverified_claims(new_token)["auth_time"]
+            max_age = max(0, min(
+                ACCESS_TOKEN_MAX_AGE_SECONDS,
+                new_auth_time + ABSOLUTE_MAX_SECONDS - int(time.time()),
+            ))
             response.set_cookie(
                 "access_token", new_token,
-                httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION,
+                httponly=True, max_age=max_age, samesite="lax", secure=IS_PRODUCTION,
             )
             # Slide the CSRF secret's expiry alongside access_token, but
             # keep its *value* unchanged -- that's what lets a CSRF token
@@ -717,7 +730,7 @@ async def session_refresh_middleware(request: Request, call_next):
             # after it. See generate_csrf_secret() (web/auth.py).
             csrf_secret = request.cookies.get(CSRF_COOKIE_NAME)
             if csrf_secret:
-                _set_csrf_cookie(response, csrf_secret)
+                _set_csrf_cookie(response, csrf_secret, max_age=max_age)
         except Exception:
             pass
     return response
@@ -1116,8 +1129,9 @@ async def login_page(request: Request, next: str = "/", error: str = ""):
     token = request.cookies.get("access_token")
     if token:
         try:
-            from jose import jwt as jose_jwt
-            jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            # Same check as get_current_user: a capped token whose exp is
+            # still valid must get the form, not bounce to / and back.
+            decode_session_token(token)
             return RedirectResponse("/", status_code=302)
         except Exception:
             pass
@@ -1279,8 +1293,9 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     summary="Obtain JWT access token",
     description=(
         "Authenticate with username/email and password. Returns a JWT bearer token "
-        "valid for the configured idle lifetime (default 24 hours, `JWT_EXPIRE_HOURS`) "
-        "and refreshed while the user is active. Include as `Authorization: Bearer <token>` on all "
+        "valid for the configured idle lifetime (default 24 hours, `JWT_IDLE_HOURS`) "
+        "and refreshed while the user is active, up to an absolute cap of 7 days from "
+        "login (`JWT_ABSOLUTE_MAX_HOURS`), after which you must log in again. Include as `Authorization: Bearer <token>` on all "
         "subsequent API requests, or it will be set automatically via cookie on web login."
     ),
     responses={
@@ -2797,9 +2812,10 @@ def _current_csrf_secret(request: Request) -> tuple:
     return generate_csrf_secret(), True
 
 
-def _set_csrf_cookie(response, secret: str) -> None:
+def _set_csrf_cookie(response, secret: str, max_age: Optional[int] = None) -> None:
     response.set_cookie(
-        CSRF_COOKIE_NAME, secret, httponly=True, max_age=CSRF_COOKIE_MAX_AGE,
+        CSRF_COOKIE_NAME, secret, httponly=True,
+        max_age=CSRF_COOKIE_MAX_AGE if max_age is None else max_age,
         samesite="lax", secure=IS_PRODUCTION,
     )
 

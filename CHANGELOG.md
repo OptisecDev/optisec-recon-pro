@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Absolute session lifetime cap: sessions now end 7 days after login
+  (`JWT_ABSOLUTE_MAX_HOURS`, default 168) no matter how active they are.
+  Tokens carry an `auth_time` claim stamped only at login; the sliding
+  refresh middleware carries it over unchanged, clamps `exp` and the
+  `access_token`/`csrf_secret` cookie `max_age` to the cap, and stops
+  re-issuing once it is reached. Tokens older than the cap are rejected on
+  cookie, Bearer and WebSocket `?token=` auth and on `/login` even if their
+  `exp` is still valid. Tokens issued before this change (no `auth_time`)
+  stay valid until their `exp` and get `auth_time` on their first refresh.
+- The 24h sliding idle window is unchanged and is now configured via
+  `JWT_IDLE_HOURS`; `JWT_EXPIRE_HOURS` keeps working as a legacy alias.
+  Startup fails if the absolute cap is not greater than the idle window.
+
 ## [0.9.0] - 2026-10-05
 
 First tagged pre-launch release. Highlights summarized from the git history.

@@ -87,7 +87,37 @@ def _resolve_jwt_secret() -> str:
 
 
 JWT_SECRET = _resolve_jwt_secret()
-JWT_EXPIRE_HOURS = int(os.environ.get("JWT_EXPIRE_HOURS", "24"))
+# Sliding idle window: how long a session survives with no request at all.
+# Precedence JWT_IDLE_HOURS > JWT_EXPIRE_HOURS (legacy name, still honored so
+# existing Render env keeps working) > 24. web/auth.py's JWT_EXPIRE_MINUTES
+# still overrides this when set explicitly.
+JWT_IDLE_HOURS = int(
+    os.environ.get("JWT_IDLE_HOURS") or os.environ.get("JWT_EXPIRE_HOURS") or "24"
+)
+# Deprecated alias for JWT_IDLE_HOURS -- kept so existing imports keep working.
+JWT_EXPIRE_HOURS = JWT_IDLE_HOURS
+# Hard cap on a session's total lifetime, counted from the token's auth_time
+# (the moment the user actually logged in). Sliding refreshes never extend a
+# session past this; only a fresh login does.
+JWT_ABSOLUTE_MAX_HOURS = int(os.environ.get("JWT_ABSOLUTE_MAX_HOURS") or "168")
+
+
+def _validate_session_lifetimes() -> None:
+    # Compare against the *effective* idle window (JWT_EXPIRE_MINUTES wins in
+    # web/auth.py) so a large JWT_EXPIRE_MINUTES can't silently defeat the cap.
+    idle_minutes = int(os.environ.get("JWT_EXPIRE_MINUTES") or JWT_IDLE_HOURS * 60)
+    cap_minutes = JWT_ABSOLUTE_MAX_HOURS * 60
+    if cap_minutes <= idle_minutes:
+        raise RuntimeError(
+            f"JWT_ABSOLUTE_MAX_HOURS ({JWT_ABSOLUTE_MAX_HOURS}h = {cap_minutes} min) "
+            f"must be greater than the session idle window ({idle_minutes} min, "
+            "from JWT_EXPIRE_MINUTES / JWT_IDLE_HOURS / JWT_EXPIRE_HOURS). Refusing "
+            "to start: an absolute cap at or below the idle window makes the "
+            "sliding refresh meaningless."
+        )
+
+
+_validate_session_lifetimes()
 
 _INSECURE_DEV_LICENSE_SECRET = "optisec-INSECURE-dev-default-license-key-do-not-use-in-production"
 

@@ -7,8 +7,8 @@ import hmac
 import ipaddress
 import logging
 from collections import defaultdict
-from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
 import bcrypt
 from jose import JWTError, jwt
@@ -16,15 +16,19 @@ from fastapi import HTTPException, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from config import JWT_SECRET as SECRET_KEY, JWT_EXPIRE_HOURS  # config resolves/validates JWT_SECRET at startup
+from config import JWT_SECRET as SECRET_KEY, JWT_IDLE_HOURS, JWT_ABSOLUTE_MAX_HOURS  # config resolves/validates JWT_SECRET at startup
 
 ALGORITHM = "HS256"
-# Was a hardcoded "30" default, disconnected from config.JWT_EXPIRE_HOURS (which
+# Was a hardcoded "30" default, disconnected from config.JWT_IDLE_HOURS (which
 # nothing read) -- a user idle for as little as 30 minutes (no click, just
 # reading a page) got silently logged out on their next request, since
 # session_refresh_middleware only slides the expiry forward on an actual
 # request. JWT_EXPIRE_MINUTES still overrides both if set explicitly.
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", str(JWT_EXPIRE_HOURS * 60)))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRE_MINUTES", str(JWT_IDLE_HOURS * 60)))
+# Absolute session lifetime, counted from the token's `auth_time` claim (set
+# once, at login). The sliding refresh above can never carry a session past
+# this -- see refresh_access_token() / decode_session_token().
+ABSOLUTE_MAX_SECONDS = JWT_ABSOLUTE_MAX_HOURS * 3600
 
 # ─── Trusted proxy IP resolution ───────────────────────────────────────────────
 # Set TRUSTED_PROXY_IPS (comma-separated) when deploying behind a reverse
@@ -190,13 +194,68 @@ def validate_password_strength(password: str) -> list:
 
 # ─── JWT helpers ───────────────────────────────────────────────────────────────
 
+def _session_exp(now: int, auth_time: int, expires_minutes: int = None) -> int:
+    return min(now + (expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES) * 60,
+               auth_time + ABSOLUTE_MAX_SECONDS)
+
+
 def create_access_token(user_id: int, role: str, expires_minutes: int = None) -> str:
-    expire = datetime.utcnow() + timedelta(minutes=expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES)
+    """Mint a token for a *fresh login*: stamps auth_time = now.
+
+    Only login paths may call this -- the sliding-session middleware must
+    use refresh_access_token() instead, which carries auth_time over
+    unchanged so activity can never extend a session past the absolute cap.
+    """
+    now = int(time.time())
     return jwt.encode(
-        {"sub": str(user_id), "role": role, "exp": expire},
+        {"sub": str(user_id), "role": role, "auth_time": now,
+         "exp": _session_exp(now, now, expires_minutes)},
         SECRET_KEY,
         algorithm=ALGORITHM,
     )
+
+
+def refresh_access_token(payload: dict) -> Optional[str]:
+    """Slide an already-validated session's expiry forward.
+
+    Copies sub/role/auth_time from `payload` unchanged and never derives
+    auth_time from the clock -- except for a legacy token minted before
+    auth_time existed, which gets now as its auth_time on this first
+    refresh (accepted until then, see decode_session_token). Returns None
+    once the absolute cap is reached: the session must then end, not slide.
+    """
+    now = int(time.time())
+    auth_time = payload.get("auth_time")
+    if auth_time is None:
+        auth_time = now
+    if not isinstance(auth_time, int) or isinstance(auth_time, bool):
+        return None
+    exp = _session_exp(now, auth_time)
+    if exp <= now:
+        return None
+    return jwt.encode(
+        {"sub": payload["sub"], "role": payload["role"], "auth_time": auth_time, "exp": exp},
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+
+
+def decode_session_token(token: str) -> dict:
+    """jwt.decode (signature + exp) plus the absolute-lifetime check.
+
+    A token whose `exp` is still valid but whose auth_time is older than
+    ABSOLUTE_MAX_SECONDS (e.g. an old/stolen cookie minted before a cap
+    change) is rejected. A token with no auth_time at all predates this
+    claim and is accepted on its exp alone; its first refresh stamps one.
+    """
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    auth_time = payload.get("auth_time")
+    if auth_time is not None:
+        if not isinstance(auth_time, int) or isinstance(auth_time, bool):
+            raise JWTError("invalid auth_time claim")
+        if int(time.time()) - auth_time > ABSOLUTE_MAX_SECONDS:
+            raise JWTError("session exceeded absolute lifetime")
+    return payload
 
 
 def generate_api_key() -> str:
@@ -279,7 +338,7 @@ async def get_current_user(request: Request, db: AsyncSession):
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_session_token(token)
         user_id = int(payload["sub"])
     except (JWTError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -312,7 +371,7 @@ async def get_ws_user(websocket: WebSocket, db: AsyncSession):
         return await get_current_user(websocket, db)
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_session_token(token)
         user_id = int(payload["sub"])
     except (JWTError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
