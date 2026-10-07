@@ -343,7 +343,8 @@ The `/api/nlp` endpoint accepts commands in **Arabic or English**:
         "email": "ahssanali84.syber@gmail.com",
     },
     license_info={
-        "name": "Proprietary — All Rights Reserved",
+        "name": "AGPL-3.0 (commercial license available)",
+        "url": "https://www.gnu.org/licenses/agpl-3.0.html",
     },
     openapi_tags=OPENAPI_TAGS,
     docs_url=None,

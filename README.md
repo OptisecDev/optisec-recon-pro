@@ -1127,6 +1127,9 @@ OPTISEC is designed with security-first principles:
 - **Authentication**: JWT tokens (30-minute expiry) with bcrypt password hashing (cost factor 12)
 - **Rate Limiting**: IP-based failed login protection — 5 attempts triggers a 15-minute lockout
 - **Session Security**: `HttpOnly` + `SameSite=Lax` cookies, sliding 30-minute window refresh
+
+> **TODO:** The 30-minute figures above are out of date: the code defaults the session/JWT lifetime to 24 hours (`JWT_EXPIRE_HOURS`) unless `JWT_EXPIRE_MINUTES` is set.
+
 - **Role Isolation**: Database-level role enforcement; viewers cannot trigger scans
 - **Non-root Container**: Docker image runs as `optisec` system user
 - **Input Validation**: Pydantic v2 schema validation on all API inputs
