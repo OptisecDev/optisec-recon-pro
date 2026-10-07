@@ -355,7 +355,18 @@ function pollScanStatus(scanId, target) {
   const btn = document.getElementById('scan-btn');
   const statusEl = document.getElementById('scan-status');
   const poll = setInterval(async () => {
-    const data = await API.get(`/api/scan/${scanId}`);
+    let data;
+    try {
+      data = await API.get(`/api/scan/${scanId}`);
+    } catch (e) {
+      // Session expired: API.get is already redirecting to /login, so stop
+      // polling quietly. Other errors keep the previous behaviour.
+      if (e instanceof OptisecAuthExpiredError) {
+        clearInterval(poll);
+        return;
+      }
+      throw e;
+    }
     if (fill) fill.style.width = `${data.progress || 0}%`;
     if (data.status === 'done' || data.status === 'failed') {
       clearInterval(poll);
