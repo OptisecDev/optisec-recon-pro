@@ -1,0 +1,142 @@
+{% extends "legal_base.html" %}
+{% block title %}Privacy Policy{% endblock %}
+{% block content %}
+<h1>Privacy Policy</h1>
+<div class="updated">Last updated: 2026-10-07</div>
+
+<p>This policy describes what personal data the hosted <strong>OPTISEC Recon Pro</strong> service collects,
+why, where it is kept, and who else receives it. It describes what the software actually does today.
+If you run your own copy of OPTISEC Recon Pro (it is open source under the AGPL-3.0), you are the operator
+of that copy and this policy does not apply to it.</p>
+
+<p>The hosted service is operated by OPTISEC (Ihsan Ali Atiyah Al-Qurayshi).
+<span class="todo">TODO: confirm with Ehsan — operator / legal entity name and whether a postal address should be listed</span></p>
+
+<h2>1. What we collect</h2>
+
+<h3>Account data</h3>
+<ul>
+  <li><strong>Username and email address</strong> you enter when you register.</li>
+  <li><strong>Password</strong> — never stored in plain text. It is hashed with <strong>bcrypt</strong>
+    (a unique random salt per password, default cost factor 12) and only the hash is stored.</li>
+  <li><strong>API key</strong> — generated for your account; only a SHA-256 hash of it is stored.</li>
+  <li>Your role, your plan (Free / PRO / Enterprise), the date your account was created and the time of your last login.</li>
+</ul>
+
+<h3>Security and sign-in logs</h3>
+<ul>
+  <li>For each sign-in, sign-out and registration attempt (successful or failed) we record the
+    <strong>username entered, your IP address, the time, and the outcome</strong>. These records are
+    used to rate-limit password guessing (5 failed attempts from one IP lock it out for 15 minutes)
+    and are visible to administrators in the Admin Panel's auth log.</li>
+  <li>The rate-limiting counters themselves are held in server memory only.</li>
+  <li>Our hosting provider may also keep its own request logs (including IP addresses).
+    <span class="todo">TODO: confirm with Ehsan — Render request-log retention for this service</span></li>
+</ul>
+
+<h3>What you put into the platform</h3>
+<ul>
+  <li><strong>Targets</strong> (URLs/domains, names, notes), <strong>scans</strong> (which modules ran, results,
+    and the authorization basis that allowed them), <strong>findings</strong>, and <strong>reports</strong> you generate.</li>
+  <li><strong>Domain verification records</strong>: the domain, the verification method (DNS TXT or file), the
+    token, and when it was last checked.</li>
+  <li><strong>Dark-web / breach monitors</strong>: the domains or email addresses you ask us to watch, and the alerts found for them.</li>
+  <li>Records of CVE drafts, bug-bounty submissions and threat-intelligence shares you create
+    (CVE drafts may include a reporter name and email if you enter them).</li>
+  <li>OSINT queries you run (for example a username, email, phone number or domain) are sent to the
+    lookup services listed in section 4 to produce results.</li>
+</ul>
+
+<h3>Purchases</h3>
+<ul>
+  <li>If you buy a PRO license, we store the <strong>email address you give at checkout</strong>, an order ID,
+    the price and currency, the payment status, and the NOWPayments payment ID.</li>
+  <li>Payments are made in cryptocurrency on NOWPayments' hosted invoice page. <strong>We do not receive or
+    store wallet credentials, card numbers or bank details.</strong></li>
+  <li>License keys are stored only as hashes; the key itself is emailed to you once.</li>
+</ul>
+
+<h3>Cookies</h3>
+<ul>
+  <li><code>access_token</code> — your signed-in session (HttpOnly, SameSite=Lax, Secure in production).
+    It expires after a limited time and is refreshed while you are active.</li>
+  <li><code>csrf_secret</code> — protects forms against cross-site request forgery; same lifetime as the session.</li>
+  <li><strong>Google Analytics</strong> (GA4) is loaded <em>only</em> on the public landing page and the
+    license purchase page, and only when the operator has configured it. When active, Google sets its own
+    analytics cookies on those pages. No analytics run on the rest of the application.
+    <span class="todo">TODO: confirm with Ehsan — whether GA_MEASUREMENT_ID is set in production</span></li>
+</ul>
+
+<h2>2. Why we use it</h2>
+<ul>
+  <li>To create and secure your account and sign you in.</li>
+  <li>To run the scans, lookups and reports you request and show you the results.</li>
+  <li>To enforce scan authorization (domain verification) and keep an audit trail of why each scan was allowed.</li>
+  <li>To enforce plan limits and deliver and activate licenses you buy.</li>
+  <li>To detect and block abuse such as password guessing or unauthorized scanning.</li>
+</ul>
+<p>We do not sell your data and do not use it for advertising.</p>
+
+<h2>3. Where it is stored</h2>
+<ul>
+  <li>The application runs on <strong>Render</strong>. Its database is a hosted <strong>PostgreSQL</strong>
+    database at <strong>Neon</strong>; all of the data in section 1 lives there.
+    <span class="todo">TODO: confirm with Ehsan — hosting regions for Render and Neon</span></li>
+  <li>Generated PDF reports and a local copy of the sign-in log are written to the server's disk, which on
+    Render is temporary and is wiped on each restart or redeploy.</li>
+  <li>Connections to the database use TLS.</li>
+</ul>
+
+<h2>4. Third parties that receive data</h2>
+<table>
+  <tr><th>Service</th><th>When</th><th>What is sent</th></tr>
+  <tr><td>NOWPayments</td><td>When you buy a PRO license</td><td>Order ID, price, and the email address you entered at checkout. You pay on their page under their privacy policy.</td></tr>
+  <tr><td>Email (SMTP) provider</td><td>After a confirmed purchase</td><td>Your checkout email address and your license key.
+    <span class="todo">TODO: confirm with Ehsan — which SMTP provider is used in production (code default is Gmail)</span></td></tr>
+  <tr><td>Groq (AI)</td><td>When you use AI features (AI analysis of findings, AI red team, autonomous red team, zero-day prediction, some natural-language commands)</td><td>The relevant scan target and findings, or the text of your command.</td></tr>
+  <tr><td>Have I Been Pwned, LeakCheck and other breach/OSINT sources</td><td>When you run OSINT or dark-web lookups or monitors</td><td>The email, domain, username, phone number or other value you asked to look up.</td></tr>
+  <tr><td>Threat-intel and scan-enrichment services (e.g. VirusTotal, Shodan, urlscan.io, AbuseIPDB, NVD, RIPEstat)</td><td>When a module you run uses them</td><td>The domain, IP, URL or indicator being looked up — not your account details.</td></tr>
+  <tr><td>AlienVault OTX</td><td>Only if the operator enables outbound threat sharing and you share an indicator</td><td>The indicator (IP, domain, hash, CVE or URL) and its severity/TLP label — not your account details. OTX is also read to build the threat feed.</td></tr>
+  <tr><td>HackerOne / Bugcrowd</td><td>Only when you submit a report through the Bug Bounty module</td><td>The report you submit.</td></tr>
+  <tr><td>Google Analytics</td><td>Landing and purchase pages only, if configured</td><td>Standard page-view analytics collected by Google.</td></tr>
+  <tr><td>jsDelivr CDN</td><td>Some pages load scripts from it</td><td>Your browser requests files from it directly, so it sees your IP address.</td></tr>
+</table>
+<p>Scanning modules also connect directly to the targets you scan; those targets see our server's IP address, not yours.
+MITRE ATT&amp;CK data is downloaded from MITRE's public GitHub repository and involves none of your data.</p>
+
+<h2>5. How long we keep it</h2>
+<ul>
+  <li>Account data, targets, scans, findings, reports, verification records and monitors are kept until
+    the account (or the individual item) is deleted.</li>
+  <li>Sign-in log records and purchase records currently have no automatic expiry.
+    <span class="todo">TODO: confirm with Ehsan — retention period for auth_events and pending_payments</span></li>
+  <li>Unpaid checkout records are marked expired after 24 hours but are not deleted.</li>
+</ul>
+
+<h2>6. Deleting your data</h2>
+<p>There is no self-service "delete my account" button yet. To have your account deleted, email
+<a href="mailto:{{ contact_email }}">{{ contact_email }}</a> from the address registered on the account.
+An administrator then deletes it, which permanently removes your account together with your targets,
+scans, findings, report records, domain verifications and dark-web monitors.</p>
+<p>Not removed by that deletion: sign-in log entries (they are keyed by username and IP rather than
+linked to the account), purchase records (keyed by checkout email), and CVE drafts, bug-bounty
+submission records and threat-sharing records, which are kept but detached from your account.
+You can ask for these to be removed in the same email.
+<span class="todo">TODO: confirm with Ehsan — response time for deletion requests and whether these residual records are purged on request</span></p>
+<p>You can delete individual targets and domain verifications yourself at any time.</p>
+
+<h2>7. The demo account</h2>
+<p>The public demo account is shared by everyone who uses it. Anything you enter while signed in as
+<code>demo</code> may be seen by other visitors. Do not enter personal or sensitive information there.</p>
+
+<h2>8. Security</h2>
+<p>Passwords are bcrypt-hashed, API keys and license keys are stored as hashes, session cookies are
+HttpOnly, and forms are CSRF-protected. No system is perfectly secure; to report a vulnerability, see
+<code>SECURITY.md</code> in the project repository or email the contact below.</p>
+
+<h2>9. Changes</h2>
+<p>We will update this page when the software's data handling changes, and change the date at the top.</p>
+
+<h2>10. Contact</h2>
+<p>Privacy questions and deletion requests: <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>
+{% endblock %}

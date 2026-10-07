@@ -106,6 +106,9 @@ a:hover { text-decoration: underline; }
   font-size: 11px;
   color: var(--text-dim);
 }
+.sidebar-legal { margin-top: 10px; text-align: center; }
+.sidebar-legal a { color: var(--text-dim); }
+.sidebar-legal a:hover { color: var(--accent); }
 
 /* MAIN */
 .main {

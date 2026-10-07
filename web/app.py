@@ -1069,6 +1069,27 @@ async def landing_page(request: Request):
     })
 
 
+# ─── Legal Pages ──────────────────────────────────────────────────────────────
+
+# Same project contact address as the OpenAPI `contact` above, NOTICE, and
+# the landing page footer.
+LEGAL_CONTACT_EMAIL = "ahssanali84.syber@gmail.com"
+
+
+@app.get("/privacy", response_class=HTMLResponse, include_in_schema=False)
+async def privacy_page(request: Request):
+    return templates.TemplateResponse(request, "privacy.html", {
+        "app_name": APP_NAME, "contact_email": LEGAL_CONTACT_EMAIL,
+    })
+
+
+@app.get("/terms", response_class=HTMLResponse, include_in_schema=False)
+async def terms_page(request: Request):
+    return templates.TemplateResponse(request, "terms.html", {
+        "app_name": APP_NAME, "contact_email": LEGAL_CONTACT_EMAIL,
+    })
+
+
 # ─── Auth Routes ──────────────────────────────────────────────────────────────
 
 def _safe_next_path(next_url: str) -> str:
