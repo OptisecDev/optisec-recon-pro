@@ -34,3 +34,6 @@ data/quantum_keys/
 data/wireguard/
 eternal_data/
 .env.eternal
+
+# Generated admin credentials (deploy.sh)
+.admin_credentials.txt
