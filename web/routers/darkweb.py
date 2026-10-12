@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from web.database import get_db
-from web.models import User, DarkWebMonitor, DarkWebAlert
+from web.models import User, DarkWebMonitor
 from web.auth import get_current_user
 from web.license import require_feature_or_402
 from web.shared_templates import templates
@@ -25,21 +25,17 @@ async def darkweb_home(request: Request, user: User = Depends(_user), db: AsyncS
     monitors = (await db.execute(
         select(DarkWebMonitor).where(DarkWebMonitor.user_id == user.id).order_by(DarkWebMonitor.created_at.desc())
     )).scalars().all()
-    recent_alert_rows = (await db.execute(
-        select(DarkWebAlert, DarkWebMonitor)
-        .join(DarkWebMonitor, DarkWebAlert.monitor_id == DarkWebMonitor.id)
-        .where(DarkWebMonitor.user_id == user.id)
-        .order_by(DarkWebAlert.discovered_at.desc())
-        .limit(20)
-    )).all()
+    from web.routers.darkweb_monitor import visible_alerts_with_summary, _monitor_to_dict
+    alert_feed = await visible_alerts_with_summary(user.id, db)
 
     # Only the live tabs (Continuous Monitoring, Paste Scanner) are rendered.
     # The simulated legacy tabs (breach/tor/ransomware/keywords/threat report)
     # are hidden; their /api/* endpoints below stay for existing consumers.
     return templates.TemplateResponse(request, "darkweb.html", {
         "app_name": APP_NAME, "user": user, "active": "darkweb",
-        "monitors": monitors,
-        "recent_alerts": recent_alert_rows,
+        "monitors": [_monitor_to_dict(m) for m in monitors],
+        # Masked/sanitized dicts only — rendered client-side by the alert panel.
+        "alert_feed": alert_feed,
     })
 
 

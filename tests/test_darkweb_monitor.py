@@ -123,7 +123,7 @@ class TestLeakCheck:
         result = _run(mon._query_leakcheck(TEST_EMAIL))
         assert result["available"] is True
         assert result["found"] is False
-        assert result["error"] == "rate limited"
+        assert "rate limited" in result["error"]
 
     def test_network_error_never_raises(self, monkeypatch):
         monkeypatch.setattr(mon, "LEAKCHECK_API_KEY", "")
@@ -178,17 +178,22 @@ class TestBuildLeakEvents:
         assert events == []
 
     def test_breach_event(self):
+        # HIBP /breacheddomain alias → an email-only record on the target's domain.
         darkweb = {"breaches": [{"name": "Adobe", "title": "Adobe", "alias": "alice", "verified": True}]}
-        events = mon.build_leak_events(darkweb, None)
+        events = mon.build_leak_events(darkweb, None, TEST_DOMAIN, "domain")
         assert len(events) == 1
-        assert events[0]["source"] == "breach"
-        assert events[0]["severity"] == "critical"
-        assert events[0]["title"] == "Adobe"
+        assert events[0]["source"] == "hibp"
+        assert events[0]["severity"] == "low"
+        assert events[0]["title"] == "Adobe — a***@example.com"
+        assert events[0]["matched_field"] == "email"
+        assert "alice" not in str(events[0])
 
-    def test_unverified_breach_is_high_severity(self):
-        darkweb = {"breaches": [{"name": "Adobe", "verified": False}]}
-        events = mon.build_leak_events(darkweb, None)
+    def test_hibp_password_data_class_is_high_severity(self):
+        darkweb = {"breaches": [{"name": "Adobe", "breach_date": "2099-01-01",
+                                 "data_classes": ["Email addresses", "Passwords"]}]}
+        events = mon.build_leak_events(darkweb, None, TEST_EMAIL, "email")
         assert events[0]["severity"] == "high"
+        assert events[0]["leaked_fields"] == ["email", "password_hash"]
 
     def test_paste_event(self):
         darkweb = {"pastes": [{"id": "p1", "source": "Pastebin"}]}
@@ -216,10 +221,11 @@ class TestBuildLeakEvents:
 
     def test_leakcheck_found_produces_events_per_source(self):
         leakcheck = {"found": True, "sources": ["BreachX", "BreachY"], "fields": ["password"]}
-        events = mon.build_leak_events({}, leakcheck)
+        events = mon.build_leak_events({}, leakcheck, TEST_DOMAIN, "domain")
         assert len(events) == 2
         assert all(e["source"] == "leakcheck" for e in events)
-        assert {e["title"] for e in events} == {"LeakCheck match: BreachX", "LeakCheck match: BreachY"}
+        assert {e["title"] for e in events} == {"BreachX — example.com", "BreachY — example.com"}
+        assert all(e["severity"] == "critical" for e in events)  # plaintext password field
 
     def test_combined_sources_all_present(self):
         darkweb = {
@@ -231,7 +237,7 @@ class TestBuildLeakEvents:
         leakcheck = {"found": True, "sources": ["BreachZ"]}
         events = mon.build_leak_events(darkweb, leakcheck)
         sources = {e["source"] for e in events}
-        assert sources == {"breach", "paste", "github_secret", "threat_actor", "leakcheck"}
+        assert sources == {"hibp", "paste", "github_secret", "threat_actor", "leakcheck"}
 
     def test_every_event_has_a_fingerprint(self):
         darkweb = {"breaches": [{"name": "Adobe", "verified": True}], "pastes": [{"id": "p1"}]}
@@ -306,7 +312,7 @@ class TestArabicLocalization:
 
 # ── 6. run_monitor_check (orchestrator) ──────────────────────────────────────
 
-async def _fake_gather_darkweb(target, include_pastes=True, include_github=True):
+async def _fake_gather_darkweb(target, include_pastes=True, include_github=True, target_type=None):
     return {
         "target": target, "target_type": "domain",
         "breaches": [{"name": "Adobe", "verified": True}],
@@ -316,12 +322,12 @@ async def _fake_gather_darkweb(target, include_pastes=True, include_github=True)
     }
 
 
-async def _fake_leakcheck_found(target):
+async def _fake_leakcheck_found(target, target_type="domain"):
     return {"source": "leakcheck", "available": True, "target": target,
             "found": True, "sources": ["BreachZ"], "fields": [], "error": None}
 
 
-async def _fake_leakcheck_not_found(target):
+async def _fake_leakcheck_not_found(target, target_type="domain"):
     return {"source": "leakcheck", "available": True, "target": target,
             "found": False, "sources": [], "fields": [], "error": None}
 
@@ -335,7 +341,7 @@ class TestRunMonitorCheck:
         result = _run(mon.run_monitor_check(TEST_DOMAIN))
         assert result["target"] == TEST_DOMAIN
         sources = {e["source"] for e in result["events"]}
-        assert sources == {"breach", "leakcheck"}
+        assert sources == {"hibp", "leakcheck"}
         assert result["exposure"]["score"] == 20
         assert result["leakcheck"]["found"] is True
         assert "checked_at" in result
@@ -343,7 +349,7 @@ class TestRunMonitorCheck:
     def test_no_leaks_produces_no_events(self, monkeypatch):
         import modules.osint.darkweb_intelligence as dw
 
-        async def _clean(target, include_pastes=True, include_github=True):
+        async def _clean(target, include_pastes=True, include_github=True, target_type=None):
             return {"target": target, "target_type": "domain", "breaches": [], "pastes": [],
                     "github_exposures": [], "threat_actors": [],
                     "exposure": {"score": 0, "exposure_level": "Clean", "breakdown": [], "recommendations": []}}
@@ -358,7 +364,7 @@ class TestRunMonitorCheck:
     def test_darkweb_failure_degrades_gracefully(self, monkeypatch):
         import modules.osint.darkweb_intelligence as dw
 
-        async def _boom(target, include_pastes=True, include_github=True):
+        async def _boom(target, include_pastes=True, include_github=True, target_type=None):
             raise RuntimeError("upstream exploded")
 
         monkeypatch.setattr(dw, "gather_darkweb_intelligence", _boom)
@@ -371,7 +377,7 @@ class TestRunMonitorCheck:
     def test_leakcheck_failure_degrades_gracefully(self, monkeypatch):
         import modules.osint.darkweb_intelligence as dw
 
-        async def _boom(target):
+        async def _boom(target, target_type="domain"):
             raise RuntimeError("leakcheck exploded")
 
         monkeypatch.setattr(dw, "gather_darkweb_intelligence", _fake_gather_darkweb)
@@ -381,7 +387,7 @@ class TestRunMonitorCheck:
         assert result["leakcheck"]["available"] is False
         assert result["leakcheck"]["found"] is False
         # The darkweb-sourced breach event should still be present.
-        assert any(e["source"] == "breach" for e in result["events"])
+        assert any(e["source"] == "hibp" for e in result["events"])
 
     def test_target_type_defaults_from_darkweb_result(self, monkeypatch):
         import modules.osint.darkweb_intelligence as dw

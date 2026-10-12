@@ -11,6 +11,7 @@ calls (requests.post is monkeypatched, never actually invoked).
 """
 
 import asyncio
+import uuid
 import os
 import sys
 from datetime import datetime, timedelta
@@ -90,7 +91,8 @@ async def _seed_monitor(session_factory, user_id: int, target: str = "example.co
 
 async def _seed_alert(session_factory, monitor_id: int, **overrides) -> int:
     defaults = dict(
-        monitor_id=monitor_id, fingerprint="fp1", source="paste", severity="medium",
+        # Unique per row: darkweb_alerts has a unique (monitor_id, fingerprint) index.
+        monitor_id=monitor_id, fingerprint=uuid.uuid4().hex, source="paste", severity="medium",
         title="Paste mention", detail={"url": "https://pastebin.com/raw/abc123"},
         discovered_at=datetime.utcnow(),
     )

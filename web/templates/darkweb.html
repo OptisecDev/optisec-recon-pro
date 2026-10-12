@@ -26,7 +26,43 @@
   border:1px solid #00ff88;color:#00ff88;border-radius:20px;padding:3px 10px;font-size:10px;
   font-weight:700;text-transform:uppercase;letter-spacing:.03em}
 .live-badge .dot{width:6px;height:6px;border-radius:50%;background:#00ff88;box-shadow:0 0 6px #00ff88}
+.breach-item.critical{border-color:#FF6B6B}.breach-item.high{border-color:#FFA726}
+.dw-add-row{display:flex;gap:8px;flex-wrap:wrap}
+.dw-add-row input{flex:1;min-width:180px}
+.dw-add-row select{width:auto}
+.dw-msg{font-size:12px;margin-top:8px}
+.dw-msg.err{color:#FF6B6B}.dw-msg.warn{color:#FFCA28}
+.dw-link-btn{background:none;border:none;color:#00ff88;cursor:pointer;text-decoration:underline;padding:0;font:inherit}
+.dw-mon{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+.dw-mon-title{font-weight:600;font-size:13px}
+.dw-mon-meta{font-size:11px;color:var(--text-dim);margin-top:2px}
+.dw-mon-actions{display:flex;gap:6px}
+.dw-mon-actions .btn{padding:4px 10px;font-size:11px}
+.dw-mon.invalid{border-color:#FF6B6B}
+.dw-invalid-box{width:100%;background:rgba(255,107,107,0.08);border:1px solid #FF6B6B;border-radius:6px;padding:8px 10px;font-size:11px;color:#FF6B6B}
+.dw-invalid-box .dw-add-row{margin-top:6px}
+.dw-check-err{width:100%;font-size:11px;color:#FFCA28}
+.dw-summary{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.dw-chip{cursor:pointer;border-radius:14px;padding:4px 10px;font-size:11px;font-weight:700;background:var(--bg-secondary);border:1px solid var(--border);color:var(--text)}
+.dw-chip.active{outline:2px solid #00ff88}
+.dw-chip.sev-critical{color:#FF6B6B;border-color:#FF6B6B}.dw-chip.sev-high{color:#FFA726;border-color:#FFA726}
+.dw-chip.sev-medium{color:#FFCA28;border-color:#FFCA28}.dw-chip.sev-low{color:#66BB6A;border-color:#66BB6A}
+.dw-alert-list{max-height:480px;overflow-y:auto;padding-right:4px}
+.dw-alert-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.dw-alert-title{font-weight:600;font-size:13px;word-break:break-word}
+.dw-alert-foot{display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:10px;color:var(--text-dim)}
+.dw-details{margin-top:8px;font-size:11px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+.dw-details dt{color:var(--text-dim);float:left;clear:left;width:110px}
+.dw-details dd{margin:0 0 4px 115px;word-break:break-word}
+.dw-field-tag{display:inline-block;padding:1px 6px;margin:1px;border-radius:8px;font-size:10px;background:var(--bg-secondary);border:1px solid var(--border)}
+.dw-field-tag.cred{color:#FF6B6B;border-color:#FF6B6B}
+#dw-toasts{position:fixed;bottom:20px;inset-inline-end:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-width:360px}
+.dw-toast{background:var(--bg-card);border:1px solid var(--border);border-inline-start:4px solid #42A5F5;border-radius:8px;padding:10px 14px;font-size:12px;box-shadow:0 4px 18px rgba(0,0,0,.4);white-space:pre-line}
+.dw-toast.critical{border-inline-start-color:#FF6B6B}.dw-toast.high{border-inline-start-color:#FFA726}
+.dw-toast.error{border-inline-start-color:#FF6B6B}.dw-toast.ok{border-inline-start-color:#00ff88}
+.dw-toast.warn{border-inline-start-color:#FFCA28}
 </style>
+<div id="dw-toasts" aria-live="polite"></div>
 
 <div class="tabs ie3019698e" >
   <button class="tab-btn active" data-onclick="showTab" data-onclick-args='["monitor"]'>🟢 Continuous Monitoring · المراقبة المستمرة</button>
@@ -45,58 +81,32 @@
         Continuously watch a domain or email against HIBP, IntelligenceX, BreachDirectory, Leak-Lookup,
         psbdmp, GitHub, OTX and LeakCheck — new leaks are alerted with a timestamp, never re-alerted twice.
       </p>
-      <div class="ie60e30436">
-        <input type="text" id="monitor-target" class="form-control ieda5cd676" placeholder="example.com or user@example.com" >
-        <button class="btn btn-primary" data-onclick="addMonitorTarget">Add · إضافة</button>
+      <div class="dw-add-row">
+        <input type="text" id="monitor-target" class="form-control" placeholder="example.com or user@example.com"
+               data-onkeydown="runOnEnter" data-onkeydown-event data-onkeydown-args='["addMonitorTarget"]'>
+        <select id="monitor-type" class="form-control" aria-label="Target type">
+          <option value="">Auto (domain / email)</option>
+          <option value="domain">Domain · نطاق</option>
+          <option value="email">Email · بريد</option>
+          <option value="username">Username · اسم مستخدم</option>
+        </select>
+        <button class="btn btn-primary" id="monitor-add-btn" data-onclick="addMonitorTarget">Add · إضافة</button>
       </div>
       <div id="monitor-add-result"></div>
 
       <h4 class="ie3e43b3af">Monitored Targets · الأهداف المراقبة</h4>
-      <div id="monitor-list">
-        {% if monitors %}
-          {% for m in monitors %}
-          <div class="rw-group ieb2b7072b" id="monitor-row-{{ m.id }}" >
-            <div>
-              <div class="iee4e660df">{{ m.label or m.target }}</div>
-              <div class="ie3122d8b0">
-                {{ m.target }} · {{ m.target_type }} ·
-                {% if m.last_checked_at %}آخر فحص: {{ m.last_checked_at.strftime('%Y-%m-%d %H:%M') }}{% else %}لم يُفحص بعد{% endif %}
-              </div>
-            </div>
-            <div class="ie52e6662a">
-              <button class="btn btn-secondary ie2867d55a"  data-onclick="checkMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>فحص الآن</button>
-              <button class="btn btn-danger ie2867d55a"  data-onclick="deleteMonitorTarget" data-onclick-args='{{ [m.id] | tojson }}'>حذف</button>
-            </div>
-          </div>
-          {% endfor %}
-        {% else %}
-          <p class="ie77593361">لا توجد أهداف مراقبة بعد. أضف نطاقاً أو بريداً إلكترونياً أعلاه.</p>
-        {% endif %}
-      </div>
+      <div id="monitor-list"></div>
     </div>
 
     <div class="dw-card">
       <h3 class="ie490b37ce">Recent Alerts · التنبيهات الأخيرة</h3>
-      <div id="monitor-alerts">
-        {% if recent_alerts %}
-          {% for alert, monitor in recent_alerts %}
-          <div class="breach-item {{ 'critical' if alert.severity in ('critical','high') else alert.severity }}">
-            <div class="ie1141c430">
-              <span class="iedff98dc3">{{ alert.title }}</span>
-              <span class="risk-badge risk-{{ alert.severity }}">{{ alert.severity }}</span>
-            </div>
-            <div class="ied28d0fca">
-              {{ monitor.target }} · {{ alert.discovered_at.strftime('%Y-%m-%d %H:%M') if alert.discovered_at else '' }}
-            </div>
-          </div>
-          {% endfor %}
-        {% else %}
-          <p class="ie77593361">لا توجد تنبيهات بعد. اضغط "فحص الآن" على أحد الأهداف المراقبة.</p>
-        {% endif %}
-      </div>
+      <div class="dw-summary" id="dw-summary"></div>
+      <div class="dw-alert-list" id="monitor-alerts"></div>
     </div>
   </div>
 </div>
+
+<script type="application/json" id="dw-initial-data">{{ {"monitors": monitors, "alerts": alert_feed} | tojson }}</script>
 
 <!-- PASTE SCANNER TAB -->
 <div id="tab-paste" class="is-hidden">
@@ -167,75 +177,332 @@ async function scanPaste() {
 
 
 
-function monitorRowHtml(m) {
-  const lastChecked = m.last_checked_at ? new Date(m.last_checked_at).toLocaleString() : 'لم يُفحص بعد';
-  return `<div class="rw-group ieb2b7072b" id="monitor-row-${m.id}" >
-    <div>
-      <div class="iee4e660df">${m.label || m.target}</div>
-      <div class="ie3122d8b0">${m.target} · ${m.target_type} · آخر فحص: ${lastChecked}</div>
-    </div>
-    <div class="ie52e6662a">
-      <button class="btn btn-secondary ie2867d55a"  data-onclick="checkMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">فحص الآن</button>
-      <button class="btn btn-danger ie2867d55a"  data-onclick="deleteMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">حذف</button>
-    </div>
-  </div>`;
+// ── Continuous monitoring ────────────────────────────────────────────────
+const DW_SEVERITIES = ['critical', 'high', 'medium', 'low'];
+const DW_SEV_AR = {critical: 'حرج', high: 'مرتفع', medium: 'متوسط', low: 'منخفض'};
+const DW_CRED_FIELDS = ['password', 'password_hash'];
+const DW_FIELD_LABELS = {matched_field: 'Matched · المطابق', email: 'email', username: 'username', domain: 'domain'};
+const dwState = {monitors: [], alerts: [], summary: {}, filter: '', openDetails: new Set()};
+
+function dwEsc(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function alertItemHtml(a, target) {
-  const sev = ['critical','high'].includes(a.severity) ? 'critical' : a.severity;
-  return `<div class="breach-item ${sev}">
-    <div class="ie1141c430">
-      <span class="iedff98dc3">${a.title}</span>
-      <span class="risk-badge risk-${a.severity}">${a.severity}</span>
-    </div>
-    <div class="ied28d0fca">${target || ''} · ${a.discovered_at ? new Date(a.discovered_at).toLocaleString() : ''}</div>
-    <div class="ie855fc9db">${a.source_ar || ''} · ${a.severity_ar || ''}</div>
-  </div>`;
+function dwFmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleString();
 }
 
-async function addMonitorTarget() {
-  const target = document.getElementById('monitor-target').value.trim();
-  if (!target) return;
-  const btn = event.target; btn.textContent = 'Adding...'; btn.disabled = true;
-  const resp = await fetch('/api/darkweb/monitor', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target})});
-  const data = await resp.json();
-  btn.textContent = 'Add · إضافة'; btn.disabled = false;
-  const resultEl = document.getElementById('monitor-add-result');
-  if (!resp.ok) {
-    resultEl.innerHTML = `<p class="iec574e2a0">${data.detail || 'تعذّرت الإضافة'}</p>`;
-    return;
+// Toasts replace alert(): non-blocking, auto-dismissing, stacked.
+function dwToast(message, kind, ms) {
+  const box = document.getElementById('dw-toasts');
+  const el = document.createElement('div');
+  el.className = 'dw-toast ' + (kind || '');
+  el.textContent = message;
+  box.appendChild(el);
+  setTimeout(() => el.remove(), ms || 6000);
+}
+
+// Mirror of modules/darkweb/targets.py validate_target() — instant feedback
+// only; the server re-validates every write.
+const DW_LABEL = '(?!-)[a-z0-9-]{1,63}(?<!-)';
+const DW_DOMAIN_RE = new RegExp(`^(?:${DW_LABEL}\\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$`);
+const DW_BARE_RE = new RegExp(`^${DW_LABEL}$`);
+
+function dwNormalize(raw) {
+  let v = String(raw || '').replace(/\s+/g, '').toLowerCase();
+  if (!v) return '';
+  if (v.includes('@') && !/^[a-z][a-z0-9+.-]*:\/\//.test(v) && !v.includes('/')) {
+    const i = v.lastIndexOf('@');
+    return v.slice(0, i) + '@' + v.slice(i + 1).replace(/\.+$/, '');
   }
-  resultEl.innerHTML = '';
-  document.getElementById('monitor-target').value = '';
+  v = v.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').split(/[/?#]/)[0];
+  v = v.slice(v.lastIndexOf('@') + 1).split(':')[0].replace(/\.+$/, '');
+  return v.startsWith('www.') ? v.slice(4) : v;
+}
+
+function dwSuggestDomain(v) {
+  let c = v.replace(/[^a-z0-9.-]/g, '-').replace(/\.{2,}/g, '.').replace(/^[.-]+|[.-]+$/g, '').replace(/-*\.-*/g, '.');
+  if (!c) return null;
+  if (DW_DOMAIN_RE.test(c) && c.length <= 253) return c !== v ? c : null;
+  return DW_BARE_RE.test(c) ? c + '.com' : null;
+}
+
+function dwValidateTarget(raw, forcedType) {
+  const target = dwNormalize(raw);
+  if (!target) return {ok: false, target, en: 'Target is required.', ar: 'الهدف مطلوب.'};
+  const type = forcedType || (target.includes('@') ? 'email' : 'domain');
+  if (type === 'username') {
+    return /^[a-z0-9._-]{3,64}$/.test(target) ? {ok: true, target, type}
+      : {ok: false, target, en: 'Invalid username.', ar: 'اسم مستخدم غير صالح.'};
+  }
+  if (type === 'email') {
+    const i = target.lastIndexOf('@'), local = target.slice(0, i), host = target.slice(i + 1);
+    if (i < 1 || !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}$/.test(local) || local.includes('..'))
+      return {ok: false, target, en: 'Invalid email address.', ar: 'عنوان بريد إلكتروني غير صالح.'};
+    if (!DW_DOMAIN_RE.test(host)) {
+      const fix = dwSuggestDomain(host);
+      return {ok: false, target, suggestion: fix ? `${local}@${fix}` : null,
+              en: `Invalid email domain '${host}' — it needs a TLD (e.g. .com).`,
+              ar: `نطاق البريد '${host}' غير صالح — يجب أن يحتوي على امتداد (مثل .com).`};
+    }
+    return {ok: true, target, type};
+  }
+  if (!DW_DOMAIN_RE.test(target) || target.length > 253) {
+    return {ok: false, target, suggestion: dwSuggestDomain(target),
+            en: `'${target}' is not a valid domain — a domain needs a TLD (e.g. example.com).`,
+            ar: `'${target}' ليس نطاقاً صالحاً — يجب أن يحتوي النطاق على امتداد (مثل example.com).`};
+  }
+  return {ok: true, target, type};
+}
+
+function dwErrorHtml(err, applyFn, applyArgs) {
+  const sugg = err.suggestion
+    ? ` <button class="dw-link-btn" data-onclick="${applyFn}" data-onclick-args="${optisecArgs([...applyArgs, err.suggestion])}">هل تقصد ${dwEsc(err.suggestion)}؟ · Did you mean ${dwEsc(err.suggestion)}?</button>`
+    : '';
+  return `<div class="dw-msg err">${dwEsc(err.ar)}<br>${dwEsc(err.en)}${sugg}</div>`;
+}
+
+// Server error bodies: 422 validation ({message_ar, message_en, suggestion}),
+// bilingual 409/502 ({message_ar, message_en}) or plain FastAPI {detail}.
+async function dwReadError(resp) {
+  let data = {};
+  try { data = await resp.json(); } catch (e) { /* non-JSON (proxy/HTML) */ }
+  if (resp.status === 429) {
+    return {ar: 'تم تجاوز حد الطلبات، حاول بعد دقيقة.', en: 'Too many requests — try again in a minute.', data};
+  }
+  return {
+    ar: data.message_ar || data.detail || `فشل الطلب (HTTP ${resp.status})`,
+    en: data.message_en || (data.message_ar ? '' : `Request failed (HTTP ${resp.status})`),
+    suggestion: data.suggestion || null, data,
+  };
+}
+
+// ── Monitor cards ──
+function monitorRowHtml(m) {
+  const invalid = m.validation_status === 'invalid';
+  const checked = m.last_checked_at
+    ? `آخر فحص · Last check: ${dwEsc(dwFmtDate(m.last_checked_at))}`
+    : 'لم يُفحص بعد · Not checked yet';
+  const invalidBox = invalid ? `<div class="dw-invalid-box">
+      ⚠ هذا الهدف غير صالح ولن يُفحص حتى تصحّحه. · This target is invalid and won't be checked until corrected.
+      ${m.validation_error ? `<br>${dwEsc(m.validation_error)}` : ''}
+      <div class="dw-add-row">
+        <input type="text" class="form-control" id="monitor-fix-${m.id}" value="${dwEsc(dwSuggestDomain(m.target) || m.target)}">
+        <button class="btn btn-primary" data-onclick="fixMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">تصحيح · Fix</button>
+      </div>
+      <div id="monitor-fix-result-${m.id}"></div>
+    </div>` : '';
+  const checkErr = (!invalid && m.last_check_error)
+    ? `<div class="dw-check-err">⚠ آخر محاولة فحص فشلت · Last check attempt failed: ${dwEsc(m.last_check_error)}</div>` : '';
+  return `<div class="rw-group dw-mon ${invalid ? 'invalid' : ''}" id="monitor-row-${m.id}">
+    <div>
+      <div class="dw-mon-title">${dwEsc(m.label || m.target)}</div>
+      <div class="dw-mon-meta">${dwEsc(m.target)} · ${dwEsc(m.target_type)} · ${checked}</div>
+    </div>
+    <div class="dw-mon-actions">
+      <button class="btn btn-secondary dw-check-btn" ${invalid ? 'disabled title="Fix the target first · صحّح الهدف أولاً"' : ''}
+              data-onclick="checkMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">فحص الآن</button>
+      <button class="btn btn-danger dw-del-btn" data-onclick="deleteMonitorTarget" data-onclick-args="${optisecArgs([m.id])}">حذف</button>
+    </div>
+    ${invalidBox}${checkErr}
+  </div>`;
+}
+
+function renderMonitors() {
   const list = document.getElementById('monitor-list');
-  if (list.querySelector('p')) list.innerHTML = '';
-  list.insertAdjacentHTML('afterbegin', monitorRowHtml(data.monitor));
+  list.innerHTML = dwState.monitors.length
+    ? dwState.monitors.map(monitorRowHtml).join('')
+    : '<p class="ie77593361">لا توجد أهداف مراقبة بعد. أضف نطاقاً أو بريداً إلكترونياً أعلاه.</p>';
+}
+
+function upsertMonitor(m) {
+  const i = dwState.monitors.findIndex(x => x.id === m.id);
+  if (i >= 0) dwState.monitors[i] = m; else dwState.monitors.unshift(m);
+  renderMonitors();
+}
+
+// ── Alert panel ──
+function alertItemHtml(a) {
+  const d = a.details || {};
+  const open = dwState.openDetails.has(a.id);
+  const fields = (d.leaked_fields || []).map(f =>
+    `<span class="dw-field-tag ${DW_CRED_FIELDS.includes(f) ? 'cred' : ''}">${dwEsc(f)}</span>`).join('') || '—';
+  const details = open ? `<dl class="dw-details">
+      <dt>الحقل المطابق · Matched</dt><dd>${dwEsc(d.matched_field || '—')}: ${dwEsc(d.matched_value_masked || '—')}</dd>
+      <dt>المصدر · Source</dt><dd>${dwEsc(d.source_name || '—')}${d.provider ? ` (${dwEsc(d.provider)})` : ''}</dd>
+      <dt>تاريخ التسريب · Leak date</dt><dd>${dwEsc(d.leak_date || 'غير معروف · unknown')}</dd>
+      <dt>الحقول المسرّبة · Leaked</dt><dd>${fields}</dd>
+      ${d.reference_url ? `<dt>المرجع · Reference</dt><dd>${dwEsc(d.reference_url)}</dd>` : ''}
+    </dl>` : '';
+  return `<div class="breach-item ${dwEsc(a.severity)}">
+    <div class="dw-alert-head">
+      <span class="dw-alert-title">${dwEsc(a.title)}</span>
+      <span class="risk-badge risk-${dwEsc(a.severity)}">${dwEsc(DW_SEV_AR[a.severity] || a.severity)} · ${dwEsc(a.severity)}</span>
+    </div>
+    <div class="dw-alert-foot">
+      <span>${dwEsc(a.target || '')} · ${dwEsc(a.source_ar || a.source || '')} · ${dwEsc(dwFmtDate(a.discovered_at))}</span>
+      <button class="dw-link-btn" data-onclick="toggleAlertDetails" data-onclick-args="${optisecArgs([a.id])}">${open ? 'إخفاء · Hide' : 'تفاصيل · Details'}</button>
+    </div>
+    ${details}
+  </div>`;
+}
+
+function renderAlerts() {
+  const s = dwState.summary || {};
+  const chip = (key, label) =>
+    `<button class="dw-chip ${key ? 'sev-' + key : ''} ${dwState.filter === key ? 'active' : ''}"
+             data-onclick="setAlertFilter" data-onclick-args="${optisecArgs([key])}">${label}</button>`;
+  document.getElementById('dw-summary').innerHTML =
+    chip('', `الكل · All ${s.total || 0}`) +
+    DW_SEVERITIES.map(k => chip(k, `${DW_SEV_AR[k]} · ${k[0].toUpperCase() + k.slice(1)} ${s[k] || 0}`)).join('');
+
+  const rank = {critical: 0, high: 1, medium: 2, low: 3};
+  const shown = dwState.alerts
+    .filter(a => !dwState.filter || a.severity === dwState.filter)
+    .sort((a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9)
+                    || String(b.discovered_at).localeCompare(String(a.discovered_at)));
+  document.getElementById('monitor-alerts').innerHTML = shown.length
+    ? shown.map(alertItemHtml).join('')
+    : `<p class="ie77593361">${dwState.filter ? 'لا توجد تنبيهات بهذه الخطورة. · No alerts at this severity.'
+                                            : 'لا توجد تنبيهات بعد. اضغط "فحص الآن" على أحد الأهداف المراقبة.'}</p>`;
+}
+
+async function refreshAlerts() {
+  try {
+    const resp = await fetch('/api/darkweb/monitor/alerts/recent?limit=200');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    dwState.alerts = data.alerts || [];
+    dwState.summary = data.summary || {};
+    renderAlerts();
+  } catch (e) { /* keep the current panel */ }
+}
+
+function setAlertFilter(sev) { dwState.filter = sev || ''; renderAlerts(); }
+
+function toggleAlertDetails(id) {
+  if (dwState.openDetails.has(id)) dwState.openDetails.delete(id); else dwState.openDetails.add(id);
+  renderAlerts();
+}
+
+// ── Actions ──
+async function addMonitorTarget(forcedTarget) {
+  const input = document.getElementById('monitor-target');
+  if (typeof forcedTarget === 'string') input.value = forcedTarget;
+  const type = document.getElementById('monitor-type').value;
+  const resultEl = document.getElementById('monitor-add-result');
+  const v = dwValidateTarget(input.value, type || null);
+  if (!v.ok) { resultEl.innerHTML = dwErrorHtml(v, 'addMonitorTarget', []); return; }
+
+  const btn = document.getElementById('monitor-add-btn');
+  btn.textContent = 'Adding...'; btn.disabled = true;
+  try {
+    const resp = await fetch('/api/darkweb/monitor', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: v.target, target_type: type || undefined})});
+    if (!resp.ok) { resultEl.innerHTML = dwErrorHtml(await dwReadError(resp), 'addMonitorTarget', []); return; }
+    const data = await resp.json();
+    resultEl.innerHTML = '';
+    input.value = '';
+    upsertMonitor(data.monitor);
+    dwToast(`تمت إضافة ${data.monitor.target} للمراقبة.`, 'ok', 3500);
+  } catch (e) {
+    resultEl.innerHTML = dwErrorHtml({ar: 'تعذّر الاتصال بالخادم.', en: 'Could not reach the server.'}, 'addMonitorTarget', []);
+  } finally {
+    btn.textContent = 'Add · إضافة'; btn.disabled = false;
+  }
 }
 
 async function checkMonitorTarget(id) {
   const row = document.getElementById(`monitor-row-${id}`);
-  const btn = row.querySelector('.btn-secondary');
-  const originalText = btn.textContent; btn.textContent = 'جارِ الفحص...'; btn.disabled = true;
-  const resp = await fetch(`/api/darkweb/monitor/${id}/check`, {method:'POST'});
-  const data = await resp.json();
-  btn.textContent = originalText; btn.disabled = false;
-  if (!resp.ok) { alert(data.detail || 'فشل الفحص'); return; }
-
-  row.outerHTML = monitorRowHtml(data.monitor);
-
-  const alertsEl = document.getElementById('monitor-alerts');
-  if (data.new_alerts_count > 0) {
-    if (alertsEl.querySelector('p')) alertsEl.innerHTML = '';
-    alertsEl.insertAdjacentHTML('afterbegin', data.new_alerts.map(a => alertItemHtml(a, data.monitor.target)).join(''));
+  const btn = row && row.querySelector('.dw-check-btn');
+  if (!btn || btn.disabled) return;
+  btn.textContent = 'جارٍ الفحص...'; btn.disabled = true;
+  let monitor = null;
+  try {
+    const resp = await fetch(`/api/darkweb/monitor/${id}/check`, {method: 'POST'});
+    if (!resp.ok) {
+      const err = await dwReadError(resp);
+      monitor = err.data && err.data.monitor;
+      dwToast(`${err.ar}\n${err.en}`, 'error', 9000);
+      return;
+    }
+    const data = await resp.json();
+    monitor = data.monitor;
+    (data.source_errors || []).forEach(e => dwToast(`⚠ ${e.error_ar}`, 'warn', 8000));
+    if (data.new_alerts_count > 0) {
+      const worst = DW_SEVERITIES.find(s => data.new_alerts.some(a => a.severity === s)) || '';
+      dwToast(data.message_ar, worst, 10000);
+    } else {
+      dwToast(data.message_ar, 'ok', 4000);
+    }
+    await refreshAlerts();
+  } catch (e) {
+    dwToast('تعذّر الاتصال بالخادم أثناء الفحص.\nCould not reach the server during the check.', 'error', 8000);
+  } finally {
+    // Always leave the card in a settled state — never stuck on "جارٍ الفحص...".
+    if (monitor) upsertMonitor(monitor);
+    else { btn.textContent = 'فحص الآن'; btn.disabled = false; }
   }
-  alert(data.message_ar);
 }
 
-async function deleteMonitorTarget(id) {
-  if (!confirm('هل تريد حذف هذا الهدف من المراقبة؟')) return;
-  await fetch(`/api/darkweb/monitor/${id}`, {method:'DELETE'});
-  const row = document.getElementById(`monitor-row-${id}`);
-  if (row) row.remove();
+async function fixMonitorTarget(id, forcedTarget) {
+  const input = document.getElementById(`monitor-fix-${id}`);
+  if (typeof forcedTarget === 'string') input.value = forcedTarget;
+  const out = document.getElementById(`monitor-fix-result-${id}`);
+  const v = dwValidateTarget(input.value, null);
+  if (!v.ok) { out.innerHTML = dwErrorHtml(v, 'fixMonitorTarget', [id]); return; }
+  try {
+    const resp = await fetch(`/api/darkweb/monitor/${id}`, {method: 'PATCH', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target: v.target})});
+    if (!resp.ok) { out.innerHTML = dwErrorHtml(await dwReadError(resp), 'fixMonitorTarget', [id]); return; }
+    const data = await resp.json();
+    upsertMonitor(data.monitor);
+    await refreshAlerts();
+    dwToast(`تم تصحيح الهدف إلى ${data.monitor.target}. يمكنك فحصه الآن.`, 'ok', 5000);
+  } catch (e) {
+    out.innerHTML = dwErrorHtml({ar: 'تعذّر الاتصال بالخادم.', en: 'Could not reach the server.'}, 'fixMonitorTarget', [id]);
+  }
 }
+
+// Two-click delete (no confirm() dialog): first click arms, second deletes.
+async function deleteMonitorTarget(id) {
+  const row = document.getElementById(`monitor-row-${id}`);
+  const btn = row && row.querySelector('.dw-del-btn');
+  if (!btn) return;
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = '1'; btn.textContent = 'تأكيد الحذف؟';
+    setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'حذف'; } }, 4000);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`/api/darkweb/monitor/${id}`, {method: 'DELETE'});
+    if (!resp.ok) { const err = await dwReadError(resp); dwToast(`${err.ar}\n${err.en}`, 'error'); btn.disabled = false; return; }
+    dwState.monitors = dwState.monitors.filter(m => m.id !== id);
+    // Cascade in the UI too: drop this target's alerts from the panel now,
+    // then re-sync counts from the server.
+    dwState.alerts = dwState.alerts.filter(a => a.monitor_id !== id);
+    renderMonitors(); renderAlerts();
+    await refreshAlerts();
+    dwToast('تم حذف الهدف وكل تنبيهاته.', 'ok', 3500);
+  } catch (e) {
+    btn.disabled = false;
+    dwToast('تعذّر الاتصال بالخادم.', 'error');
+  }
+}
+
+(function initDarkwebMonitor() {
+  try {
+    const data = JSON.parse(document.getElementById('dw-initial-data').textContent);
+    dwState.monitors = data.monitors || [];
+    dwState.alerts = (data.alerts && data.alerts.alerts) || [];
+    dwState.summary = (data.alerts && data.alerts.summary) || {};
+  } catch (e) { /* render empty */ }
+  renderMonitors();
+  renderAlerts();
+})();
 </script>
 {% endblock %}

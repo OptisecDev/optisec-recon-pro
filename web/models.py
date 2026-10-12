@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index, Float, UniqueConstraint, func
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Index, Float, UniqueConstraint, func, false
 from sqlalchemy.orm import relationship
 from web.database import Base
 
@@ -263,11 +263,17 @@ class DarkWebMonitor(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     target = Column(String(255), nullable=False)
-    target_type = Column(String(10), default="domain")  # domain | email
+    target_type = Column(String(10), default="domain")  # domain | email | username
     label = Column(String(200))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_checked_at = Column(DateTime)
+    # "valid" | "invalid" — an invalid target (e.g. a domain without a TLD,
+    # flagged by web/migrate_darkweb_target_validation.py) is never checked
+    # until the user corrects it; its alerts are hidden meanwhile.
+    validation_status = Column(String(20), nullable=False, default="valid", server_default="valid")
+    validation_error = Column(String(500))
+    last_check_error = Column(String(500))
 
     user = relationship("User", back_populates="darkweb_monitors")
     alerts = relationship("DarkWebAlert", back_populates="monitor", cascade="all, delete-orphan")
@@ -280,11 +286,19 @@ class DarkWebAlert(Base):
 
     id = Column(Integer, primary_key=True)
     monitor_id = Column(Integer, ForeignKey("darkweb_monitors.id", ondelete="CASCADE"), nullable=False)
+    __table_args__ = (UniqueConstraint("monitor_id", "fingerprint", name="uq_darkweb_alerts_monitor_fp"),)
+
     fingerprint = Column(String(64), nullable=False, index=True)
-    source = Column(String(50))  # breach | paste | github_secret | threat_actor | leakcheck
+    # hibp | leakcheck | breachdirectory | leaklookup | paste | github_secret | threat_actor
+    source = Column(String(50))
     severity = Column(String(20))
     title = Column(String(300))
+    # Masked/sanitized only — see modules/darkweb/leak_records.record_to_event.
     detail = Column(JSON)
+    matched_field = Column(String(20))   # email | username | domain
+    leak_date = Column(String(20))
+    leaked_fields = Column(JSON)         # field *names*, never values
+    hidden = Column(Boolean, nullable=False, default=False, server_default=false())
     discovered_at = Column(DateTime, default=datetime.utcnow)
     acknowledged = Column(Boolean, default=False)
 

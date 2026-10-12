@@ -161,11 +161,14 @@ async def run_scheduled_scan() -> dict:
             due_ids = (await db.execute(
                 select(DarkWebMonitor.id)
                 .where(DarkWebMonitor.is_active == True)  # noqa: E712
+                # Targets flagged invalid are never checked until corrected.
+                .where(DarkWebMonitor.validation_status == "valid")
                 .where(or_(DarkWebMonitor.last_checked_at.is_(None), DarkWebMonitor.last_checked_at < threshold))
             )).scalars().all()
 
             total_active = (await db.execute(
                 select(DarkWebMonitor.id).where(DarkWebMonitor.is_active == True)  # noqa: E712
+                .where(DarkWebMonitor.validation_status == "valid")
             )).scalars().all()
         summary["skipped"] = len(total_active) - len(due_ids)
 
@@ -175,7 +178,7 @@ async def run_scheduled_scan() -> dict:
             try:
                 async with _db.SessionLocal() as db:
                     monitor = await db.get(DarkWebMonitor, monitor_id)
-                    if not monitor or not monitor.is_active:
+                    if not monitor or not monitor.is_active or monitor.validation_status != "valid":
                         continue
                     new_alerts, _result = await run_check_and_persist(monitor, db)
                 summary["checked"] += 1

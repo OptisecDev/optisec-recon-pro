@@ -70,6 +70,10 @@ def _is_email(target: str) -> bool:
     return bool(_RE_EMAIL.match(target.strip()))
 
 
+def _infer_target_type(target: str) -> str:
+    return "email" if _is_email(target) else "domain"
+
+
 def _email_domain(target: str) -> str:
     """Return the domain part of an email, or `target` unchanged if it isn't one."""
     target = target.strip()
@@ -284,93 +288,150 @@ def _breachdirectory_headers() -> dict:
     return {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": "breachdirectory.p.rapidapi.com"}
 
 
-async def _query_breachdirectory(target: str) -> dict:
+async def _query_breachdirectory(target: str, target_type: str | None = None) -> dict:
     """
-    Look up `target` (email/username/domain) in BreachDirectory via its
-    RapidAPI listing.
+    Look up `target` in BreachDirectory via its RapidAPI listing, with an
+    explicit func per target type (never "auto" — see
+    modules/darkweb/leak_records.BREACHDIRECTORY_FUNCS).
 
-    Returns {source, available, target, entries, error}, where each entry is
-    {email, username, password_hash, sources}. Never raises.
+    Returns {source, available, target, query_type, entries, records, error}.
+    Each entry is {email, username, has_password, has_hash, sources} —
+    password/hash *values* are classified then dropped, never returned.
+    `records` is the normalized per-source leak-record list
+    (modules/darkweb/leak_records). Never raises.
     """
+    from modules.darkweb.leak_records import api_error, query_type_for, password_field_kind
+
+    target_type = target_type or _infer_target_type(target)
+    base = {"source": "breachdirectory", "target": target, "entries": [], "records": []}
     if not RAPIDAPI_KEY:
-        return {"source": "breachdirectory", "available": False, "target": target,
-                "entries": [], "error": "requires API key (RAPIDAPI_KEY, optional)"}
+        return {**base, "available": False, "error": "requires API key (RAPIDAPI_KEY, optional)"}
+    func = query_type_for("breachdirectory", target_type)
+    base["query_type"] = func
 
     try:
         async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT, headers=_breachdirectory_headers()) as session:
-            async with session.get(BREACHDIRECTORY_URL, params={"func": "auto", "term": target}) as resp:
-                if resp.status in (401, 403):
-                    return {"source": "breachdirectory", "available": True, "target": target,
-                            "entries": [], "error": "invalid or unauthorized RapidAPI key"}
+            async with session.get(BREACHDIRECTORY_URL, params={"func": func, "term": target}) as resp:
+                if resp.status in (400, 401, 403, 422, 429):
+                    return {**base, "available": True, **api_error("breachdirectory", resp.status)}
                 resp.raise_for_status()
                 data = await resp.json()
     except aiohttp.ClientError as exc:
-        return {"source": "breachdirectory", "available": True, "target": target, "entries": [], "error": str(exc)}
+        return {**base, "available": True, "error": str(exc)}
 
-    raw_entries = (data or {}).get("result", []) or []
-    entries = [
-        {
-            "email": e.get("email") or e.get("line"),
-            "username": e.get("username"),
-            "password_hash": e.get("password") or e.get("hash"),
-            "sources": e.get("sources", []),
-        }
-        for e in raw_entries
-    ]
-    return {"source": "breachdirectory", "available": True, "target": target, "entries": entries, "error": None}
+    if isinstance(data, dict) and data.get("success") is False:
+        return {**base, "available": True, **api_error("breachdirectory", None, str(data.get("message") or ""))}
+
+    entries, records = [], []
+    for e in (data or {}).get("result", []) or []:
+        email = e.get("email") or (e.get("line") if "@" in str(e.get("line") or "") else None)
+        username = e.get("username")
+        kind = password_field_kind(e.get("password"))
+        has_hash = bool(e.get("hash") or e.get("sha1")) or kind == "password_hash"
+        has_password = kind == "password"
+        sources = e.get("sources") or []
+        if isinstance(sources, str):
+            sources = [sources]
+        entries.append({"email": email, "username": username, "has_password": has_password,
+                        "has_hash": has_hash, "sources": sources})
+        if email:
+            matched_field, matched_value = "email", email
+        elif username:
+            matched_field, matched_value = "username", username
+        else:
+            matched_field, matched_value = target_type, target
+        fields = [f for f, present in (("password", has_password), ("password_hash", has_hash),
+                                       ("email", bool(email)), ("username", bool(username))) if present]
+        for src in sources or ["Unknown source"]:
+            records.append({"provider": "breachdirectory", "source_name": str(src), "leak_date": None,
+                            "matched_field": matched_field, "matched_value": matched_value,
+                            "leaked_fields": fields})
+    return {**base, "available": True, "entries": entries, "records": records, "error": None}
 
 
 # ── 4. Leak-Lookup ─────────────────────────────────────────────────────────────
 # Official Leak-Lookup API — https://leak-lookup.com/api. Optional: degrades
 # to available=False without LEAKLOOKUP_API_KEY.
 
-def _leaklookup_query_type(target: str) -> str:
+def _leaklookup_query_type(target: str, target_type: str | None = None) -> str:
+    """Explicit Leak-Lookup search type. With a known target_type the mapping
+    is exact (modules/darkweb/leak_records.LEAKLOOKUP_QUERY_TYPES); IPs keep
+    their own type for the one-shot /api/osint/darkweb-scan path."""
+    from modules.darkweb.leak_records import query_type_for
     t = target.strip()
-    if _is_email(t):
-        return "email_address"
+    if target_type:
+        return query_type_for("leaklookup", target_type)
     if _RE_IP.match(t):
         return "ip_address"
-    return "domain"
+    return query_type_for("leaklookup", _infer_target_type(t))
 
 
-async def _query_leaklookup(target: str) -> dict:
+async def _query_leaklookup(target: str, target_type: str | None = None) -> dict:
     """
-    Search Leak-Lookup for `target` (email/domain/IP).
+    Search Leak-Lookup for `target` with an explicit search type.
 
-    Returns {source, available, target, sources_found, data_types, error}.
-    `sources_found` lists the breach source names that mention the target;
-    `data_types` is the union of leaked field names (e.g. "password",
-    "ip_address") across all of them. Never raises.
+    Returns {source, available, target, query_type, sources_found,
+    data_types, records, error}. `sources_found` lists the breach source names
+    that mention the target; `data_types` is the union of leaked field names
+    (e.g. "password", "ip_address") across all of them; `records` is the
+    normalized per-record list with field *names* only. Never raises.
     """
+    from modules.darkweb.leak_records import api_error, password_field_kind
+
+    base = {"source": "leaklookup", "target": target, "sources_found": [], "data_types": [], "records": []}
     if not LEAKLOOKUP_API_KEY:
-        return {"source": "leaklookup", "available": False, "target": target,
-                "sources_found": [], "data_types": [], "error": "requires API key (LEAKLOOKUP_API_KEY, optional)"}
+        return {**base, "available": False, "error": "requires API key (LEAKLOOKUP_API_KEY, optional)"}
 
-    body = {"key": LEAKLOOKUP_API_KEY, "type": _leaklookup_query_type(target), "query": target}
+    query_type = _leaklookup_query_type(target, target_type)
+    base["query_type"] = query_type
+    body = {"key": LEAKLOOKUP_API_KEY, "type": query_type, "query": target}
     try:
         async with aiohttp.ClientSession(timeout=_HTTP_TIMEOUT) as session:
             async with session.post(LEAKLOOKUP_SEARCH_URL, data=body) as resp:
+                if resp.status in (400, 401, 403, 422, 429):
+                    return {**base, "available": True, **api_error("leaklookup", resp.status)}
                 resp.raise_for_status()
                 data = await resp.json()
     except aiohttp.ClientError as exc:
-        return {"source": "leaklookup", "available": True, "target": target,
-                "sources_found": [], "data_types": [], "error": str(exc)}
+        return {**base, "available": True, "error": str(exc)}
 
-    if (data or {}).get("error"):
-        return {"source": "leaklookup", "available": True, "target": target,
-                "sources_found": [], "data_types": [], "error": str(data.get("message"))}
+    if str((data or {}).get("error")).lower() in ("true", "1"):
+        msg = str(data.get("message") or "")
+        status = 429 if "limit" in msg.lower() else (401 if "key" in msg.lower() else None)
+        return {**base, "available": True, **api_error("leaklookup", status, msg)}
 
     message = (data or {}).get("message") or {}
     sources_found = list(message.keys()) if isinstance(message, dict) else []
     data_types: set[str] = set()
+    records: list[dict] = []
+    resolved_type = target_type or _infer_target_type(target)
     if isinstance(message, dict):
-        for field_sets in message.values():
-            for field_set in field_sets or []:
-                if isinstance(field_set, dict):
-                    data_types.update(field_set.keys())
+        for site, field_sets in message.items():
+            field_sets = [fs for fs in (field_sets or []) if isinstance(fs, dict)]
+            if not field_sets:
+                records.append({"provider": "leaklookup", "source_name": site, "leak_date": None,
+                                "matched_field": resolved_type, "matched_value": target, "leaked_fields": []})
+            for fs in field_sets:
+                present = {k for k, v in fs.items() if v not in (None, "", [])}
+                data_types.update(fs.keys())
+                fields = set(present)
+                if "password" in present:
+                    fields.discard("password")
+                    fields.add(password_field_kind(fs.get("password")))
+                email = fs.get("email_address") or fs.get("email")
+                user = fs.get("username")
+                if email:
+                    matched_field, matched_value = "email", email
+                elif user and resolved_type == "username":
+                    matched_field, matched_value = "username", user
+                else:
+                    matched_field, matched_value = resolved_type, target
+                records.append({"provider": "leaklookup", "source_name": site, "leak_date": None,
+                                "matched_field": matched_field, "matched_value": matched_value,
+                                "leaked_fields": sorted(fields)})
 
-    return {"source": "leaklookup", "available": True, "target": target,
-            "sources_found": sources_found, "data_types": sorted(data_types), "error": None}
+    return {**base, "available": True, "sources_found": sources_found,
+            "data_types": sorted(data_types), "records": records, "error": None}
 
 
 # ── 5. Pastebin Intelligence (psbdmp.ws, free) ─────────────────────────────────
@@ -678,6 +739,7 @@ async def gather_darkweb_intelligence(
     target: str,
     include_pastes: bool = True,
     include_github: bool = True,
+    target_type: str | None = None,
 ) -> dict:
     """
     Run every dark web / breach intelligence source for `target` in
@@ -695,9 +757,10 @@ async def gather_darkweb_intelligence(
     recommendations} from calculate_darkweb_exposure_score(). Never raises.
     """
     target = target.strip()
-    is_email = _is_email(target)
-    domain = _email_domain(target)
-    target_type = "email" if is_email else "domain"
+    target_type = target_type or _infer_target_type(target)
+    is_email = target_type == "email"
+    is_domain = target_type == "domain"
+    domain = _email_domain(target) if target_type != "username" else ""
 
     labels: list[str] = []
     tasks: list = []
@@ -707,18 +770,18 @@ async def gather_darkweb_intelligence(
         tasks.append(coro)
 
     _add("intelx", _query_intelx(target))
-    _add("breachdirectory", _query_breachdirectory(target))
-    _add("leaklookup", _query_leaklookup(target))
+    _add("breachdirectory", _query_breachdirectory(target, target_type))
+    _add("leaklookup", _query_leaklookup(target, target_type))
     _add("threat_actors", _query_threat_actors(target))
     if is_email:
         _add("hibp_email", _query_hibp_email(target))
         if include_pastes:
             _add("hibp_pastes", _query_hibp_pastes(target))
-    else:
+    elif is_domain:
         _add("hibp_domain", _query_hibp_domain(target))
     if include_pastes:
         _add("psbdmp", _query_psbdmp(target))
-    if include_github:
+    if include_github and domain:
         _add("github_secrets", _query_github_secrets(domain))
 
     raw = await asyncio.gather(*tasks, return_exceptions=True)

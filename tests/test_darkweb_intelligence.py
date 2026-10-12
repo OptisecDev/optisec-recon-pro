@@ -203,7 +203,11 @@ class TestBreachDirectory:
         })))
         result = _run(dw._query_breachdirectory(TEST_EMAIL))
         assert result["entries"][0]["email"] == TEST_EMAIL
-        assert result["entries"][0]["password_hash"] == "hash123"
+        # The password value is classified, then dropped — never returned.
+        assert result["entries"][0]["has_password"] is True
+        assert "password_hash" not in result["entries"][0]
+        assert "hash123" not in str(result)
+        assert result["records"][0]["source_name"] == "LeakSiteX"
 
     def test_unauthorized_key_handled(self, monkeypatch):
         monkeypatch.setattr(dw, "RAPIDAPI_KEY", "bad-key")
@@ -237,6 +241,7 @@ class TestLeakLookup:
         assert dw._leaklookup_query_type(TEST_EMAIL) == "email_address"
         assert dw._leaklookup_query_type("1.2.3.4") == "ip_address"
         assert dw._leaklookup_query_type(TEST_DOMAIN) == "domain"
+        assert dw._leaklookup_query_type("someuser", "username") == "username"
 
 
 # ── 5. psbdmp.ws ────────────────────────────────────────────────────────────────
@@ -461,21 +466,21 @@ async def _ok(**fields):
 class TestGatherDarkwebIntelligence:
     def _patch_all_sources(self, monkeypatch, *, hibp_email=None, hibp_domain=None,
                             hibp_pastes=None, psbdmp=None, github=None, threat_actors=None):
-        monkeypatch.setattr(dw, "_query_intelx", lambda t: _ok(source="intelx", result_count=0, preview=[]))
-        monkeypatch.setattr(dw, "_query_breachdirectory", lambda t: _ok(source="breachdirectory", entries=[]))
-        monkeypatch.setattr(dw, "_query_leaklookup", lambda t: _ok(source="leaklookup", sources_found=[], data_types=[]))
+        monkeypatch.setattr(dw, "_query_intelx", lambda t, *a: _ok(source="intelx", result_count=0, preview=[]))
+        monkeypatch.setattr(dw, "_query_breachdirectory", lambda t, *a: _ok(source="breachdirectory", entries=[]))
+        monkeypatch.setattr(dw, "_query_leaklookup", lambda t, *a: _ok(source="leaklookup", sources_found=[], data_types=[]))
         monkeypatch.setattr(dw, "_query_threat_actors",
-                             lambda t: threat_actors or _ok(source="threat_actors", threat_actors=[],
+                             lambda t, *a: threat_actors or _ok(source="threat_actors", threat_actors=[],
                                                              malware_families=[], campaigns=[], pulse_count=0))
         monkeypatch.setattr(dw, "_query_hibp_email",
-                             lambda t: hibp_email or _ok(source="hibp_email", breaches=[]))
+                             lambda t, *a: hibp_email or _ok(source="hibp_email", breaches=[]))
         monkeypatch.setattr(dw, "_query_hibp_domain",
-                             lambda t: hibp_domain or _ok(source="hibp_domain", breached_accounts={}))
+                             lambda t, *a: hibp_domain or _ok(source="hibp_domain", breached_accounts={}))
         monkeypatch.setattr(dw, "_query_hibp_pastes",
-                             lambda t: hibp_pastes or _ok(source="hibp_pastes", pastes=[]))
-        monkeypatch.setattr(dw, "_query_psbdmp", lambda t: psbdmp or _ok(source="psbdmp", pastes=[]))
+                             lambda t, *a: hibp_pastes or _ok(source="hibp_pastes", pastes=[]))
+        monkeypatch.setattr(dw, "_query_psbdmp", lambda t, *a: psbdmp or _ok(source="psbdmp", pastes=[]))
         monkeypatch.setattr(dw, "_query_github_secrets",
-                             lambda t: github or _ok(source="github_secrets", exposures=[]))
+                             lambda t, *a: github or _ok(source="github_secrets", exposures=[]))
 
     def test_email_target_structure(self, monkeypatch):
         self._patch_all_sources(monkeypatch)
@@ -532,9 +537,9 @@ class TestGatherDarkwebIntelligence:
     def test_include_pastes_false_skips_paste_sources(self, monkeypatch):
         calls: list[str] = []
         self._patch_all_sources(monkeypatch)
-        monkeypatch.setattr(dw, "_query_psbdmp", lambda t: calls.append("psbdmp") or _ok(source="psbdmp", pastes=[]))
+        monkeypatch.setattr(dw, "_query_psbdmp", lambda t, *a: calls.append("psbdmp") or _ok(source="psbdmp", pastes=[]))
         monkeypatch.setattr(dw, "_query_hibp_pastes",
-                             lambda t: calls.append("hibp_pastes") or _ok(source="hibp_pastes", pastes=[]))
+                             lambda t, *a: calls.append("hibp_pastes") or _ok(source="hibp_pastes", pastes=[]))
         _run(dw.gather_darkweb_intelligence(TEST_EMAIL, include_pastes=False))
         assert "psbdmp" not in calls
         assert "hibp_pastes" not in calls
@@ -543,7 +548,7 @@ class TestGatherDarkwebIntelligence:
         calls: list[str] = []
         self._patch_all_sources(monkeypatch)
         monkeypatch.setattr(dw, "_query_github_secrets",
-                             lambda t: calls.append("github") or _ok(source="github_secrets", exposures=[]))
+                             lambda t, *a: calls.append("github") or _ok(source="github_secrets", exposures=[]))
         _run(dw.gather_darkweb_intelligence(TEST_DOMAIN, include_github=False))
         assert "github" not in calls
 
@@ -558,8 +563,8 @@ class TestGatherDarkwebIntelligence:
         monkeypatch.setattr(dw, "RAPIDAPI_KEY", "")
         monkeypatch.setattr(dw, "LEAKLOOKUP_API_KEY", "")
         monkeypatch.setattr(dw, "OTX_API_KEY", "")
-        monkeypatch.setattr(dw, "_query_psbdmp", lambda t: _ok(source="psbdmp", pastes=[]))
-        monkeypatch.setattr(dw, "_query_github_secrets", lambda t: _ok(source="github_secrets", exposures=[]))
+        monkeypatch.setattr(dw, "_query_psbdmp", lambda t, *a: _ok(source="psbdmp", pastes=[]))
+        monkeypatch.setattr(dw, "_query_github_secrets", lambda t, *a: _ok(source="github_secrets", exposures=[]))
 
         result = _run(dw.gather_darkweb_intelligence(TEST_EMAIL))
         assert result["intelx"]["available"] is False
@@ -583,8 +588,8 @@ class TestGatherDarkwebIntelligence:
         monkeypatch.setattr(dw, "RAPIDAPI_KEY", "")
         monkeypatch.setattr(dw, "LEAKLOOKUP_API_KEY", "")
         monkeypatch.setattr(dw, "OTX_API_KEY", "fake-key")
-        monkeypatch.setattr(dw, "_query_psbdmp", lambda t: _ok(source="psbdmp", pastes=[]))
-        monkeypatch.setattr(dw, "_query_github_secrets", lambda t: _ok(source="github_secrets", exposures=[]))
+        monkeypatch.setattr(dw, "_query_psbdmp", lambda t, *a: _ok(source="psbdmp", pastes=[]))
+        monkeypatch.setattr(dw, "_query_github_secrets", lambda t, *a: _ok(source="github_secrets", exposures=[]))
 
         # _query_threat_actors is left real (unmocked) — only its HTTP call
         # is faked — so this exercises the actual filtering logic, not a

@@ -92,7 +92,8 @@ def test_real_leak_events_never_carry_simulated_flag():
     assert len(events) == 5
     for event in events:
         assert "simulated" not in event
-        assert set(event.keys()) == {"fingerprint", "source", "severity", "title", "detail"}
+        assert {"fingerprint", "source", "severity", "title", "detail"} <= set(event.keys())
+        assert "_matched_value" not in event
 
 
 def test_real_monitor_module_source_has_no_simulated_tag():

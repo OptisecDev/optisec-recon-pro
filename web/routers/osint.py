@@ -456,9 +456,12 @@ async def osint_network_scan(request: Request, user: User = Depends(_user), db: 
 async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
     require_feature_or_402("osint_darkweb", user)
     data = await request.json()
-    target = data.get("target", "").strip()
-    if not target:
-        raise HTTPException(400, "target is required")
+    from modules.darkweb.targets import validate_target
+    v = validate_target(data.get("target"), data.get("target_type") or None)
+    if not v.ok:
+        return JSONResponse(status_code=422, content={**v.error_payload(),
+                                                      "detail": f"{v.error_ar} — {v.error_en}"})
+    target = v.target
     include_pastes = bool(data.get("include_pastes", True))
     include_github = bool(data.get("include_github", True))
 
@@ -469,7 +472,8 @@ async def osint_darkweb_scan(request: Request, user: User = Depends(_user)):
     )
 
     from modules.osint.darkweb_intelligence import gather_darkweb_intelligence
-    result = await gather_darkweb_intelligence(target, include_pastes=include_pastes, include_github=include_github)
+    result = await gather_darkweb_intelligence(target, include_pastes=include_pastes,
+                                               include_github=include_github, target_type=v.target_type)
     exposure = result["exposure"]
 
     return JSONResponse({

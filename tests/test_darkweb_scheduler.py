@@ -206,6 +206,24 @@ class TestRunScheduledScan:
         assert summary["checked"] == 0
         assert summary["skipped"] == 0
 
+    def test_invalid_monitors_are_never_checked(self, db, monkeypatch):
+        async def seed():
+            uid = await _seed_user(db)
+            bad = await _seed_monitor(db, uid, "tp-link", last_checked_at=None)
+            await _seed_monitor(db, uid, "valid.com", last_checked_at=None)
+            async with db() as db_:
+                m = await db_.get(DarkWebMonitor, bad)
+                m.validation_status = "invalid"
+                await db_.commit()
+        _run(seed())
+
+        calls = []
+        _patch_check(monkeypatch, calls)
+
+        summary = _run(sched.run_scheduled_scan())
+        assert calls == ["valid.com"]
+        assert summary["checked"] == 1
+
     def test_one_failing_target_does_not_abort_the_sweep(self, db, monkeypatch):
         async def seed():
             uid = await _seed_user(db)
