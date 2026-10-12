@@ -69,7 +69,7 @@ from modules.ai.triage_engine import classify_findings_batch
 from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
-from config import APP_NAME, APP_VERSION, REPORTS_DIR, IS_PRODUCTION, GA_MEASUREMENT_ID
+from config import APP_NAME, APP_VERSION, REPORTS_DIR, IS_PRODUCTION, GA_MEASUREMENT_ID, DEMO_ENABLED
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
 from web.routers import darkweb_monitor
@@ -783,7 +783,8 @@ async def _startup_db_sequence():
                 )
             else:
                 await _ensure_first_admin()
-                await _ensure_demo_account()
+                if DEMO_ENABLED:
+                    await _ensure_demo_account()
             return
         except Exception as exc:
             if attempt < len(_STARTUP_DB_RETRY_DELAYS):
@@ -1061,6 +1062,8 @@ async def session_heartbeat(user: User = Depends(web_user)):
 @app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
 async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
     """One-click demo login — creates session for demo user."""
+    if not DEMO_ENABLED:
+        raise HTTPException(status_code=404, detail="Not Found")
     user = (await db.execute(
         select(User).where(User.username == "demo", User.is_active == True)
     )).scalar_one_or_none()

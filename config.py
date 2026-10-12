@@ -35,6 +35,11 @@ URLHAUS_API_KEY = os.environ.get("URLHAUS_API_KEY", "")
 # explicitly sets this to true AND then explicitly triggers each share.
 ENABLE_THREAT_SHARING = os.environ.get("ENABLE_THREAT_SHARING", "false").strip().lower() == "true"
 
+# One-click demo login (/demo) and the seeded "demo" account. Disabled by
+# default: unless an operator explicitly sets DEMO_ENABLED=true, startup never
+# creates the demo account and /demo returns 404 without issuing a session.
+DEMO_ENABLED = os.environ.get("DEMO_ENABLED", "false").strip().lower() == "true"
+
 # Database — defaults to SQLite; set DATABASE_URL for PostgreSQL
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
