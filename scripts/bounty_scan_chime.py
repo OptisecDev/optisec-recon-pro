@@ -1,13 +1,21 @@
 """Scoped bounty-engagement scan for the Chime Bugcrowd web scope.
 
-Authorized targets (hardcoded, not configurable via CLI/env — see
-ALLOWED_TARGETS / SCAN_TARGETS below). Unlike scripts/bounty_scan.py's
-Verisign scope, this scope has NO wildcard entry — every host is an exact,
-named target:
+Intended engagement targets (SCAN_TARGETS below):
     - member-qa.chime.com
     - app-qa.chime.com
     - www.chime.com
     - app.chime.com
+
+Authorization is NOT self-granted by this script. Before any connection to
+a target, every active check goes through
+web.domain_verification.check_scan_authorization() — the same gate
+/api/scan uses — which permits active checks only against a domain the
+running user (BOUNTY_SCAN_USERNAME) has verified with a DNS TXT token, or a
+listed training target (web.scan_authz). Any denial, or any error during
+the check, stops the run with a non-zero exit (fail-closed). The scan's own
+traffic is then confined to that authorization's network scope
+(web.domain_verification.network_scope_for / modules.scan_scope), which
+replaces the former hardcoded ALLOWED_TARGETS allowlist.
 
 Reuses the project's existing scan engine, the same way bounty_scan.py does:
     - DNS analysis          modules/recon/dns_lookup.py
@@ -99,29 +107,17 @@ Scope enforcement: every request modules/vuln/xss.py, ssrf.py, and lfi.py
 issue goes through Python's `requests` library. xss.py's form scanner in
 particular can resolve a form's `action` attribute to an absolute,
 off-target URL via urljoin() — so rather than trusting scanner-constructed
-URLs to stay in scope, enforce_scope() below monkeypatches
-requests.adapters.HTTPAdapter.send (the choke point every request AND every
-redirect hop passes through) to hard-block any request whose hostname isn't
-in ALLOWED_TARGETS before it reaches the network. enforce_scope() also
-monkeypatches socket.create_connection — the choke point for any raw TCP
-connection, not just `requests` calls — so the same guard covers
-_tcp_reachable()'s preflight probe too. Blocked attempts are counted and
-logged in the report's "scope_enforcement" section, not just silently
-dropped.
-
-Matching against ALLOWED_TARGETS is exact-hostname-only for this
-engagement (no "*.chime.com" entry exists in ALLOWED_TARGETS), which is
-deliberately suffix-confusion-safe: _host_in_scope() only allows a
-wildcard-style match for entries that literally start with "*.", and every
-entry here is a plain hostname, so a lookalike host like
-"evil-chime.com" (fails: not equal to any of the four exact hostnames) or
-"chime.com.evil.com" (fails: not equal to, and does not end with
-".<any of the four exact hostnames>") is never mistaken for an in-scope
-target. See _host_in_scope() and its accompanying tests-by-inspection in
-the module docstring for scripts/bounty_scan.py, whose wildcard-capable
-version of this same function this one is intentionally kept
-compatible with (so a future "*.chime.com" scope addition would need no
-code change, only an ALLOWED_TARGETS edit).
+URLs to stay in scope, this script reuses the project's shared network
+guard (modules/scan_scope.py): install_scope_guard() patches the same two
+choke points the /api/scan path uses — requests' HTTPAdapter.send (the
+original request and every redirect hop) and socket.create_connection (any
+raw TCP connection, including _tcp_reachable()'s preflight probe) — and
+run_in_scope() runs each active step inside the ScanScope returned by
+network_scope_for() for this host's authorization decision. A connection to
+anything outside that scope is blocked and recorded on the scope; the
+report's "scope_enforcement" section surfaces those blocked attempts. The
+scope is derived from the authorization decision, not from a hardcoded
+in-script allowlist.
 
 Passive OSINT lookups (Shodan InternetDB/API, Censys, BGPView/RIPEstat,
 system DNS resolver, domain WHOIS registries) are not subject to this
@@ -130,7 +126,11 @@ than sending traffic to the targets themselves, which is the intended,
 narrower scope of the guard.
 
 Usage:
-    python scripts/bounty_scan_chime.py
+    BOUNTY_SCAN_USERNAME=<user> python scripts/bounty_scan_chime.py
+
+BOUNTY_SCAN_USERNAME names the user whose DNS-TXT-verified domains authorize
+the active checks; the run refuses (non-zero exit) if it is unset, names no
+existing user, or does not authorize a target.
 
 Output: a timestamped JSON report under REPORTS_DIR (config.py), containing
 confidence scores and MITRE ATT&CK mapping per finding. Nothing sensitive
@@ -142,18 +142,16 @@ it with the same care as any other engagement artifact.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
+import os
 import socket
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import requests  # noqa: E402
-from requests.adapters import HTTPAdapter  # noqa: E402
+from sqlalchemy import select  # noqa: E402
 
 from config import REPORTS_DIR  # noqa: E402
 from modules.osint.confidence_engine import calculate_confidence, classify_severity  # noqa: E402
@@ -166,19 +164,29 @@ from modules.osint.mitre_mapping import finding_type_from_scan_results, generate
 from modules.osint.network_intelligence import _query_bgp, _query_censys, _query_shodan  # noqa: E402
 from modules.recon.dns_lookup import dns_lookup, reverse_lookup  # noqa: E402
 from modules.recon.whois_lookup import whois_lookup  # noqa: E402
+from modules.scan_scope import ScanScope, install_scope_guard, run_in_scope  # noqa: E402
 from modules.vuln.graphql_probe import scan_graphql  # noqa: E402
 from modules.vuln.lfi import scan_lfi  # noqa: E402
 from modules.vuln.ssrf import scan_ssrf  # noqa: E402
 from modules.vuln.xss import scan_xss  # noqa: E402
+from web.database import SessionLocal  # noqa: E402
+from web.domain_verification import check_scan_authorization, network_scope_for  # noqa: E402
+from web.models import User  # noqa: E402
 
-ALLOWED_TARGETS: tuple[str, ...] = (
+SCAN_TARGETS: tuple[str, ...] = (
     "member-qa.chime.com",
     "app-qa.chime.com",
     "www.chime.com",
     "app.chime.com",
 )
 
-SCAN_TARGETS: tuple[str, ...] = ALLOWED_TARGETS
+# Active checks this script sends at a target, named as web/scan_authz.py
+# classifies them: the XSS/SSRF/LFI payload matrix plus the _tcp_reachable()
+# port preflight. GraphQL introspection (scan_graphql) is active too but has
+# no scan_authz check name; it runs only under the same positive decision
+# these checks require, so it is never reached for an unauthorized host.
+AUTHZ_CHECKS: tuple[str, ...] = ("ports", "xss", "ssrf", "lfi")
+AUTHZ_SOURCE = "bounty_scan_chime"
 
 # modules/vuln/*.py report a categorical WAF-aware verdict, not a numeric
 # confidence — this maps that verdict onto a 0-1 score for the unified
@@ -227,77 +235,39 @@ GRAPHQL_METHODOLOGY_GAP = (
 )
 
 
-class ScopeViolationError(RuntimeError):
-    """Raised when scanner code attempts to send a request outside ALLOWED_TARGETS."""
+async def authorize_host(db, user: User, host: str) -> ScanScope:
+    """Run the same authorization gate /api/scan uses before any connection
+    to `host`, and return the network ScanScope the active checks must stay
+    inside.
 
-
-def _host_in_scope(hostname: str, allowed: tuple[str, ...]) -> bool:
-    """True if hostname matches an ALLOWED_TARGETS entry, exactly or (for a
-    "*.example.com" entry) as example.com itself or any of its subdomains.
-
-    None of this engagement's ALLOWED_TARGETS entries start with "*." — every
-    entry is an exact hostname — so only the `hostname == pattern` branch can
-    ever match here. That makes suffix-confusion hosts like "evil-chime.com"
-    or "chime.com.evil.com" reliably out of scope: neither equals any of the
-    four exact hostnames, and the wildcard/endswith branch (the only place a
-    suffix-style match could occur) is unreachable for this ALLOWED_TARGETS
-    set. Kept wildcard-capable (matching bounty_scan.py's version of this
-    function) so a future "*.chime.com" scope addition needs only an
-    ALLOWED_TARGETS edit, not a code change.
+    Fail-closed: a denied decision — or any error raised while performing the
+    check (DB error, DNS resolver failure, unexpected exception) — stops the
+    whole run with a non-zero exit. There is no path that reaches an active
+    scan without a positive authorization decision for its target; the
+    former hardcoded ALLOWED_TARGETS allowlist is gone.
     """
-    for pattern in allowed:
-        if pattern.startswith("*."):
-            suffix = pattern[2:]
-            if hostname == suffix or hostname.endswith("." + suffix):
-                return True
-        elif hostname == pattern:
-            return True
-    return False
-
-
-@contextlib.contextmanager
-def enforce_scope(blocked: list[str]):
-    """Hard-block any `requests` call, or any raw TCP connection, whose
-    hostname isn't in ALLOWED_TARGETS.
-
-    Patches HTTPAdapter.send rather than Session.request: requests handles
-    redirect hops via Session.send()/resolve_redirects(), which calls the
-    adapter directly and never goes back through Session.request(), so that
-    would miss a same-call redirect to an off-target host. HTTPAdapter.send
-    is the last stop before any socket is opened, for the original request
-    and every redirect hop alike.
-
-    Also patches socket.create_connection, the stdlib choke point every raw
-    TCP connection passes through (requests' HTTPConnection ultimately calls
-    it too, but HTTPAdapter.send is patched separately above so this guard
-    is not relied upon for that path). This covers non-`requests` callers
-    such as _tcp_reachable()'s preflight probe.
-    """
-    original_send = HTTPAdapter.send
-    original_create_connection = socket.create_connection
-
-    def guarded_send(self, request, *args, **kwargs):
-        hostname = (urlparse(request.url).hostname or "").lower()
-        if not _host_in_scope(hostname, ALLOWED_TARGETS):
-            blocked.append(request.url)
-            raise ScopeViolationError(f"blocked out-of-scope request to {request.url!r}")
-        return original_send(self, request, *args, **kwargs)
-
-    def guarded_create_connection(address, *args, **kwargs):
-        host = (address[0] or "").lower()
-        if not _host_in_scope(host, ALLOWED_TARGETS):
-            target = f"{address[0]}:{address[1]}"
-            blocked.append(target)
-            raise ScopeViolationError(f"blocked out-of-scope TCP connection to {target!r}")
-        return original_create_connection(address, *args, **kwargs)
-
-    HTTPAdapter.send = guarded_send
-    socket.create_connection = guarded_create_connection
     try:
-        yield
-    finally:
-        HTTPAdapter.send = original_send
-        socket.create_connection = original_create_connection
+        decision = await check_scan_authorization(
+            db, user, host, AUTHZ_CHECKS, source=AUTHZ_SOURCE,
+        )
+    except Exception as exc:  # noqa: BLE001 — fail closed on any check failure
+        print(
+            f"[{AUTHZ_SOURCE}] REFUSED: authorization check for {host!r} failed "
+            f"({exc.__class__.__name__}); refusing active scan (fail-closed).",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    if not decision.ok:
+        print(
+            f"[{AUTHZ_SOURCE}] REFUSED: {host!r} is not an authorized target. "
+            f"Active checks require a DNS-TXT-verified domain the running user "
+            f"owns (or a listed training target). {decision.reason or ''}".rstrip(),
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    return await network_scope_for(decision, host)
 
 
 async def _gather_dns(host: str) -> dict:
@@ -364,25 +334,21 @@ def _tcp_reachable(host: str, port: int, timeout: float = _PREFLIGHT_TIMEOUT) ->
     just avoids burning the full timeout on every single one of them.
 
     Calls socket.create_connection() directly (not a local `import socket`
-    alias) so that, under enforce_scope(), this goes through the
-    guarded_create_connection() patch just like every other caller in this
-    process. `host` here is always a hardcoded SCAN_TARGETS entry today, so
-    this guard is a no-op in practice — but it's cheap insurance against any
-    future code path (a scanner-derived redirect target, a subdomain found
-    during a scan, etc.) reaching this function with an out-of-scope host and
-    silently connecting to it instead of being blocked.
+    alias) so that, when run via run_in_scope(), it goes through the shared
+    modules/scan_scope.py guard just like every other caller in this process.
+    A connection to a host outside the active scan scope is blocked there
+    (recorded on the scope) and surfaces as an OSError, so it is treated as
+    "not reachable" — the scan simply does not proceed against it.
     """
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
-    except ScopeViolationError:
-        raise
     except OSError:
         return False
 
 
-async def _run_vuln_scans(host: str, blocked: list[str]) -> dict:
-    """Run the XSS/SSRF/LFI/GraphQL-introspection matrix against `host`.
+async def _run_vuln_scans(host: str, scope: ScanScope) -> dict:
+    """Run the XSS/SSRF/LFI/GraphQL-introspection matrix against `host`, inside `scope`.
 
     Responsible Disclosure — PoC only, no deeper-impact probing, per
     Chime's Bugcrowd Engagement Rules. Two stopping rules, both enforced
@@ -412,12 +378,7 @@ async def _run_vuln_scans(host: str, blocked: list[str]) -> dict:
     findings: list[dict] = []
     reachability: dict[str, bool] = {}
     for scheme, port in (("https", 443), ("http", 80)):
-        try:
-            reachable = await asyncio.to_thread(_tcp_reachable, host, port)
-        except ScopeViolationError as exc:
-            blocked.append(str(exc))
-            reachability[scheme] = False
-            continue
+        reachable = await asyncio.to_thread(run_in_scope, scope, _tcp_reachable, host, port)
         reachability[scheme] = reachable
         if not reachable:
             continue
@@ -432,11 +393,7 @@ async def _run_vuln_scans(host: str, blocked: list[str]) -> dict:
             (scan_graphql, base),
         )
         for scan_fn, url in scan_calls:
-            try:
-                results = await asyncio.to_thread(scan_fn, url)
-            except ScopeViolationError as exc:
-                blocked.append(str(exc))
-                continue
+            results = await asyncio.to_thread(run_in_scope, scope, scan_fn, url)
 
             confirmed_seen = False
             kept: list[dict] = []
@@ -457,11 +414,11 @@ async def _run_vuln_scans(host: str, blocked: list[str]) -> dict:
     return {"port_reachability": reachability, "findings": findings}
 
 
-async def scan_target(host: str, blocked: list[str]) -> dict:
+async def scan_target(host: str, scope: ScanScope) -> dict:
     dns_result, whois_result, network_intel = await asyncio.gather(
         _gather_dns(host), _gather_whois(host), _gather_network_intelligence(host),
     )
-    vuln_scan = await _run_vuln_scans(host, blocked)
+    vuln_scan = await _run_vuln_scans(host, scope)
     vulnerabilities = vuln_scan["findings"]
 
     confirmed_only = [v for v in vulnerabilities if v.get("verdict") == "CONFIRMED"]
@@ -485,7 +442,12 @@ def _build_report(started_at: str, results: dict[str, dict], blocked: list[str])
         "engagement": {
             "program": "Chime (Bugcrowd)",
             "targets": list(SCAN_TARGETS),
-            "allowed_scope_patterns": list(ALLOWED_TARGETS),
+            "authorization": (
+                "Per-target: web.domain_verification.check_scan_authorization "
+                f"(source={AUTHZ_SOURCE!r}, checks={list(AUTHZ_CHECKS)}). Active "
+                "checks run only against a DNS-TXT-verified domain the running "
+                "user owns; network scope from network_scope_for()."
+            ),
             "in_scope_checks": [
                 "dns_analysis", "whois_analysis", "network_intelligence_passive",
                 "xss", "ssrf", "lfi", "graphql_introspection",
@@ -526,7 +488,7 @@ def _build_report(started_at: str, results: dict[str, dict], blocked: list[str])
     }
 
 
-async def main() -> None:
+async def run(db, user: User) -> None:
     started_at = datetime.now(timezone.utc).isoformat()
     blocked: list[str] = []
     results: dict[str, dict] = {}
@@ -535,18 +497,21 @@ async def main() -> None:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_path = REPORTS_DIR / f"bounty_scan_chime_{timestamp}.json"
 
-    with enforce_scope(blocked):
-        for host in SCAN_TARGETS:
-            print(f"[bounty_scan_chime] scanning {host} ...", flush=True)
-            results[host] = await scan_target(host, blocked)
-            # Checkpoint after each target so a kill/timeout doesn't lose
-            # already-completed work — this report is overwritten in place
-            # as each target finishes, not just once at the very end.
-            out_path.write_text(json.dumps(
-                _build_report(started_at, results, blocked), indent=2,
-                default=str, ensure_ascii=False,
-            ))
-            print(f"[bounty_scan_chime] checkpoint written to {out_path}", flush=True)
+    for host in SCAN_TARGETS:
+        # Authorize BEFORE any connection to the target. A denial (or any
+        # error in the check) stops the whole run with a non-zero exit.
+        scope = await authorize_host(db, user, host)
+        print(f"[bounty_scan_chime] scanning {host} ...", flush=True)
+        results[host] = await scan_target(host, scope)
+        blocked.extend(scope.blocked)
+        # Checkpoint after each target so a kill/timeout doesn't lose
+        # already-completed work — this report is overwritten in place
+        # as each target finishes, not just once at the very end.
+        out_path.write_text(json.dumps(
+            _build_report(started_at, results, blocked), indent=2,
+            default=str, ensure_ascii=False,
+        ))
+        print(f"[bounty_scan_chime] checkpoint written to {out_path}", flush=True)
 
     print(flush=True)
     print(f"[bounty_scan_chime] report written to {out_path}", flush=True)
@@ -560,6 +525,30 @@ async def main() -> None:
         )
     if blocked:
         print(f"[bounty_scan_chime] WARNING: {len(blocked)} out-of-scope request(s) were blocked — see report.")
+
+
+async def main() -> None:
+    username = os.environ.get("BOUNTY_SCAN_USERNAME")
+    if not username:
+        print(
+            "[bounty_scan_chime] Error: BOUNTY_SCAN_USERNAME environment variable is not set",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+
+    # Install the shared network-scope guard once for this process, exactly
+    # as web/app.py does, so every active step's traffic is confined to its
+    # authorized scope.
+    install_scope_guard()
+
+    async with SessionLocal() as db:
+        user = (await db.execute(
+            select(User).where(User.username == username)
+        )).scalar_one_or_none()
+        if user is None:
+            print(f"[bounty_scan_chime] Error: no user found with username: {username}", file=sys.stderr)
+            raise SystemExit(1)
+        await run(db, user)
 
 
 if __name__ == "__main__":
