@@ -46,9 +46,10 @@ The first-run admin is auto-created. Password is printed to stdout on first star
 If the DB already exists, use whatever password was set (or reset it):
 
 ```bash
-# Reset admin password in the DB
+# Reset admin password in the DB (set ADMIN_NEW_PASSWORD first, e.g. read -rs ADMIN_NEW_PASSWORD; export ADMIN_NEW_PASSWORD)
 source venv/bin/activate && python3 -c "
 import asyncio
+import os
 from web.database import SessionLocal
 from web.models import User
 from web.auth import hash_password
@@ -58,9 +59,9 @@ async def reset():
     async with SessionLocal() as db:
         u = (await db.execute(select(User).where(User.username == 'admin'))).scalar_one_or_none()
         if u:
-            u.password_hash = hash_password('Optisec123!')
+            u.password_hash = hash_password(os.environ['ADMIN_NEW_PASSWORD'])
             await db.commit()
-            print('Password is now: Optisec123!')
+            print('Admin password updated.')
 asyncio.run(reset())
 "
 ```
@@ -70,7 +71,7 @@ Then log in via web form and capture the session cookie:
 ```bash
 curl -s -c /tmp/cookies.txt -b /tmp/cookies.txt \
   -X POST http://localhost:8000/login \
-  -d "username=admin&password=Optisec123!&next=/" \
+  --data-urlencode "username=admin" --data-urlencode "password=$ADMIN_NEW_PASSWORD" --data-urlencode "next=/" \
   -D /tmp/login_headers.txt -o /dev/null
 grep "set-cookie" /tmp/login_headers.txt   # should show access_token
 ```
@@ -80,7 +81,7 @@ Or via JSON API:
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"Optisec123!"}' \
+  -d "{\"username\":\"admin\",\"password\":\"$ADMIN_NEW_PASSWORD\"}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))")
 ```
 
@@ -90,6 +91,7 @@ Playwright is installed in the venv:
 
 ```python
 source venv/bin/activate && python3 - << 'PYEOF'
+import os
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
@@ -99,7 +101,7 @@ with sync_playwright() as p:
     # Login
     page.goto('http://localhost:8000/login')
     page.fill('input[name="username"]', 'admin')
-    page.fill('input[name="password"]', 'Optisec123!')
+    page.fill('input[name="password"]', os.environ['ADMIN_NEW_PASSWORD'])
     page.click('button[type="submit"]')
     page.wait_for_url('http://localhost:8000/', timeout=5000)
 
