@@ -23,7 +23,7 @@ class SuccessResponse(BaseModel):
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, example="admin",
                           description="Username or email address")
-    password: str = Field(..., min_length=1, example="Optisec123!",
+    password: str = Field(..., min_length=1, example="your-password",
                           description="Account password")
 
 
