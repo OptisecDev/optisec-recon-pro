@@ -227,7 +227,6 @@ if [ "${ADMIN_PASS_GENERATED:-false}" = true ]; then
 else
   echo -e "  ${YELLOW}Admin:${NC}     admin / (FIRST_ADMIN_PASSWORD from your environment or .env)"
 fi
-echo -e "  ${YELLOW}Demo:${NC}      demo / Demo@optisec1"
 echo ""
 echo -e "  Useful commands:"
 echo -e "  ${CYAN}docker compose logs -f app${NC}    — app logs"
