@@ -23,7 +23,10 @@ MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD", "")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MINIO_ARCHIVE_BUCKET = os.getenv("MINIO_ARCHIVE_BUCKET", "optisec-eternal-archive")
 
-ETERNAL_REDIS_URL = os.getenv("ETERNAL_REDIS_URL", "redis://localhost:6379/1")
+# No default: Redis now requires auth (docker-compose.eternal.yml), so any
+# usable URL carries credentials and must come from the environment. Nothing
+# in the codebase consumes this yet; a future consumer must handle None.
+ETERNAL_REDIS_URL = os.getenv("ETERNAL_REDIS_URL") or None
 
 SECRET_KEY = os.getenv("SECRET_KEY", "")
 
