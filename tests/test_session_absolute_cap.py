@@ -229,8 +229,8 @@ def test_capped_token_rejected_via_bearer(client, capped_token):
     assert resp.json() == {"error": "Invalid or expired token"}
 
 
-def test_capped_token_rejected_via_websocket_query_token(capped_token):
-    ws = SimpleNamespace(query_params={"token": capped_token}, headers={}, cookies={})
+def test_capped_token_rejected_via_websocket_bearer(capped_token):
+    ws = SimpleNamespace(headers={"authorization": f"Bearer {capped_token}"}, cookies={})
     with pytest.raises(HTTPException) as exc:
         _run(auth_module.get_ws_user(ws, db=None))
     assert exc.value.status_code == 401

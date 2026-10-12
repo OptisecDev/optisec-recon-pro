@@ -9,12 +9,15 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 import bcrypt
 from jose import JWTError, jwt
 from fastapi import HTTPException, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+
+from web.models import User
 
 from config import JWT_SECRET as SECRET_KEY, JWT_IDLE_HOURS, JWT_ABSOLUTE_MAX_HOURS  # config resolves/validates JWT_SECRET at startup
 
@@ -352,37 +355,42 @@ async def get_current_user(request: Request, db: AsyncSession):
     return user
 
 
-async def get_ws_user(websocket: WebSocket, db: AsyncSession):
-    """Authenticate a WebSocket handshake.
+def _ws_origin_is_same_site(websocket) -> bool:
+    origin = websocket.headers.get("origin")
+    host = websocket.headers.get("host")
+    if not origin or not host:
+        return False
+    return urlsplit(origin).netloc.lower() == host.lower()
 
-    Browsers cannot attach custom headers to a WebSocket handshake, so a
-    `?token=` query param is accepted in addition to the same
-    Authorization/cookie sources `get_current_user` reads (WebSocket and
-    Request both expose `.headers`/`.cookies`, so same-origin page loads
-    that already carry the `access_token` cookie work with no frontend
-    changes). Raises HTTPException(401) on any failure — callers must
-    catch this and close the socket themselves, since a WebSocket has not
-    been accepted yet and cannot be answered like a normal HTTP request.
-    """
-    from web.models import User
 
-    token = websocket.query_params.get("token")
-    if not token:
-        return await get_current_user(websocket, db)
-
+async def _load_user_from_bearer(token: str, db: AsyncSession) -> User:
     try:
         payload = decode_session_token(token)
         user_id = int(payload["sub"])
     except (JWTError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
-
     result = await db.execute(
-        select(User).where(User.id == user_id, User.is_active == True)
+        select(User).where(User.id == user_id, User.is_active == True)  # noqa: E712
     )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+
+async def get_ws_user(websocket: WebSocket, db: AsyncSession):
+    """Authenticate a WebSocket handshake.
+    - Authorization: Bearer header is accepted (non-browser clients).
+    - Cookie auth is accepted only when Origin matches Host (blocks cross-site
+      WebSocket hijacking). Query-string tokens are NOT accepted.
+    Raises HTTPException; the caller must close the socket.
+    """
+    auth_header = websocket.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return await _load_user_from_bearer(auth_header[7:].strip(), db)
+    if not _ws_origin_is_same_site(websocket):
+        raise HTTPException(status_code=403, detail="Cross-origin WebSocket rejected")
+    return await get_current_user(websocket, db)
 
 
 def require_roles(*roles: str):
