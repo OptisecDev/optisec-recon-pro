@@ -25,6 +25,7 @@
     .legal-wrap table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; font-size: 13px; }
     .legal-wrap th, .legal-wrap td { border: 1px solid var(--border); padding: 7px 9px; text-align: left; vertical-align: top; }
     .legal-wrap th { background: var(--card); }
+    .legal-draft { border: 1px solid var(--warning, #f0ad4e); background: var(--card); color: var(--warning, #f0ad4e); padding: 10px 14px; border-radius: 6px; font-size: 14px; font-weight: 700; margin-bottom: 24px; text-align: center; }
     .legal-footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 13px; text-align: center; }
     .legal-footer a { color: var(--text-dim); margin: 0 8px; }
     .legal-footer a:hover { color: var(--accent); }
@@ -41,6 +42,8 @@
       <a href="/login">Sign in</a>
     </nav>
   </div>
+
+  <div class="legal-draft" role="note"><span dir="rtl" lang="ar">مسودة بانتظار المراجعة القانونية</span> — Draft pending legal review</div>
 
   {% block content %}{% endblock %}
 

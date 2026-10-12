@@ -72,3 +72,15 @@ def test_landing_footer_links_legal_pages(client):
     assert resp.status_code == 200
     assert 'href="/privacy"' in resp.text
     assert 'href="/terms"' in resp.text
+
+
+@pytest.mark.parametrize("path,title", [
+    ("/privacy", "<title>Privacy Policy — "),
+    ("/terms", "<title>Terms of Service — "),
+])
+def test_legal_page_title_and_draft_notice(client, path, title):
+    resp = client.get(path)
+    assert resp.status_code == 200
+    assert title in resp.text
+    # Both pages stay marked as drafts until the owner's legal review.
+    assert "مسودة بانتظار المراجعة القانونية" in resp.text
