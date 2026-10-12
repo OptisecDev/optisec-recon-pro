@@ -81,7 +81,6 @@
 ---
 
 ## معلومات المشروع
-- Admin: admin / Optisec123!
 - Launch: `source venv/bin/activate && python -m uvicorn web.app:app --host 0.0.0.0 --port 8000`
 - أو: `./start.sh web`
 - Path: /home/ehsan/projects/optisec-recon-pro
