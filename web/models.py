@@ -35,7 +35,8 @@ class DomainVerification(Base):
     """Proof that a user controls a domain, which is what unlocks active scan
     checks against it (web/scan_authz.py). Per-user: two users scanning the
     same domain each verify it themselves. A dns_txt record covers the domain
-    and its subdomains; an http_file record covers only that exact host.
+    and its subdomains; it is the only method that grants anything (legacy
+    http_file rows are ignored).
     The token is not a secret -- it is published in DNS or on the site -- so
     it is stored as-is. See web/domain_verification.py for the checks."""
     __tablename__ = "domain_verifications"
@@ -46,7 +47,7 @@ class DomainVerification(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     domain = Column(String(253), nullable=False)
-    method = Column(String(20), nullable=False)  # dns_txt | http_file
+    method = Column(String(20), nullable=False)  # dns_txt (legacy: http_file, ignored)
     token = Column(String(64), unique=True, nullable=False)
     status = Column(String(20), nullable=False, default="pending")  # pending | verified | failed | revoked
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -140,9 +141,10 @@ class Scan(Base):
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     # Why this scan was allowed to run (web/scan_authz.py AuthzDecision):
-    # "passive_only" | "verified:<method>:<domain>" | "training:<host>",
-    # prefixed "unenforced:" under SCAN_AUTHZ_ENFORCE=false. NULL for scans
-    # created before scan authorization existed.
+    # "passive_only" | "verified:<method>:<domain>" | "training:<host>".
+    # Older rows may carry an "unenforced:" prefix from the since-removed
+    # log-only switch. NULL for scans created before scan authorization
+    # existed.
     authz_basis = Column(String(300), nullable=True)
     authz_checks = Column(JSON, nullable=True)
 

@@ -34,6 +34,7 @@ from sqlalchemy.pool import StaticPool
 from web.database import Base, get_db
 from web.models import DomainVerification, User, Target
 import web.app as app_module
+import web.domain_verification as dv
 import web.rate_limit as rate_limit
 import web.routers.autonomous_rt as art_router
 import modules.ai_advanced.autonomous_redteam as autonomous_redteam
@@ -41,6 +42,15 @@ import modules.ai_advanced.autonomous_redteam as autonomous_redteam
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def _txt_published(monkeypatch):
+    """Every active scan re-checks DNS live; fake the seeded record's TXT as
+    published so no real lookup runs."""
+    async def fake(domain, token):
+        return dv.CheckResult(True)
+    monkeypatch.setattr(dv, "check_dns_txt", fake)
 
 
 @pytest.fixture(autouse=True)
@@ -71,8 +81,9 @@ def client():
             session.add(user)
             await session.flush()
             session.add(Target(user_id=user.id, url="https://example.com", name="t1"))
-            # Fresh verification so /api/start passes scan authorization
-            # without a DNS re-check -- this test is about the rate limit.
+            # Verified record (its DNS re-check is faked by _txt_published)
+            # so /api/start passes scan authorization -- this test is about
+            # the rate limit.
             session.add(DomainVerification(
                 user_id=user.id, domain="example.com", method="dns_txt", token="tok-art",
                 status="verified", verified_at=datetime.utcnow(), last_checked_at=datetime.utcnow(),

@@ -18,14 +18,15 @@ import pytest
 
 from web.scan_authz import (
     ACTIVE_CHECKS, ALL_CHECKS, PASSIVE_CHECKS, SCAN_STEP_ORDER, TRAINING_TARGETS,
-    VERIFY_METHOD_DNS_TXT, VERIFY_METHOD_HTTP_FILE, VerifiedScope,
+    VERIFY_METHOD_DNS_TXT, VerifiedScope,
     decide, expand_checks, host_in_verified_scope, normalize_host,
 )
 
 APP_PY = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "app.py")
 
 DNS = VerifiedScope("example.com", VERIFY_METHOD_DNS_TXT)
-FILE = VerifiedScope("app.example.org", VERIFY_METHOD_HTTP_FILE)
+# Legacy rows from the removed file-based method: must grant nothing.
+FILE = VerifiedScope("app.example.org", "http_file")
 
 
 # ── Classification ───────────────────────────────────────────────────────────
@@ -114,14 +115,14 @@ def test_dns_txt_does_not_match_suffix_lookalike():
     assert host_in_verified_scope("example.com.evil.net", [DNS]) is None
 
 
-def test_http_file_covers_exact_host_only():
-    assert host_in_verified_scope("app.example.org", [FILE]) == FILE
+def test_legacy_http_file_covers_nothing():
+    assert host_in_verified_scope("app.example.org", [FILE]) is None
     assert host_in_verified_scope("x.app.example.org", [FILE]) is None
     assert host_in_verified_scope("example.org", [FILE]) is None
 
 
 def test_ip_never_in_verified_scope():
-    assert host_in_verified_scope("93.184.216.34", [VerifiedScope("93.184.216.34", VERIFY_METHOD_HTTP_FILE)]) is None
+    assert host_in_verified_scope("93.184.216.34", [VerifiedScope("93.184.216.34", VERIFY_METHOD_DNS_TXT)]) is None
 
 
 def test_unknown_method_grants_nothing():
@@ -158,9 +159,10 @@ def test_run_all_on_verified_subdomain_allowed():
     assert d.basis == "verified:dns_txt:example.com"
 
 
-def test_file_verification_does_not_extend_to_subdomain():
-    d = decide("x.app.example.org", ["xss"], [FILE])
+def test_legacy_file_verification_does_not_authorize_even_exact_host():
+    d = decide("app.example.org", ["xss"], [FILE])
     assert d.denied == {"xss"}
+    assert d.basis == "passive_only"
 
 
 def test_verification_for_other_domain_does_not_help():

@@ -4,10 +4,14 @@ Passive checks may run against any target. Active checks -- anything that
 sends attack or probe traffic to the target's own infrastructure -- run only
 when the target host is either:
 
-  * covered by a domain the requesting user has verified ownership of
-    (DNS TXT record, or a token file served from the host), or
+  * covered by a domain the requesting user has verified ownership of with
+    a DNS TXT record carrying their system-generated token, or
   * on the hardcoded TRAINING_TARGETS allowlist, and then only for the
     checks that site's own published terms permit.
+
+There is no override: no request parameter, environment variable or other
+setting turns these rules off. Anything this module can't positively
+authorize is denied (fail-closed).
 
 This module is the pure policy layer: classification, host normalization,
 the training allowlist, and decide(). It does no I/O. The verification
@@ -78,14 +82,13 @@ TRAINING_TARGETS: dict = {
 }
 
 VERIFY_METHOD_DNS_TXT = "dns_txt"
-VERIFY_METHOD_HTTP_FILE = "http_file"
 
 
 @dataclass(frozen=True)
 class VerifiedScope:
     """One verified domain, as decide() needs it. A dns_txt verification
-    covers the domain and every subdomain of it; an http_file verification
-    covers only that exact host."""
+    covers the domain and every subdomain of it. Any other method (e.g. a
+    legacy http_file row) covers nothing."""
     domain: str
     method: str
 
@@ -159,12 +162,10 @@ def host_in_verified_scope(host: str, scopes: Iterable[VerifiedScope]) -> Option
         domain = normalize_host(s.domain)
         if not domain:
             continue
-        if s.method == VERIFY_METHOD_DNS_TXT:
-            if host == domain or host.endswith("." + domain):
-                return s
-        elif s.method == VERIFY_METHOD_HTTP_FILE:
-            if host == domain:
-                return s
+        if s.method != VERIFY_METHOD_DNS_TXT:
+            continue
+        if host == domain or host.endswith("." + domain):
+            return s
     return None
 
 
@@ -216,8 +217,9 @@ def decide(
                 )
             else:
                 parts.append(
-                    "Active checks require verifying ownership of this domain "
-                    "(DNS TXT record or verification file)"
+                    "Active checks (XSS, SQLi, LFI, SSRF, port scans, ...) are only "
+                    "allowed on a domain you have verified with a DNS TXT record, "
+                    "or on a listed training target"
                 )
         if unknown:
             parts.append(f"Unknown scan type(s): {', '.join(sorted(unknown))}")
@@ -229,19 +231,20 @@ def decide(
 def scope_targets(decision: AuthzDecision) -> Optional[tuple]:
     """(exact_hosts, domain_suffixes) an active scan under `decision` may
     contact -- the input to modules/scan_scope.build_scope(). None when no
-    network scope applies: nothing active was allowed (passive_only), or the
-    decision came from log-only mode ("unenforced:" basis), which must not
-    block anything.
+    network scope applies because nothing active was allowed (passive_only).
 
     A dns_txt verification covers the domain and its subdomains (suffix); a
-    file verification or a training target covers only that exact host.
+    training target covers only that exact host. Any other basis yields an
+    empty scope -- nothing reachable -- rather than an unrestricted one.
     """
     kind, _, rest = decision.basis.partition(":")
     if kind == "verified":
         method, _, domain = rest.partition(":")
         if method == VERIFY_METHOD_DNS_TXT:
             return frozenset(), frozenset({domain})
-        return frozenset({domain}), frozenset()
+        return frozenset(), frozenset()
     if kind == "training":
         return frozenset({rest}), frozenset()
-    return None
+    if kind == "passive_only":
+        return None
+    return frozenset(), frozenset()

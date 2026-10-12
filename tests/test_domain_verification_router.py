@@ -50,7 +50,6 @@ def _no_real_checks(monkeypatch):
     async def boom(*a, **k):
         raise AssertionError("real ownership check attempted in a router test")
     monkeypatch.setattr(dv, "check_dns_txt", boom)
-    monkeypatch.setattr(dv, "check_http_file", boom)
 
 
 @pytest.fixture
@@ -107,7 +106,6 @@ def _fake_check(monkeypatch, verified, error=None, transient=False):
     async def fake(*a, **k):
         return dv.CheckResult(verified, error, transient)
     monkeypatch.setattr(dv, "check_dns_txt", fake)
-    monkeypatch.setattr(dv, "check_http_file", fake)
 
 
 def _db_rows(sf):
@@ -137,12 +135,13 @@ def test_create_dns_returns_token_and_instructions(client):
     assert body["instructions"]["value"] == f"optisec-verify={body['token']}"
 
 
-def test_create_http_file_instructions(client):
+def test_create_http_file_refused(client):
     c, sf = client
     _, tok = _seed_user(sf, "alice")
-    body = _create(c, tok, "app.example.com", "http_file").json()
-    assert body["instructions"]["url"] == "https://app.example.com/.well-known/optisec-verify.txt"
-    assert body["instructions"]["content"] == body["token"]
+    r = _create(c, tok, "app.example.com", "http_file")
+    assert r.status_code == 400
+    assert "dns_txt" in r.text
+    assert _db_rows(sf) == []
 
 
 def test_create_is_idempotent_per_domain_and_method(client):
@@ -153,8 +152,8 @@ def test_create_is_idempotent_per_domain_and_method(client):
     assert again.status_code == 200
     assert again.json()["id"] == first["id"]
     assert again.json()["token"] == first["token"]
-    other_method = _create(c, tok, method="http_file").json()
-    assert other_method["id"] != first["id"]
+    other_domain = _create(c, tok, "other.example.com").json()
+    assert other_domain["id"] != first["id"]
     assert len(_db_rows(sf)) == 2
 
 
@@ -173,7 +172,7 @@ def test_same_domain_two_users_get_separate_tokens(client):
     {"method": "dns_txt"},
     {"domain": 123, "method": "dns_txt"},
     {"domain": "localhost", "method": "dns_txt"},
-    {"domain": "10.0.0.5", "method": "http_file"},
+    {"domain": "10.0.0.5", "method": "dns_txt"},
     {"domain": "93.184.216.34", "method": "dns_txt"},
     {"domain": "intranet", "method": "dns_txt"},
 ])

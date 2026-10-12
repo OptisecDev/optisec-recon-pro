@@ -43,9 +43,8 @@ def _isolation(monkeypatch):
     monkeypatch.delenv("SCAN_AUTHZ_ENFORCE", raising=False)
 
     async def no_network(*a, **k):
-        raise AssertionError("the preview/UI must never run a DNS/HTTP ownership check")
+        raise AssertionError("the preview/UI must never run a DNS ownership check")
     monkeypatch.setattr(dv, "check_dns_txt", no_network)
-    monkeypatch.setattr(dv, "check_http_file", no_network)
     # network_scope_for() resolves the scope's hosts; keep that offline.
     monkeypatch.setattr(scan_scope_module, "_resolve", lambda host: {"93.184.216.34"})
     yield
@@ -167,13 +166,13 @@ def test_preview_training_target(env):
     assert "xss" in body["denied"]
 
 
-def test_preview_log_only_mode_allows_everything(env, monkeypatch):
+def test_preview_ignores_removed_enforce_switch(env, monkeypatch):
     monkeypatch.setenv("SCAN_AUTHZ_ENFORCE", "false")
     c, sf = env
     cookies, _ = _seed(sf)
     body = c.get("/api/scan-authorization", params={"target": "unverified.test"}, cookies=cookies).json()
-    assert body["basis"] == "unenforced:passive_only"
-    assert body["denied"] == []
+    assert body["basis"] == "passive_only"
+    assert set(body["denied"]) == ACTIVE_CHECKS
 
 
 def test_preview_requires_target_and_auth(env):
@@ -184,10 +183,15 @@ def test_preview_requires_target_and_auth(env):
 
 
 def test_preview_agrees_with_real_gate(env, monkeypatch):
-    """What the preview allows for a fresh record is exactly what POST
-    /api/scan accepts -- the page must never offer a module the gate refuses."""
+    """What the preview allows for a record whose TXT is still published is
+    exactly what POST /api/scan accepts -- the page must never offer a
+    module the gate refuses."""
     c, sf = env
-    cookies, _ = _seed(sf, verifications=[("app.example.org", "http_file", "verified", NOW, None)])
+    cookies, _ = _seed(sf, verifications=[("app.example.org", "dns_txt", "verified", NOW, None)])
+
+    async def txt_published(domain, token):
+        return dv.CheckResult(True)
+    monkeypatch.setattr(dv, "check_dns_txt", txt_published)
 
     async def fake_task(*a, **k):
         return None
@@ -255,11 +259,12 @@ def test_targets_page_viewer_gets_no_verification_controls(env):
     assert "Passive only" in html
 
 
-def test_targets_page_log_only_badge(env, monkeypatch):
+def test_targets_page_no_log_only_badge(env, monkeypatch):
     monkeypatch.setenv("SCAN_AUTHZ_ENFORCE", "false")
     c, sf = env
     cookies, ids = _seed(sf, targets=["https://other.test"])
-    assert "Not enforced" in _row(c.get("/targets", cookies=cookies).text, ids["https://other.test"])
+    row = _row(c.get("/targets", cookies=cookies).text, ids["https://other.test"])
+    assert "Not enforced" not in row and "Passive only" in row
 
 
 # ── /scan ────────────────────────────────────────────────────────────────────

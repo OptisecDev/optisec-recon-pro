@@ -27,11 +27,21 @@ from web.database import Base
 from datetime import datetime
 
 from web.models import DomainVerification, User, Target
+import web.domain_verification as dv
 import web.routers.autonomous_rt as art_router
 
 
 def _run(coro):
     return asyncio.run(coro)
+
+
+@pytest.fixture(autouse=True)
+def _txt_published(monkeypatch):
+    """Every active scan re-checks DNS live; fake the seeded record's TXT as
+    published so no real lookup runs."""
+    async def fake(domain, token):
+        return dv.CheckResult(True)
+    monkeypatch.setattr(dv, "check_dns_txt", fake)
 
 
 @pytest.fixture
@@ -53,8 +63,7 @@ def db_factory():
 
 
 async def _verify_domain(session_factory, owner_id: int, domain: str) -> None:
-    """A fresh (within-TTL) verified record, so /api/start passes scan
-    authorization without any DNS/HTTP re-check."""
+    """A verified record; its live DNS re-check is faked by _txt_published."""
     async with session_factory() as db:
         db.add(DomainVerification(
             user_id=owner_id, domain=domain, method="dns_txt", token=f"tok-{owner_id}-{domain}",

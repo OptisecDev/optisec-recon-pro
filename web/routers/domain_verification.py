@@ -3,7 +3,7 @@ scan checks are allowed against it (web/scan_authz.py,
 web/domain_verification.py).
 
     POST   /api/domains/verify       {domain, method} -> record + instructions
-    POST   /api/domains/{id}/check   run the DNS/file check now
+    POST   /api/domains/{id}/check   run the DNS TXT check now
     GET    /api/domains              the caller's own records
     DELETE /api/domains/{id}         remove one
 
@@ -44,7 +44,7 @@ MAX_RECORDS_PER_USER = 100
 _create_limiter = rate_limiter(
     "domains_verify", lambda: int(os.environ.get("RATE_LIMIT_DOMAINS_VERIFY", "10")), 60,
 )
-# Each check is an outbound DNS query or HTTP fetch on the caller's behalf.
+# Each check is an outbound DNS query on the caller's behalf.
 _check_limiter = rate_limiter(
     "domains_check", lambda: int(os.environ.get("RATE_LIMIT_DOMAINS_CHECK", "5")), 60,
 )
@@ -102,9 +102,9 @@ async def _find(db: AsyncSession, user: User, domain: str, method: str):
     "/verify",
     summary="Start verifying ownership of a domain",
     description=(
-        "Returns a token and instructions. `method` is `dns_txt` (TXT record; covers the domain "
-        "and all subdomains) or `http_file` (file at `/.well-known/optisec-verify.txt`; covers "
-        "that exact host only). Idempotent per (domain, method). Requires **analyst** or **admin**."
+        "Returns a token and instructions. `method` must be `dns_txt` (TXT record; covers the "
+        "domain and all subdomains) -- the only method that authorizes active checks. "
+        "Idempotent per (domain, method). Requires **analyst** or **admin**."
     ),
     dependencies=[Depends(_create_limiter)],
 )

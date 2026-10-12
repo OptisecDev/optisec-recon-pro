@@ -168,11 +168,9 @@ function applyAuthz(data) {
 
   const basis = data.basis || '';
   const host = data.host || data.target;
-  if (basis.startsWith('unenforced:')) {
-    setAuthzNote('warning', ['Scan authorization is in log-only mode: every module is enabled, but active modules on unverified targets are being logged.']);
-  } else if (basis.startsWith('verified:')) {
-    const [, method, domain] = basis.split(':');
-    setAuthzNote('success', [`✓ Ownership of ${domain} verified (${method === 'dns_txt' ? 'DNS TXT' : 'verification file'}) — all modules available.`]);
+  if (basis.startsWith('verified:')) {
+    const [, , domain] = basis.split(':');
+    setAuthzNote('success', [`✓ Ownership of ${domain} verified (DNS TXT) — all modules available.`]);
   } else if (basis.startsWith('training:')) {
     const active = (data.active || []).filter(c => allowed.has(c));
     setAuthzNote('info', [`🎓 ${host} is a public training target. Active modules it permits: ${active.join(', ') || 'none'}.`]);

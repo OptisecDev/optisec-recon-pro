@@ -294,11 +294,13 @@ def test_subdomain_passive_mode_never_probes(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("basis,expected", [
     ("verified:dns_txt:example.com", (frozenset(), frozenset({"example.com"}))),
-    ("verified:http_file:app.example.org", (frozenset({"app.example.org"}), frozenset())),
+    # Anything other than a dns_txt verification, a training target or
+    # passive_only gets an empty scope (nothing reachable), not None.
+    ("verified:http_file:app.example.org", (frozenset(), frozenset())),
     ("training:scanme.nmap.org", (frozenset({"scanme.nmap.org"}), frozenset())),
     ("passive_only", None),
-    ("unenforced:passive_only", None),
-    ("unenforced:verified:dns_txt:example.com", None),
+    ("unenforced:passive_only", (frozenset(), frozenset())),
+    ("unenforced:verified:dns_txt:example.com", (frozenset(), frozenset())),
 ])
 def test_scope_targets(basis, expected):
     assert scope_targets(AuthzDecision(basis=basis)) == expected
@@ -320,7 +322,8 @@ def test_build_scope_resolves_only_in_scope_names(monkeypatch):
 def test_network_scope_for(monkeypatch):
     monkeypatch.setattr(ss, "_resolve", lambda name: {"198.51.100.1"})
     assert _run(dv.network_scope_for(AuthzDecision(basis="passive_only"), "x.test")) is None
-    assert _run(dv.network_scope_for(AuthzDecision(basis="unenforced:passive_only"), "x.test")) is None
+    locked = _run(dv.network_scope_for(AuthzDecision(basis="unenforced:passive_only"), "x.test"))
+    assert locked is not None and not locked.allows("x.test")
     scope = _run(dv.network_scope_for(AuthzDecision(basis="verified:dns_txt:example.com"), "https://shop.example.com/a"))
     assert scope.suffixes == {"example.com"} and scope.hosts == frozenset()
     assert scope.ips == {"198.51.100.1"}

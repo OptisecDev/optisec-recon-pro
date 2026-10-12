@@ -1,11 +1,10 @@
 """
-Unit coverage for web/domain_verification.py: the DNS TXT and HTTP file
-ownership checks, run_check()'s status transitions, the DB-backed
+Unit coverage for web/domain_verification.py: the DNS TXT ownership check
+(the only method), run_check()'s status transitions, the DB-backed
 authorize_scan() wrapper, and the domain_verifications migration.
 
-No network: DNS goes through the monkeypatched _resolve_txt /
-_resolve_addresses seams, HTTP through an httpx.MockTransport injected via
-_http_client. DB tests use a private in-memory SQLite engine.
+No network: DNS goes through the monkeypatched _resolve_txt seam. DB tests
+use a private in-memory SQLite engine.
 """
 
 import asyncio
@@ -17,7 +16,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import dns.exception
 import dns.resolver
-import httpx
 import pytest
 from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -42,15 +40,10 @@ def _run(coro):
 @pytest.fixture(autouse=True)
 def _block_real_network(monkeypatch):
     """Any test that forgets to install a fake fails loudly instead of
-    quietly hitting real DNS/HTTP."""
+    quietly hitting real DNS."""
     async def no_dns(*a, **k):
         raise AssertionError("real DNS lookup attempted in a unit test")
-
-    def no_http():
-        raise AssertionError("real HTTP client created in a unit test")
     monkeypatch.setattr(dv, "_resolve_txt", no_dns)
-    monkeypatch.setattr(dv, "_resolve_addresses", no_dns)
-    monkeypatch.setattr(dv, "_http_client", no_http)
 
 
 def _txt(monkeypatch, values=None, exc=None):
@@ -63,27 +56,6 @@ def _txt(monkeypatch, values=None, exc=None):
         return values
     monkeypatch.setattr(dv, "_resolve_txt", fake)
     return calls
-
-
-def _addrs(monkeypatch, addrs=("93.184.216.34",), exc=None):
-    async def fake(host):
-        if exc is not None:
-            raise exc
-        return list(addrs)
-    monkeypatch.setattr(dv, "_resolve_addresses", fake)
-
-
-def _http(monkeypatch, handler):
-    seen = []
-
-    def wrapped(request):
-        seen.append(str(request.url))
-        return handler(request)
-    monkeypatch.setattr(
-        dv, "_http_client",
-        lambda: httpx.AsyncClient(transport=httpx.MockTransport(wrapped), follow_redirects=False),
-    )
-    return seen
 
 
 # ── validate_domain / instructions ───────────────────────────────────────────
@@ -107,8 +79,8 @@ def test_instructions_per_method():
     file_rec = DomainVerification(domain="app.example.com", method="http_file", token=TOKEN)
     assert dv.instructions(dns_rec)["name"] == "_optisec-verify.example.com"
     assert dv.instructions(dns_rec)["value"] == f"optisec-verify={TOKEN}"
-    assert dv.instructions(file_rec)["url"] == "https://app.example.com/.well-known/optisec-verify.txt"
-    assert dv.instructions(file_rec)["content"] == TOKEN
+    assert "DNS TXT" in dv.instructions(file_rec)["error"]
+    assert TOKEN not in str(dv.instructions(file_rec))
 
 
 def test_tokens_are_unique_and_long():
@@ -150,111 +122,13 @@ def test_dns_failure_is_transient(monkeypatch, exc):
     assert not r.verified and r.transient
 
 
-# ── check_http_file ──────────────────────────────────────────────────────────
+# ── Legacy http_file records ─────────────────────────────────────────────────
 
-def test_file_match(monkeypatch):
-    _addrs(monkeypatch)
-    seen = _http(monkeypatch, lambda req: httpx.Response(200, text=f"  {TOKEN}\n"))
-    assert _run(dv.check_http_file("example.com", TOKEN)).verified
-    assert seen == ["https://example.com/.well-known/optisec-verify.txt"]
-
-
-def test_file_mismatch_does_not_echo_body(monkeypatch):
-    _addrs(monkeypatch)
-    _http(monkeypatch, lambda req: httpx.Response(200, text="SECRET-INTERNAL-CONTENT"))
-    r = _run(dv.check_http_file("example.com", TOKEN))
+def test_legacy_file_record_check_fails_without_network():
+    rec = DomainVerification(user_id=1, domain="example.com", method="http_file", token=TOKEN, status="verified")
+    r = _run(dv.run_check(rec, NOW))
     assert not r.verified and not r.transient
-    assert "SECRET" not in r.error
-
-
-def test_file_404_is_definitive(monkeypatch):
-    _addrs(monkeypatch)
-    _http(monkeypatch, lambda req: httpx.Response(404))
-    r = _run(dv.check_http_file("example.com", TOKEN))
-    assert not r.verified and not r.transient
-
-
-def test_file_5xx_is_transient(monkeypatch):
-    _addrs(monkeypatch)
-    _http(monkeypatch, lambda req: httpx.Response(503))
-    assert _run(dv.check_http_file("example.com", TOKEN)).transient
-
-
-def test_file_falls_back_to_http_when_https_cannot_connect(monkeypatch):
-    _addrs(monkeypatch)
-
-    def handler(req):
-        if req.url.scheme == "https":
-            raise httpx.ConnectError("refused", request=req)
-        return httpx.Response(200, text=TOKEN)
-    seen = _http(monkeypatch, handler)
-    assert _run(dv.check_http_file("example.com", TOKEN)).verified
-    assert seen[-1].startswith("http://example.com/")
-
-
-def test_file_unreachable_is_transient(monkeypatch):
-    _addrs(monkeypatch)
-
-    def handler(req):
-        raise httpx.ConnectError("refused", request=req)
-    _http(monkeypatch, handler)
-    assert _run(dv.check_http_file("example.com", TOKEN)).transient
-
-
-def test_file_same_host_redirect_followed(monkeypatch):
-    _addrs(monkeypatch)
-
-    def handler(req):
-        if req.url.path == "/.well-known/optisec-verify.txt":
-            return httpx.Response(301, headers={"location": "/.well-known/moved.txt"})
-        return httpx.Response(200, text=TOKEN)
-    seen = _http(monkeypatch, handler)
-    assert _run(dv.check_http_file("example.com", TOKEN)).verified
-    assert seen[-1] == "https://example.com/.well-known/moved.txt"
-
-
-@pytest.mark.parametrize("location", [
-    "https://attacker.test/token.txt",
-    "https://sub.example.com/.well-known/optisec-verify.txt",
-    "https://example.com:8443/.well-known/optisec-verify.txt",
-    "http://127.0.0.1/",
-    "file:///etc/passwd",
-])
-def test_file_redirect_off_host_refused(monkeypatch, location):
-    _addrs(monkeypatch)
-    seen = _http(monkeypatch, lambda req: httpx.Response(302, headers={"location": location}))
-    r = _run(dv.check_http_file("example.com", TOKEN))
-    assert not r.verified and not r.transient
-    assert len(seen) == 1, "followed a redirect to another host"
-
-
-def test_file_redirect_loop_capped(monkeypatch):
-    _addrs(monkeypatch)
-    seen = _http(monkeypatch, lambda req: httpx.Response(302, headers={"location": req.url.path}))
-    assert not _run(dv.check_http_file("example.com", TOKEN)).verified
-    assert len(seen) == dv._MAX_REDIRECTS + 1
-
-
-def test_file_size_capped(monkeypatch):
-    _addrs(monkeypatch)
-    _http(monkeypatch, lambda req: httpx.Response(200, content=TOKEN.encode() + b" " * 10_000))
-    r = _run(dv.check_http_file("example.com", TOKEN))
-    assert not r.verified
-    assert "too large" in r.error
-
-
-@pytest.mark.parametrize("addr", ["127.0.0.1", "10.1.2.3", "169.254.169.254", "::1", "fd00::1"])
-def test_file_host_resolving_internal_refused_before_fetch(monkeypatch, addr):
-    _addrs(monkeypatch, ("93.184.216.34", addr))
-    seen = _http(monkeypatch, lambda req: httpx.Response(200, text=TOKEN))
-    r = _run(dv.check_http_file("rebind.example.com", TOKEN))
-    assert not r.verified
-    assert seen == []
-
-
-def test_file_localhost_name_refused_without_resolving(monkeypatch):
-    _addrs(monkeypatch, exc=AssertionError("must not resolve"))
-    assert not _run(dv.check_http_file("localhost", TOKEN)).verified
+    assert rec.status == "revoked"
 
 
 # ── run_check status transitions ─────────────────────────────────────────────
@@ -299,9 +173,8 @@ def test_run_check_verified_transient_keeps_status_and_timestamp(monkeypatch):
 
 
 def test_run_check_revoked_can_be_reverified(monkeypatch):
-    _addrs(monkeypatch)
-    _http(monkeypatch, lambda req: httpx.Response(200, text=TOKEN))
-    rec = _rec(status="revoked", method="http_file")
+    _txt(monkeypatch, [f"optisec-verify={TOKEN}"])
+    rec = _rec(status="revoked")
     _run(dv.run_check(rec, NOW))
     assert rec.status == "verified" and rec.verified_at == NOW
 
@@ -357,18 +230,18 @@ def _status(sf, domain, user_id):
 
 def _no_network(monkeypatch):
     _txt(monkeypatch, exc=AssertionError("unexpected DNS"))
-    _addrs(monkeypatch, exc=AssertionError("unexpected resolve"))
 
 
 FRESH = NOW - timedelta(hours=1)
 STALE = NOW - timedelta(days=8)
 
 
-def test_authorize_fresh_verification_no_network(session_factory, monkeypatch):
-    _no_network(monkeypatch)
+def test_authorize_fresh_verification_still_rechecks_dns(session_factory, monkeypatch):
+    calls = _txt(monkeypatch, ["optisec-verify=alice-0"])
     u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
     d = _authorize(session_factory, u, "https://shop.example.com", ["xss", "dns"])
     assert d.ok and d.basis == "verified:dns_txt:example.com"
+    assert calls == ["_optisec-verify.example.com"]
 
 
 def test_authorize_passive_only_skips_db_and_network(session_factory, monkeypatch):
@@ -399,10 +272,10 @@ def test_authorize_ignores_other_users_verification(session_factory, monkeypatch
     assert not _authorize(session_factory, other, "example.com", ["sqli"]).ok
 
 
-def test_authorize_file_record_does_not_cover_subdomain(session_factory, monkeypatch):
+def test_authorize_legacy_file_record_grants_nothing(session_factory, monkeypatch):
     _no_network(monkeypatch)
     u = _seed(session_factory, "alice", [("example.com", "http_file", "verified", FRESH)])
-    assert not _authorize(session_factory, u, "www.example.com", ["xss"]).ok
+    assert not _authorize(session_factory, u, "example.com", ["xss"]).ok
 
 
 def test_authorize_stale_recheck_success(session_factory, monkeypatch):
@@ -431,15 +304,16 @@ def test_authorize_only_rechecks_records_covering_target(session_factory, monkey
         ("unrelated.test", "dns_txt", "verified", STALE),
         ("example.com", "dns_txt", "verified", FRESH),
     ])
-    _no_network(monkeypatch)
+    calls = _txt(monkeypatch, ["optisec-verify=alice-1"])
     assert _authorize(session_factory, u, "example.com", ["xss"]).ok
+    assert calls == ["_optisec-verify.example.com"]
 
 
-def test_authorize_ttl_env_override(session_factory, monkeypatch):
+def test_authorize_ttl_env_no_longer_skips_recheck(session_factory, monkeypatch):
     monkeypatch.setenv("SCAN_VERIFICATION_TTL_DAYS", "30")
-    _no_network(monkeypatch)
-    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", STALE)])
-    assert _authorize(session_factory, u, "example.com", ["xss"]).ok
+    _txt(monkeypatch, exc=dns.resolver.NXDOMAIN())
+    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
+    assert not _authorize(session_factory, u, "example.com", ["xss"]).ok
 
 
 def test_authorize_training_target_without_verification(session_factory, monkeypatch):

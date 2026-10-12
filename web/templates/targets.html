@@ -68,8 +68,6 @@
               <span class="badge badge-success" title="{{ authz.basis }}">✓ Verified</span>
               {% elif authz.kind == 'training' %}
               <span class="badge badge-low" title="Public training target — limited active modules">🎓 Training</span>
-              {% elif authz.kind == 'unenforced' %}
-              <span class="badge badge-medium" title="SCAN_AUTHZ_ENFORCE=false (log-only)">Not enforced</span>
               {% else %}
               <span class="badge badge-info" title="Active modules need domain verification">Passive only</span>
               {% endif %}
@@ -115,7 +113,6 @@
       <label>Method</label>
       <select id="verify-method">
         <option value="dns_txt">DNS TXT record — covers the domain and all subdomains</option>
-        <option value="http_file">Verification file — covers that exact host only</option>
       </select>
     </div>
   </div>
@@ -210,14 +207,15 @@ function renderInstructions(rec) {
   if (!box) return;
   box.replaceChildren();
   const ins = rec.instructions || {};
-  const rows = rec.method === 'dns_txt'
-    ? [['Record type', ins.type], ['Name', ins.name], ['Value', ins.value]]
-    : [['File URL', ins.url], ['File content', ins.content]];
-
   const intro = document.createElement('p');
-  intro.textContent = rec.method === 'dns_txt'
-    ? `Add this TXT record at your DNS provider. It covers ${ins.covers}.`
-    : `Serve this file with exactly this content. It covers ${ins.covers}.`;
+  if (rec.method !== 'dns_txt') {
+    intro.textContent = ins.error || 'Only DNS TXT verification is supported.';
+    box.appendChild(intro);
+    optisecSetVisible(box, true, 'block');
+    return;
+  }
+  const rows = [['Record type', ins.type], ['Name', ins.name], ['Value', ins.value]];
+  intro.textContent = `Add this TXT record at your DNS provider. It covers ${ins.covers}.`;
   box.appendChild(intro);
 
   const table = document.createElement('table');

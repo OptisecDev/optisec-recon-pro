@@ -34,8 +34,8 @@ and privacy and data-protection laws.</p>
   <li><strong>Active checks</strong> — <code>nmap</code>, <code>ports</code>, <code>subdomain</code>,
     <code>xss</code>, <code>sqli</code>, <code>ssrf</code>, <code>lfi</code> and <code>redirect</code> — run only when the target is:
     <ul>
-      <li>a domain you have <strong>verified</strong> on your account, either with a DNS TXT record (covers the
-        domain and all its subdomains) or with a verification file served from the host (covers that exact host only); or</li>
+      <li>a domain you have <strong>verified</strong> on your account with a DNS TXT record carrying your
+        verification token (covers the domain and all its subdomains); or</li>
       <li>one of the public, intentionally vulnerable <strong>training targets</strong> listed in the Service, and then
         only for the checks that site's own published terms allow (for example, only <code>nmap</code> and
         <code>ports</code> against <code>scanme.nmap.org</code>).</li>
