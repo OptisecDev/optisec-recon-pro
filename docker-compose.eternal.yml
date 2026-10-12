@@ -9,7 +9,7 @@ version: "3.9"
 services:
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg15
+    image: timescale/timescaledb:2.28.3-pg15
     container_name: optisec_eternal_timescaledb
     restart: unless-stopped
     environment:
@@ -50,7 +50,7 @@ services:
       - eternal
 
   redis:
-    image: redis:alpine
+    image: redis:8.10.2-alpine
     container_name: optisec_eternal_redis
     restart: unless-stopped
     command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\""]
