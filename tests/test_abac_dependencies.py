@@ -851,6 +851,60 @@ def test_scan_provider_defaults_to_load_verified_scopes(monkeypatch):
     assert c.post("/api/scan", json=AUTHORIZED).status_code == 200 and calls == [1]
 
 
+
+# ── Viewer SQLi rule runs on the expanded check list, not raw scan_types ─────
+
+def _provider_output(body, scopes_loader=_fake_scopes):
+    """What scan_authz_provider hands to the rules for a POST /api/scan body."""
+    app = FastAPI()
+
+    @app.post("/probe")
+    async def probe(request: Request):
+        return await abac.scan_authz_provider(request, _User("viewer"), None, scopes_loader=scopes_loader)
+
+    return TestClient(app).post("/probe", json=body).json()
+
+
+@pytest.mark.parametrize("body", [
+    {"target": "https://api.mine.example.com/login", "scan_types": []},
+    {"target": "https://api.mine.example.com/login"},
+])
+def test_scan_empty_or_missing_scan_types_expand_to_every_module(body):
+    out = _provider_output(body)
+    assert out["scan_checks"] == list(abac.scan_authz.SCAN_STEP_ORDER)
+    assert "sqli" in out["scan_checks"]
+
+
+@pytest.mark.parametrize("body", [
+    {"target": "https://api.mine.example.com/login", "scan_types": []},   # the bypass case
+    {"target": "https://api.mine.example.com/login"},                     # scan_types missing
+])
+def test_scan_viewer_external_empty_or_missing_scan_types_denied(body):
+    assert _scan_app("viewer", client_ip="203.0.113.9").post("/api/scan", json=body).status_code == 403
+
+
+def test_scan_viewer_internal_empty_scan_types_authorized_target_denied():
+    # [] expands to every module, which includes SQLi. sqli_scan_viewer allows only
+    # when the expanded list is a subset of params.sqli_class_checks, so it denies.
+    body = {"target": AUTHORIZED["target"], "scan_types": []}
+    assert _scan_app("viewer").post("/api/scan", json=body).status_code == 403
+
+
+def test_viewer_sqli_rule_never_matches_raw_empty_list(policy):
+    # Even if a caller handed the raw [] through, an empty list never satisfies subset_of.
+    assert not evaluate(policy, "api_scan", sqli(checks=())).allowed
+
+
+def test_scan_expand_checks_exception_fails_closed(monkeypatch):
+    def boom(scan_types):
+        raise RuntimeError("expansion crashed")
+
+    monkeypatch.setattr(abac.scan_authz, "expand_checks", boom)
+    assert _provider_output(AUTHORIZED) == {"scan_checks": None, "target_authorized": None}
+    assert _scan_app("viewer").post("/api/scan", json=AUTHORIZED).status_code == 403
+    assert _scan_app("viewer").post("/api/scan", json={"target": AUTHORIZED["target"], "scan_types": []}).status_code == 403
+
+
 # ── Global deny and integrity through the default policy provider ────────────
 
 def _default_provider_app(role, resource):
