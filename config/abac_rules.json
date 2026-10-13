@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "_comment": "Context-aware (ABAC) rules, evaluated by auth/dependencies.py. They run alongside the existing role checks in web/auth.py and never replace them. Combining: any matching deny wins, then any matching allow, otherwise deny. A matching rule whose condition attribute is missing denies. Entries with \"confirm\": true are interpretations that need product sign-off.",
+
+  "timezone": "UTC",
+  "_timezone_comment": "IANA zone used to evaluate request_time. Override with the ABAC_TIMEZONE env var. CONFIRM: UTC is a placeholder.",
+
+  "params": {
+    "internal_networks": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7"],
+    "business_hours": {"start": "09:00", "end": "17:00", "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}
+  },
+
+  "rules": [
+    {
+      "id": "analyst-cve-pipeline-critical-only",
+      "roles": ["analyst"],
+      "resource": "cve_pipeline",
+      "conditions": [
+        {"attr": "target_severity", "op": "eq", "value": "Critical", "case_insensitive": true}
+      ],
+      "effect": "allow",
+      "note": "Roadmap: analyst -> CVE Pipeline allowed only if target_severity == Critical."
+    },
+    {
+      "id": "viewer-sqli-scan-external-deny",
+      "roles": ["viewer"],
+      "resource": "sqli_scan",
+      "conditions": [
+        {"attr": "ip_address", "op": "not_in_networks", "value": "$internal_networks"}
+      ],
+      "effect": "deny",
+      "note": "Roadmap: viewer -> SQLi scan denied unless from an internal network. NOT a substitute for target authorization (web/scan_authz.py)."
+    },
+    {
+      "id": "viewer-sqli-scan-internal-allow",
+      "roles": ["viewer"],
+      "resource": "sqli_scan",
+      "conditions": [
+        {"attr": "ip_address", "op": "in_networks", "value": "$internal_networks"}
+      ],
+      "effect": "allow",
+      "confirm": true,
+      "note": "Reads 'deny unless internal' as 'allow when internal'. Without it the default deny makes the rule meaningless. The existing role check (require_analyst_or_admin) still blocks viewers from scanning."
+    },
+    {
+      "id": "ngfw-rules-outside-business-hours-deny",
+      "roles": ["*"],
+      "resource": "ngfw_rules",
+      "conditions": [
+        {"attr": "request_time", "op": "outside_hours", "value": "$business_hours"}
+      ],
+      "effect": "deny",
+      "note": "Roadmap: any role -> NGFW Rules denied outside configured business hours."
+    },
+    {
+      "id": "ngfw-rules-business-hours-allow",
+      "roles": ["*"],
+      "resource": "ngfw_rules",
+      "conditions": [
+        {"attr": "request_time", "op": "within_hours", "value": "$business_hours"}
+      ],
+      "effect": "allow",
+      "confirm": true,
+      "note": "Counterpart of the deny rule. Without it the default deny would block NGFW Rules at all hours."
+    }
+  ]
+}
