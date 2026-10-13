@@ -7,6 +7,7 @@
 
   "params": {
     "sqli_class_checks": ["sqli"],
+    "cve_export_routes": ["/api/cve/drafts/{draft_id}/export"],
     "internal_networks": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7"],
     "business_hours": {"start": "09:00", "end": "17:00", "days": ["sun", "mon", "tue", "wed", "thu"]}
   },
@@ -17,11 +18,24 @@
       "roles": ["analyst"],
       "resource": "cve_pipeline",
       "conditions": [
-        {"attr": "operation", "op": "eq", "value": "read"}
+        {"attr": "operation", "op": "eq", "value": "read"},
+        {"attr": "route", "op": "not_in", "value": "$cve_export_routes"}
       ],
       "effect": "allow",
       "confirm": false,
-      "note": "Repair of analyst-cve-pipeline-critical-only, read half. GET/HEAD on CVE routes (e.g. NVD search) carry no target, so they are allowed without a severity. NOTE: GET /api/cve/drafts/{draft_id}/export also sets the draft status to exported."
+      "note": "Repair of analyst-cve-pipeline-critical-only, read half. GET/HEAD on CVE routes (e.g. NVD search) carry no target, so they are allowed without a severity. Export routes (params.cve_export_routes) are excluded and covered by cve_export instead. A missing route denies."
+    },
+    {
+      "id": "cve_export",
+      "roles": ["admin"],
+      "resource": "cve_pipeline",
+      "conditions": [
+        {"attr": "operation", "op": "eq", "value": "read"},
+        {"attr": "route", "op": "in", "value": "$cve_export_routes"}
+      ],
+      "effect": "allow",
+      "confirm": false,
+      "note": "Repair of the overly broad cve_read: GET /api/cve/drafts/{draft_id}/export (web/routers/cve_submission.py:cve_draft_export) exports data and also sets the draft status to exported, so it is admin only. Analysts lose export under ABAC; this narrows a rule, it does not remove the feature. To revert, drop the route condition from cve_read and delete this rule. Admin is also covered by cve_admin; this rule makes the export grant explicit."
     },
     {
       "id": "cve_action",

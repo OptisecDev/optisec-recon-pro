@@ -45,9 +45,9 @@ def policy():
 
 
 def attrs(role="analyst", ip="203.0.113.9", when=IN_HOURS, severity=None, operation="read",
-          checks=None, authorized=None):
+          checks=None, authorized=None, route=None):
     return {"role": role, "ip_address": ip, "request_time": when,
-            "operation": operation, "resource_severity": severity,
+            "operation": operation, "route": route, "resource_severity": severity,
             "scan_checks": checks, "target_authorized": authorized}
 
 
@@ -61,6 +61,7 @@ def test_shipped_config_loads_with_expected_rules(policy):
     ids = {r.id for r in policy.rules}
     assert ids == {
         "cve_read",
+        "cve_export",
         "cve_action",
         "cve_admin",
         "viewer-sqli-scan-external-deny",
@@ -81,6 +82,7 @@ def test_shipped_rules_have_explicit_confirm_flags(policy):
     # repaired / new rules await owner review; untouched roadmap rules are confirmed
     assert {r.id: r.confirm for r in policy.rules} == {
         "cve_read": False,
+        "cve_export": False,
         "cve_action": False,
         "cve_admin": False,
         "viewer-sqli-scan-external-deny": False,
@@ -92,7 +94,7 @@ def test_shipped_rules_have_explicit_confirm_flags(policy):
 
 def test_default_rules_path_is_the_shipped_file():
     assert os.path.samefile(abac.DEFAULT_RULES_PATH, RULES_FILE)
-    assert len(abac.get_policy().rules) == 7
+    assert len(abac.get_policy().rules) == 8
 
 
 # ── Rule 1: analyst -> CVE Pipeline (cve_read / cve_action) ──────────────────
@@ -114,7 +116,8 @@ def test_analyst_cve_pipeline_denied_for_non_critical(policy, severity):
 
 
 def test_analyst_cve_pipeline_denied_when_severity_missing(policy):
-    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=None, operation="action"))
+    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=None, operation="action",
+                                               route="/api/cve/draft"))
     assert not d.allowed and d.rule_id == "cve_action" and d.reason == "missing attribute: resource_severity"
 
 
@@ -125,8 +128,29 @@ def test_viewer_cve_pipeline_default_denied_even_if_critical(policy):
 
 
 def test_analyst_cve_read_needs_no_severity(policy):
-    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=None, operation="read"))
+    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=None, operation="read",
+                                               route="/api/cve/search"))
     assert d.allowed and d.rule_id == "cve_read"
+
+
+EXPORT_ROUTE = "/api/cve/drafts/{draft_id}/export"
+
+
+def test_analyst_cve_read_denied_when_route_missing(policy):
+    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", operation="read", route=None))
+    assert not d.allowed and d.reason == "missing attribute: route"
+
+
+def test_analyst_cve_export_denied(policy):
+    for severity in (None, "Critical"):
+        d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=severity, operation="read",
+                                                   route=EXPORT_ROUTE))
+        assert not d.allowed
+
+
+def test_admin_cve_export_allowed_by_cve_export(policy):
+    d = evaluate(policy, "cve_pipeline", attrs(role="admin", operation="read", route=EXPORT_ROUTE))
+    assert d.allowed and d.rule_id == "cve_export"
 
 
 @pytest.mark.parametrize("op", ["read", "action"])
@@ -486,6 +510,18 @@ def _cve_app(role, finding_lookup=None, uid=1):
     async def draft(request: Request, user=Depends(dep)):
         return {"ok": True, "finding_id": (await request.json()).get("finding_id")}
 
+    @app.get("/api/cve/drafts")
+    async def drafts(user=Depends(dep)):
+        return {"ok": True}
+
+    @app.get("/api/cve/drafts/{draft_id}")
+    async def draft_detail(draft_id: int, user=Depends(dep)):
+        return {"ok": True}
+
+    @app.get("/api/cve/drafts/{draft_id}/export")
+    async def draft_export(draft_id: int, user=Depends(dep)):
+        return {"ok": True}
+
     @app.post("/api/cve/drafts/{draft_id}/run")   # hypothetical write route on a CVE record
     async def run_on_draft(draft_id: int, user=Depends(dep)):
         return {"ok": True}
@@ -549,6 +585,26 @@ def test_cve_viewer_denied():
     c = _cve_app("viewer")
     assert c.get("/api/cve/search").status_code == 403
     assert c.post("/api/cve/draft", json={"finding_id": 11}).status_code == 403
+
+
+def test_cve_analyst_export_denied_other_reads_allowed():
+    c = _cve_app("analyst")
+    assert c.get("/api/cve/drafts/5/export").status_code == 403
+    assert c.get("/api/cve/search?keyword=openssl").status_code == 200
+    assert c.get("/api/cve/drafts").status_code == 200
+    assert c.get("/api/cve/drafts/5").status_code == 200
+
+
+def test_cve_admin_export_allowed():
+    assert _cve_app("admin").get("/api/cve/drafts/5/export").status_code == 200
+
+
+def test_cve_viewer_denied_on_every_cve_route():
+    c = _cve_app("viewer")
+    for path in ("/api/cve/search", "/api/cve/drafts", "/api/cve/drafts/5", "/api/cve/drafts/5/export"):
+        assert c.get(path).status_code == 403, path
+    assert c.post("/api/cve/draft", json={"finding_id": 11}).status_code == 403
+    assert c.post("/api/cve/drafts/5/run").status_code == 403
 
 
 def test_cve_admin_allowed_per_role_logic():

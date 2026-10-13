@@ -25,6 +25,8 @@ Attributes:
   request_time    — now, in the configured IANA timezone (config "timezone",
                     overridable by ABAC_TIMEZONE)
   operation       — "read" for GET/HEAD, "action" for every other method
+  route           — path template of the matched FastAPI route, e.g.
+                    "/api/cve/drafts/{draft_id}/export" (never the raw URL)
 
 Resource attributes come from per-endpoint providers passed to require_abac()
 and are None (missing => deny) on endpoints that don't pass one:
@@ -61,7 +63,7 @@ TIMEZONE_ENV = "ABAC_TIMEZONE"
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "abac_rules.json"
 
 PROVIDED_ATTRIBUTES = frozenset({"resource_severity", "scan_checks", "target_authorized"})
-ATTRIBUTES = frozenset({"role", "ip_address", "request_time", "operation"}) | PROVIDED_ATTRIBUTES
+ATTRIBUTES = frozenset({"role", "ip_address", "request_time", "operation", "route"}) | PROVIDED_ATTRIBUTES
 READ_METHODS = frozenset({"GET", "HEAD"})
 EFFECTS = frozenset({"allow", "deny"})
 _DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -178,6 +180,8 @@ _OPS: dict[str, tuple[Callable, Optional[str], Callable]] = {
            lambda a, v, c: (str(a).casefold() == str(v).casefold()) if c.case_insensitive else a == v),
     "in": (_parse_list, None,
            lambda a, v, c: (str(a).casefold() in {str(x).casefold() for x in v}) if c.case_insensitive else a in v),
+    "not_in": (_parse_list, None,
+               lambda a, v, c: (str(a).casefold() not in {str(x).casefold() for x in v}) if c.case_insensitive else a not in v),
     "subset_of": (_parse_nonempty_list, "scan_checks", lambda a, v, c: _subset(a, v)),
     "in_networks": (_parse_networks, "ip_address", lambda a, nets, c: any(_ip(a) in n for n in nets)),
     "not_in_networks": (_parse_networks, "ip_address", lambda a, nets, c: not any(_ip(a) in n for n in nets)),
@@ -472,6 +476,7 @@ async def build_attributes(
         "ip_address": None if ip in (None, "", "unknown") else ip,
         "request_time": current.astimezone(policy.timezone),
         "operation": "read" if request.method.upper() in READ_METHODS else "action",
+        "route": getattr(request.scope.get("route"), "path", None),
     }
 
 
