@@ -12,14 +12,36 @@
 
   "rules": [
     {
-      "id": "analyst-cve-pipeline-critical-only",
+      "id": "cve_read",
       "roles": ["analyst"],
       "resource": "cve_pipeline",
       "conditions": [
-        {"attr": "target_severity", "op": "eq", "value": "Critical", "case_insensitive": true}
+        {"attr": "operation", "op": "eq", "value": "read"}
       ],
       "effect": "allow",
-      "note": "Roadmap: analyst -> CVE Pipeline allowed only if target_severity == Critical."
+      "confirm": false,
+      "note": "Repair of analyst-cve-pipeline-critical-only, read half. GET/HEAD on CVE routes (e.g. NVD search) carry no target, so they are allowed without a severity. NOTE: GET /api/cve/drafts/{draft_id}/export also sets the draft status to exported."
+    },
+    {
+      "id": "cve_action",
+      "roles": ["analyst"],
+      "resource": "cve_pipeline",
+      "conditions": [
+        {"attr": "operation", "op": "eq", "value": "action"},
+        {"attr": "resource_severity", "op": "eq", "value": "Critical", "case_insensitive": true}
+      ],
+      "effect": "allow",
+      "confirm": false,
+      "note": "Repair of analyst-cve-pipeline-critical-only, write/run half. resource_severity is Finding.severity of the finding_id the request targets (Target has no severity column). No target, or a CVE-only request (no verified CVSS->severity mapping), means no severity, so deny."
+    },
+    {
+      "id": "cve_admin",
+      "roles": ["admin"],
+      "resource": "cve_pipeline",
+      "conditions": [],
+      "effect": "allow",
+      "confirm": false,
+      "note": "Keeps admin aligned with the live role logic: CVE routes have no role check, so admin is not narrowed here. Without it the default deny would block admin."
     },
     {
       "id": "viewer-sqli-scan-external-deny",
