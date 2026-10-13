@@ -92,6 +92,47 @@ def test_shipped_rules_have_explicit_confirm_flags(policy):
     }
 
 
+# Rules the owner explicitly approved. Adding an id here is an owner decision.
+OWNER_APPROVED_RULES = {"ngfw-rules-outside-business-hours-deny", "ngfw-rules-business-hours-allow"}
+
+
+def test_confirm_flag_means_owner_review_status(policy):
+    """confirm:true = approved by the owner; confirm:false = requires owner review."""
+    with open(RULES_FILE, encoding="utf-8") as fh:
+        comment = json.load(fh)["_comment"]
+    assert "true = approved by the owner" in comment
+    assert "false = repaired or interpreted and awaiting owner review" in comment
+    assert "it does not change evaluation" in comment
+    assert {r.id for r in policy.rules if r.confirm} == OWNER_APPROVED_RULES
+    assert all(not r.confirm for r in policy.rules if r.id not in OWNER_APPROVED_RULES)
+
+
+def test_confirm_flag_does_not_change_evaluation(policy):
+    with open(RULES_FILE, encoding="utf-8") as fh:
+        raw = json.load(fh)
+    for rule in raw["rules"]:
+        rule["confirm"] = not rule["confirm"]
+    flipped = policy_from_dict(raw)
+    cases = [
+        ("cve_pipeline", attrs(role=role, operation=op, severity=sev, route=route))
+        for role in ("admin", "analyst", "viewer")
+        for op in ("read", "action")
+        for sev in (None, "Critical", "High")
+        for route in ("/api/cve/search", "/api/cve/drafts/{draft_id}/export")
+    ] + [
+        ("api_scan", sqli(role=role, ip=ip, checks=checks, authorized=ok))
+        for role in ("admin", "analyst", "viewer")
+        for ip in ("10.1.2.3", "203.0.113.9")
+        for checks in (("sqli",), ("sqli", "xss"))
+        for ok in (True, False)
+    ] + [
+        ("ngfw_rules", attrs(role=role, when=when))
+        for role in ("admin", "viewer") for when in (IN_HOURS, OUT_HOURS)
+    ]
+    for resource, a in cases:
+        assert evaluate(policy, resource, a) == evaluate(flipped, resource, a), (resource, a)
+
+
 def test_default_rules_path_is_the_shipped_file():
     assert os.path.samefile(abac.DEFAULT_RULES_PATH, RULES_FILE)
     assert len(abac.get_policy().rules) == 8
