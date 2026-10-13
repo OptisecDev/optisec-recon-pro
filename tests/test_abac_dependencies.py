@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 
 import auth.dependencies as abac
 from auth.dependencies import Decision, PolicyError, evaluate, load_policy, policy_from_dict, require_abac
+from web.scan_authz import VerifiedScope
 
 RULES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "abac_rules.json")
 
@@ -43,9 +44,15 @@ def policy():
     return load_policy(RULES_FILE)
 
 
-def attrs(role="analyst", ip="203.0.113.9", when=IN_HOURS, severity=None, operation="read"):
+def attrs(role="analyst", ip="203.0.113.9", when=IN_HOURS, severity=None, operation="read",
+          checks=None, authorized=None):
     return {"role": role, "ip_address": ip, "request_time": when,
-            "operation": operation, "resource_severity": severity}
+            "operation": operation, "resource_severity": severity,
+            "scan_checks": checks, "target_authorized": authorized}
+
+
+def sqli(role="viewer", ip="10.1.2.3", checks=("sqli",), authorized=True):
+    return attrs(role=role, ip=ip, operation="action", checks=list(checks), authorized=authorized)
 
 
 # ── Config file ──────────────────────────────────────────────────────────────
@@ -57,7 +64,7 @@ def test_shipped_config_loads_with_expected_rules(policy):
         "cve_action",
         "cve_admin",
         "viewer-sqli-scan-external-deny",
-        "viewer-sqli-scan-internal-allow",
+        "sqli_scan_viewer",
         "ngfw-rules-outside-business-hours-deny",
         "ngfw-rules-business-hours-allow",
     }
@@ -118,28 +125,50 @@ def test_missing_attribute_never_lets_an_allow_rule_match():
     assert d == Decision(False, "a", "missing attribute: resource_severity")
 
 
-# ── Rule 2: viewer -> SQLi scan only from internal network ───────────────────
+# ── Rule 2: viewer -> SQLi scan (POST /api/scan) internal + authorized ───────
 
 @pytest.mark.parametrize("ip", ["10.1.2.3", "172.16.5.4", "192.168.1.10", "127.0.0.1", "::1"])
 def test_viewer_sqli_allowed_from_internal_network(policy, ip):
-    d = evaluate(policy, "sqli_scan", attrs(role="viewer", ip=ip))
-    assert d.allowed and d.rule_id == "viewer-sqli-scan-internal-allow"
+    d = evaluate(policy, "api_scan", sqli(ip=ip))
+    assert d.allowed and d.rule_id == "sqli_scan_viewer"
 
 
 @pytest.mark.parametrize("ip", ["8.8.8.8", "203.0.113.9", "172.32.0.1", "2001:db8::1"])
 def test_viewer_sqli_denied_from_external_network(policy, ip):
-    d = evaluate(policy, "sqli_scan", attrs(role="viewer", ip=ip))
+    d = evaluate(policy, "api_scan", sqli(ip=ip))
     assert not d.allowed and d.rule_id == "viewer-sqli-scan-external-deny"
 
 
 def test_viewer_sqli_denied_when_ip_missing(policy):
-    d = evaluate(policy, "sqli_scan", attrs(role="viewer", ip=None))
+    d = evaluate(policy, "api_scan", sqli(ip=None))
     assert not d.allowed and d.reason == "missing attribute: ip_address"
 
 
 def test_viewer_sqli_denied_when_ip_unparseable(policy):
-    d = evaluate(policy, "sqli_scan", attrs(role="viewer", ip="not-an-ip"))
+    d = evaluate(policy, "api_scan", sqli(ip="not-an-ip"))
     assert not d.allowed and d.reason == "invalid attribute value"
+
+
+def test_viewer_sqli_denied_for_unauthorized_target(policy):
+    d = evaluate(policy, "api_scan", sqli(authorized=False))
+    assert not d.allowed and d.rule_id is None
+
+
+def test_viewer_sqli_denied_when_authorization_unknown(policy):
+    d = evaluate(policy, "api_scan", sqli(authorized=None))
+    assert not d.allowed and d.reason == "missing attribute: target_authorized"
+
+
+@pytest.mark.parametrize("checks", [["sqli", "xss"], ["xss"], ["nmap"], list(abac.scan_authz.SCAN_STEP_ORDER)])
+def test_viewer_scan_denied_beyond_sqli_class(policy, checks):
+    assert not evaluate(policy, "api_scan", sqli(checks=checks)).allowed
+
+
+@pytest.mark.parametrize("role", ["analyst", "admin"])
+def test_api_scan_has_no_rule_for_analyst_or_admin(policy, role):
+    """Config defines no api_scan rule for these roles, so ABAC default-denies them."""
+    d = evaluate(policy, "api_scan", sqli(role=role))
+    assert d == Decision(False, None, "no matching rule (default deny)")
 
 
 # ── Rule 3: any role -> NGFW Rules only during business hours ────────────────
@@ -209,7 +238,7 @@ def test_default_deny_for_unknown_resource(policy):
 
 
 def test_default_deny_for_role_without_rule(policy):
-    assert not evaluate(policy, "sqli_scan", attrs(role="analyst", ip="10.0.0.1")).allowed
+    assert not evaluate(policy, "api_scan", sqli(role="analyst", ip="10.0.0.1")).allowed
 
 
 def test_default_deny_with_empty_rule_set():
@@ -500,11 +529,113 @@ def test_finding_severity_lookup_uses_owned_finding(monkeypatch):
 
 
 def test_depends_uses_trusted_client_ip_not_forwarded_header():
-    internal = _app("sqli_scan", "viewer", clock=lambda: IN_HOURS, client_ip="10.0.0.5")
-    assert internal.get("/res").status_code == 200
-    external = _app("sqli_scan", "viewer", clock=lambda: IN_HOURS, client_ip="8.8.8.8")
+    body = {"target": "mine.example.com", "scan_types": ["sqli"]}
+    internal = _scan_app("viewer", client_ip="10.0.0.5")
+    assert internal.post("/api/scan", json=body).status_code == 200
+    external = _scan_app("viewer", client_ip="8.8.8.8")
     # a spoofed X-Forwarded-For must not turn an external caller into an internal one
-    assert external.get("/res", headers={"X-Forwarded-For": "10.0.0.5"}).status_code == 403
+    assert external.post("/api/scan", json=body, headers={"X-Forwarded-For": "10.0.0.5"}).status_code == 403
+
+
+# ── POST /api/scan with the scan_authz provider (fake scopes, no DB/DNS) ─────
+
+async def _fake_scopes(db, user):
+    return [VerifiedScope("mine.example.com", abac.scan_authz.VERIFY_METHOD_DNS_TXT)]
+
+
+async def _no_scopes(db, user):
+    return []
+
+
+def _scan_app(role, client_ip="10.0.0.5", scopes_loader=_fake_scopes):
+    async def provider(request, user, db):
+        return await abac.scan_authz_provider(request, user, db, scopes_loader=scopes_loader)
+
+    app = FastAPI()
+    dep = require_abac("api_scan", policy_provider=lambda: load_policy(RULES_FILE),
+                       clock=lambda: IN_HOURS, providers=(provider,))
+
+    @app.post("/api/scan")   # same path as web/app.py:run_scan
+    async def run_scan(request: Request, user=Depends(dep)):
+        return {"ok": True, "target": (await request.json())["target"]}
+
+    app.dependency_overrides[abac.abac_user] = lambda: _User(role)
+    app.dependency_overrides[abac.get_db] = lambda: None
+    return TestClient(app, client=(client_ip, 50000))
+
+
+AUTHORIZED = {"target": "https://api.mine.example.com/login", "scan_types": ["sqli"]}
+UNAUTHORIZED = {"target": "https://someone-else.example.org", "scan_types": ["sqli"]}
+
+
+def test_scan_viewer_internal_authorized_allowed():
+    r = _scan_app("viewer").post("/api/scan", json=AUTHORIZED)
+    assert r.status_code == 200 and r.json()["target"] == AUTHORIZED["target"]
+
+
+def test_scan_viewer_internal_unauthorized_denied():
+    assert _scan_app("viewer").post("/api/scan", json=UNAUTHORIZED).status_code == 403
+
+
+def test_scan_viewer_external_authorized_denied():
+    assert _scan_app("viewer", client_ip="203.0.113.9").post("/api/scan", json=AUTHORIZED).status_code == 403
+
+
+def test_scan_viewer_training_target_uses_scan_authz_allowlist():
+    # demo.testfire.net permits sqli per scan_authz.TRAINING_TARGETS; scanme.nmap.org does not
+    c = _scan_app("viewer", scopes_loader=_no_scopes)
+    assert c.post("/api/scan", json={"target": "demo.testfire.net", "scan_types": ["sqli"]}).status_code == 200
+    assert c.post("/api/scan", json={"target": "scanme.nmap.org", "scan_types": ["sqli"]}).status_code == 403
+
+
+@pytest.mark.parametrize("body", [
+    {"target": "mine.example.com", "scan_types": []},             # empty = every module
+    {"target": "mine.example.com", "scan_types": ["sqli", "xss"]},
+    {"target": "mine.example.com", "scan_types": "sqli"},
+    {"target": "mine.example.com", "scan_types": [1]},
+    {"target": "", "scan_types": ["sqli"]},
+    {"target": 5, "scan_types": ["sqli"]},
+    {"scan_types": ["sqli"]},
+    ["not", "an", "object"],
+])
+def test_scan_viewer_malformed_or_broad_request_denied(body):
+    assert _scan_app("viewer").post("/api/scan", json=body).status_code == 403
+
+
+@pytest.mark.parametrize("role", ["analyst", "admin"])
+def test_scan_analyst_and_admin_follow_config_default_deny(role):
+    # No api_scan rule names these roles in config/abac_rules.json, so ABAC denies.
+    # Live, run_scan's require_analyst_or_admin is what admits them; ABAC is not wired.
+    assert _scan_app(role).post("/api/scan", json=AUTHORIZED).status_code == 403
+
+
+def test_scan_authorization_exception_fails_closed(monkeypatch):
+    def boom(*a, **kw):
+        raise RuntimeError("authz crashed")
+
+    monkeypatch.setattr(abac.scan_authz, "decide", boom)
+    assert _scan_app("viewer").post("/api/scan", json=AUTHORIZED).status_code == 403
+
+
+def test_scan_scopes_loader_exception_fails_closed():
+    async def boom(db, user):
+        raise RuntimeError("db down")
+
+    assert _scan_app("viewer", scopes_loader=boom).post("/api/scan", json=AUTHORIZED).status_code == 403
+
+
+def test_scan_provider_calls_scan_authz_decide(monkeypatch):
+    seen = []
+    real = abac.scan_authz.decide
+
+    def spy(target, scan_types, scopes=()):
+        seen.append((target, list(scan_types), list(scopes)))
+        return real(target, scan_types, scopes)
+
+    monkeypatch.setattr(abac.scan_authz, "decide", spy)
+    assert _scan_app("viewer").post("/api/scan", json=AUTHORIZED).status_code == 200
+    assert seen == [(AUTHORIZED["target"], ["sqli"],
+                     [VerifiedScope("mine.example.com", abac.scan_authz.VERIFY_METHOD_DNS_TXT)])]
 
 
 def test_depends_fails_closed_on_policy_error():
@@ -530,3 +661,17 @@ def test_existing_role_checks_untouched():
     with pytest.raises(HTTPException):
         require_analyst_or_admin(_User("viewer"))
     assert require_analyst_or_admin(_User("analyst")) is None
+
+
+def test_scan_provider_defaults_to_load_verified_scopes(monkeypatch):
+    import web.domain_verification as dv
+
+    calls = []
+
+    async def fake_load(db, user):
+        calls.append(user.id)
+        return await _fake_scopes(db, user)
+
+    monkeypatch.setattr(dv, "load_verified_scopes", fake_load)
+    c = _scan_app("viewer", scopes_loader=None)
+    assert c.post("/api/scan", json=AUTHORIZED).status_code == 200 and calls == [1]
