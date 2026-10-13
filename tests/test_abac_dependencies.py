@@ -43,8 +43,9 @@ def policy():
     return load_policy(RULES_FILE)
 
 
-def attrs(role="analyst", ip="203.0.113.9", when=IN_HOURS, severity=None):
-    return {"role": role, "ip_address": ip, "request_time": when, "target_severity": severity}
+def attrs(role="analyst", ip="203.0.113.9", when=IN_HOURS, severity=None, operation="read"):
+    return {"role": role, "ip_address": ip, "request_time": when,
+            "operation": operation, "resource_severity": severity}
 
 
 # ── Config file ──────────────────────────────────────────────────────────────
@@ -52,7 +53,9 @@ def attrs(role="analyst", ip="203.0.113.9", when=IN_HOURS, severity=None):
 def test_shipped_config_loads_with_expected_rules(policy):
     ids = {r.id for r in policy.rules}
     assert ids == {
-        "analyst-cve-pipeline-critical-only",
+        "cve_read",
+        "cve_action",
+        "cve_admin",
         "viewer-sqli-scan-external-deny",
         "viewer-sqli-scan-internal-allow",
         "ngfw-rules-outside-business-hours-deny",
@@ -64,34 +67,55 @@ def test_shipped_config_loads_with_expected_rules(policy):
 
 def test_default_rules_path_is_the_shipped_file():
     assert os.path.samefile(abac.DEFAULT_RULES_PATH, RULES_FILE)
-    assert len(abac.get_policy().rules) == 5
+    assert len(abac.get_policy().rules) == 7
 
 
-# ── Rule 1: analyst -> CVE Pipeline only for Critical ────────────────────────
+# ── Rule 1: analyst -> CVE Pipeline (cve_read / cve_action) ──────────────────
 
 def test_analyst_cve_pipeline_allowed_for_critical(policy):
-    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity="Critical"))
-    assert d.allowed and d.rule_id == "analyst-cve-pipeline-critical-only"
+    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity="Critical", operation="action"))
+    assert d.allowed and d.rule_id == "cve_action"
 
 
 def test_analyst_cve_pipeline_critical_match_is_case_insensitive(policy):
-    assert evaluate(policy, "cve_pipeline", attrs(role="analyst", severity="critical")).allowed
+    # scanners store Finding.severity as "Critical"; match regardless of case
+    assert evaluate(policy, "cve_pipeline", attrs(role="analyst", severity="critical", operation="action")).allowed
 
 
 @pytest.mark.parametrize("severity", ["High", "Medium", "Low", "Info", "Critical-ish"])
 def test_analyst_cve_pipeline_denied_for_non_critical(policy, severity):
-    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=severity))
+    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=severity, operation="action"))
     assert not d.allowed
 
 
 def test_analyst_cve_pipeline_denied_when_severity_missing(policy):
-    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=None))
-    assert not d.allowed and d.reason == "missing attribute: target_severity"
+    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=None, operation="action"))
+    assert not d.allowed and d.rule_id == "cve_action" and d.reason == "missing attribute: resource_severity"
 
 
 def test_viewer_cve_pipeline_default_denied_even_if_critical(policy):
-    d = evaluate(policy, "cve_pipeline", attrs(role="viewer", severity="Critical"))
-    assert not d.allowed and d.rule_id is None
+    for op in ("read", "action"):
+        d = evaluate(policy, "cve_pipeline", attrs(role="viewer", severity="Critical", operation=op))
+        assert not d.allowed and d.rule_id is None
+
+
+def test_analyst_cve_read_needs_no_severity(policy):
+    d = evaluate(policy, "cve_pipeline", attrs(role="analyst", severity=None, operation="read"))
+    assert d.allowed and d.rule_id == "cve_read"
+
+
+@pytest.mark.parametrize("op", ["read", "action"])
+def test_admin_cve_pipeline_allowed_without_severity(policy, op):
+    d = evaluate(policy, "cve_pipeline", attrs(role="admin", severity=None, operation=op))
+    assert d.allowed and d.rule_id == "cve_admin"
+
+
+def test_missing_attribute_never_lets_an_allow_rule_match():
+    data = {"timezone": "UTC", "rules": [
+        {"id": "a", "roles": ["*"], "resource": "r", "effect": "allow",
+         "conditions": [{"attr": "resource_severity", "op": "eq", "value": "Critical"}]}]}
+    d = evaluate(policy_from_dict(data), "r", attrs(severity=None))
+    assert d == Decision(False, "a", "missing attribute: resource_severity")
 
 
 # ── Rule 2: viewer -> SQLi scan only from internal network ───────────────────
@@ -231,7 +255,7 @@ def test_deny_overrides_allow():
 
 def _one_rule(**overrides):
     rule = {"id": "x", "roles": ["admin"], "resource": "r", "effect": "allow",
-            "conditions": [{"attr": "target_severity", "op": "eq", "value": "Critical"}]}
+            "conditions": [{"attr": "resource_severity", "op": "eq", "value": "Critical"}]}
     rule.update(overrides)
     return {"timezone": "UTC", "rules": [rule]}
 
@@ -299,6 +323,7 @@ def _app(resource, role, clock, client_ip="203.0.113.9", policy_provider=None):
         return {"ok": True, "echo": body.get("x")}
 
     app.dependency_overrides[abac.abac_user] = lambda: _User(role)
+    app.dependency_overrides[abac.get_db] = lambda: None   # no database in these tests
     return TestClient(app, client=(client_ip, 50000))
 
 
@@ -315,14 +340,163 @@ def test_depends_denies_ngfw_rules_out_of_hours():
     assert r.json()["detail"] == "Access denied by context policy"
 
 
-def test_depends_reads_target_severity_from_query_and_json_body():
+def test_depends_ignores_client_supplied_severity():
+    """The caller must not be able to claim a severity: it comes from the record."""
     c = _app("cve_pipeline", "analyst", clock=lambda: IN_HOURS)
-    assert c.get("/res?target_severity=Critical").status_code == 200
-    assert c.get("/res?target_severity=High").status_code == 403
-    assert c.get("/res").status_code == 403
-    r = c.post("/res", json={"target_severity": "Critical", "x": 7})
-    assert r.status_code == 200 and r.json() == {"ok": True, "echo": 7}
-    assert c.post("/res", json={"target_severity": "Low"}).status_code == 403
+    assert c.post("/res", json={"target_severity": "Critical", "x": 7}).status_code == 403
+    assert c.post("/res?resource_severity=Critical", json={"resource_severity": "Critical"}).status_code == 403
+    assert c.get("/res?target_severity=High").status_code == 200   # read needs no severity
+
+
+# ── CVE pipeline with the severity resolver (fake findings, no DB) ───────────
+
+FAKE_FINDINGS = {11: "Critical", 12: "High"}   # finding_id -> Finding.severity, all owned by user 1
+
+
+def _fake_finding_lookup(calls=None):
+    async def lookup(db, finding_id, user):
+        if calls is not None:
+            calls.append(finding_id)
+        return FAKE_FINDINGS.get(finding_id) if user.id == 1 else None
+    return lookup
+
+
+def _cve_app(role, finding_lookup=None, uid=1):
+    async def provider(request, user, db):
+        sev = await abac.resolve_resource_severity(request, user, db,
+                                                   finding_lookup=finding_lookup or _fake_finding_lookup())
+        return {"resource_severity": sev}
+
+    app = FastAPI()
+    dep = require_abac("cve_pipeline", policy_provider=lambda: load_policy(RULES_FILE),
+                       clock=lambda: IN_HOURS, providers=(provider,))
+
+    # Same paths as web/routers/cve_submission.py (prefix /api/cve)
+    @app.get("/api/cve/search")
+    async def search(user=Depends(dep)):
+        return {"ok": True}
+
+    @app.post("/api/cve/draft")
+    async def draft(request: Request, user=Depends(dep)):
+        return {"ok": True, "finding_id": (await request.json()).get("finding_id")}
+
+    @app.post("/api/cve/drafts/{draft_id}/run")   # hypothetical write route on a CVE record
+    async def run_on_draft(draft_id: int, user=Depends(dep)):
+        return {"ok": True}
+
+    app.dependency_overrides[abac.abac_user] = lambda: _User(role, uid)
+    app.dependency_overrides[abac.get_db] = lambda: None
+    return TestClient(app, client=("203.0.113.9", 50000))
+
+
+def test_cve_analyst_get_without_target_allowed():
+    assert _cve_app("analyst").get("/api/cve/search?keyword=openssl").status_code == 200
+
+
+def test_cve_analyst_run_on_critical_target_allowed():
+    r = _cve_app("analyst").post("/api/cve/draft", json={"finding_id": 11})
+    assert r.status_code == 200 and r.json() == {"ok": True, "finding_id": 11}
+
+
+def test_cve_analyst_run_on_high_target_denied():
+    assert _cve_app("analyst").post("/api/cve/draft", json={"finding_id": 12}).status_code == 403
+
+
+def test_cve_analyst_run_without_target_denied():
+    c = _cve_app("analyst")
+    assert c.post("/api/cve/draft", json={"title": "t", "description": "d"}).status_code == 403
+    assert c.post("/api/cve/draft", json={"title": "t", "target_severity": "Critical"}).status_code == 403
+
+
+def test_cve_analyst_run_on_cve_record_denied_without_cvss_mapping():
+    # CVE-only request: no verified CVSS -> severity mapping, so no severity, so deny
+    assert _cve_app("analyst").post("/api/cve/drafts/5/run").status_code == 403
+
+
+@pytest.mark.parametrize("finding_id", ["11", 0, -11, True, "11abc", "1e3", [11], None])
+def test_cve_malformed_finding_id_denied_without_lookup(finding_id):
+    calls = []
+    c = _cve_app("analyst", finding_lookup=_fake_finding_lookup(calls))
+    body = {"finding_id": finding_id}
+    status = c.post("/api/cve/draft", json=body).status_code
+    if finding_id == "11":   # a numeric string is a valid id, same as int()
+        assert status == 200 and calls == [11]
+    else:
+        assert status == 403 and calls == []
+
+
+def test_cve_finding_of_another_user_denied():
+    assert _cve_app("analyst", uid=2).post("/api/cve/draft", json={"finding_id": 11}).status_code == 403
+
+
+def test_cve_finding_id_query_param_is_a_target_too():
+    assert _cve_app("analyst").post("/api/cve/draft?finding_id=11", json={}).status_code == 200
+
+
+def test_cve_lookup_error_fails_closed():
+    async def broken(db, finding_id, user):
+        raise RuntimeError("db down")
+    assert _cve_app("analyst", finding_lookup=broken).post("/api/cve/draft", json={"finding_id": 11}).status_code == 403
+
+
+def test_cve_viewer_denied():
+    c = _cve_app("viewer")
+    assert c.get("/api/cve/search").status_code == 403
+    assert c.post("/api/cve/draft", json={"finding_id": 11}).status_code == 403
+
+
+def test_cve_admin_allowed_per_role_logic():
+    c = _cve_app("admin")
+    assert c.get("/api/cve/search").status_code == 200
+    assert c.post("/api/cve/draft", json={"finding_id": 12}).status_code == 200
+    assert c.post("/api/cve/draft", json={}).status_code == 200
+
+
+def test_provider_cannot_override_request_attributes():
+    async def sneaky(request, user, db):
+        return {"role": "admin"}
+
+    app = FastAPI()
+    dep = require_abac("cve_pipeline", policy_provider=lambda: load_policy(RULES_FILE),
+                       clock=lambda: IN_HOURS, providers=(sneaky,))
+
+    @app.get("/api/cve/search")
+    async def search(user=Depends(dep)):
+        return {"ok": True}
+
+    app.dependency_overrides[abac.abac_user] = lambda: _User("viewer")
+    app.dependency_overrides[abac.get_db] = lambda: None
+    assert TestClient(app).get("/api/cve/search").status_code == 403
+
+
+def test_cve_severity_provider_uses_default_finding_lookup(monkeypatch):
+    import asyncio
+
+    async def fake_lookup(db, finding_id, user):
+        return "critical"
+
+    monkeypatch.setattr(abac, "finding_severity_for_user", fake_lookup)
+    scope = {"type": "http", "method": "POST", "path": "/api/cve/draft", "headers": [],
+             "query_string": b"finding_id=11", "path_params": {}}
+    assert asyncio.run(abac.cve_severity_provider(Request(scope), _User("analyst"), None)) == {
+        "resource_severity": "critical"}
+
+
+def test_finding_severity_lookup_uses_owned_finding(monkeypatch):
+    import asyncio
+    import web.routers.cve_submission as cve_router
+
+    seen = {}
+
+    async def fake_get_finding_for_user(db, finding_id, user_id):
+        seen["args"] = (db, finding_id, user_id)
+        return type("F", (), {"severity": "critical"})() if finding_id == 11 else None
+
+    monkeypatch.setattr(cve_router, "get_finding_for_user", fake_get_finding_for_user)
+    db = object()
+    assert asyncio.run(abac.finding_severity_for_user(db, 11, _User("analyst", 7))) == "critical"
+    assert seen["args"] == (db, 11, 7)
+    assert asyncio.run(abac.finding_severity_for_user(db, 99, _User("analyst", 7))) is None
 
 
 def test_depends_uses_trusted_client_ip_not_forwarded_header():

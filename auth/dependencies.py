@@ -5,7 +5,8 @@ Rules are data, not code. They are loaded from config/abac_rules.json
 id / roles / resource / conditions / effect. Evaluation:
 
   1. Rules match on role (or "*") and resource.
-  2. If a matching rule references an attribute that is missing, deny.
+  2. A missing attribute can never allow: a matching deny rule that needs it
+     denies outright, and a matching allow rule that needs it does not match.
   3. Any matching deny whose conditions all hold wins (deny-overrides).
   4. Otherwise any matching allow whose conditions all hold allows.
   5. Otherwise deny (default).
@@ -20,7 +21,12 @@ Attributes:
                     resolver. Raw X-Forwarded-For is never read here.
   request_time    — now, in the configured IANA timezone (config "timezone",
                     overridable by ABAC_TIMEZONE)
-  target_severity — query parameter or JSON body field "target_severity"
+  operation       — "read" for GET/HEAD, "action" for every other method
+
+Resource attributes come from per-endpoint providers passed to require_abac()
+and are None (missing => deny) on endpoints that don't pass one:
+  resource_severity — from a record, never from the request itself; see
+                    resolve_resource_severity() / cve_severity_provider.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Awaitable, Callable, Mapping, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, HTTPException, Request
@@ -47,7 +53,9 @@ RULES_PATH_ENV = "ABAC_RULES_PATH"
 TIMEZONE_ENV = "ABAC_TIMEZONE"
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "abac_rules.json"
 
-ATTRIBUTES = frozenset({"role", "ip_address", "request_time", "target_severity"})
+PROVIDED_ATTRIBUTES = frozenset({"resource_severity"})
+ATTRIBUTES = frozenset({"role", "ip_address", "request_time", "operation"}) | PROVIDED_ATTRIBUTES
+READ_METHODS = frozenset({"GET", "HEAD"})
 EFFECTS = frozenset({"allow", "deny"})
 _DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 
@@ -271,10 +279,15 @@ def evaluate(policy: Policy, resource: str, attrs: Mapping[str, Any]) -> Decisio
 
     applicable = [r for r in policy.rules if r.targets(role, resource)]
     allow_hit: Optional[Rule] = None
+    missing_hit: Optional[Decision] = None
     for rule in applicable:
         missing = [c.attr for c in rule.conditions if _is_missing(attrs.get(c.attr))]
         if missing:
-            return Decision(False, rule.id, f"missing attribute: {missing[0]}")
+            reason = Decision(False, rule.id, f"missing attribute: {missing[0]}")
+            if rule.effect == "deny":
+                return reason
+            missing_hit = missing_hit or reason
+            continue
         try:
             matched = all(_holds(c, attrs) for c in rule.conditions)
         except (ValueError, TypeError, AttributeError):
@@ -287,23 +300,80 @@ def evaluate(policy: Policy, resource: str, attrs: Mapping[str, Any]) -> Decisio
             allow_hit = rule
     if allow_hit is not None:
         return Decision(True, allow_hit.id, "allowed by rule")
-    return Decision(False, None, "no matching rule (default deny)")
+    return missing_hit or Decision(False, None, "no matching rule (default deny)")
 
 
 # ── FastAPI integration ──────────────────────────────────────────────────────
 
-async def _target_severity_from_request(request: Request) -> Optional[str]:
-    value = request.query_params.get("target_severity")
-    if value:
+async def _request_value(request: Request, name: str) -> Any:
+    """Query parameter `name`, else the top-level JSON body field `name`, else None."""
+    value = request.query_params.get(name)
+    if value is not None:
         return value
     if request.method in ("POST", "PUT", "PATCH") and "application/json" in request.headers.get("content-type", ""):
         try:
             body = await request.json()  # Starlette caches the body; the handler can still read it
         except Exception:  # noqa: BLE001 — malformed body => attribute missing => deny
             return None
-        if isinstance(body, dict) and isinstance(body.get("target_severity"), str):
-            return body["target_severity"]
+        if isinstance(body, dict):
+            return body.get(name)
     return None
+
+
+def _positive_int(value: Any) -> Optional[int]:
+    if isinstance(value, bool):
+        return None
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 and str(n) == str(value).strip() else None
+
+
+async def finding_severity_for_user(db: AsyncSession, finding_id: int, user: Any) -> Optional[str]:
+    """Finding.severity for one of the user's own findings, via the CVE router's
+    get_finding_for_user (same Scan.user_id ownership check). None if not found."""
+    from web.routers.cve_submission import get_finding_for_user
+
+    finding = await get_finding_for_user(db, finding_id, user.id)
+    return finding.severity if finding is not None else None
+
+
+FindingLookup = Callable[[AsyncSession, int, Any], Awaitable[Optional[str]]]
+# (request, user, db) -> {attribute: value}; keys must be in PROVIDED_ATTRIBUTES
+AttributeProvider = Callable[[Request, Any, AsyncSession], Awaitable[Mapping[str, Any]]]
+
+
+async def resolve_resource_severity(
+    request: Request,
+    user: Any,
+    db: AsyncSession,
+    finding_lookup: Optional[FindingLookup] = None,
+) -> Optional[str]:
+    """Severity of the resource a CVE pipeline request acts on. None means missing (deny).
+
+    1. Target: "finding_id" (query or JSON body; POST /api/cve/draft takes it in
+       the body). Severity is Finding.severity of the caller's own finding. The
+       Target model has no severity column, so the finding is the target record.
+       A finding_id that is present but malformed or not the caller's gives None;
+       it never falls through to step 2.
+    2. CVE: "draft_id" path parameter or "cve_id" query parameter. CveDraft has
+       cvss_score, but the codebase has no CVSS -> severity mapping for this
+       purpose, so this returns None until an approved mapping is added here.
+    """
+    raw_finding = await _request_value(request, "finding_id")
+    if raw_finding is not None:
+        finding_id = _positive_int(raw_finding)
+        if finding_id is None:
+            return None
+        return await (finding_lookup or finding_severity_for_user)(db, finding_id, user)
+    # Step 2 (draft_id / cve_id): no verified CVSS -> severity mapping, so None.
+    return None
+
+
+async def cve_severity_provider(request: Request, user: Any, db: AsyncSession) -> dict:
+    """Provider for CVE pipeline routes: require_abac("cve_pipeline", providers=(cve_severity_provider,))."""
+    return {"resource_severity": await resolve_resource_severity(request, user, db)}
 
 
 async def build_attributes(
@@ -311,16 +381,26 @@ async def build_attributes(
     user: Any,
     policy: Policy,
     now: Optional[Callable[[], datetime]] = None,
+    db: Optional[AsyncSession] = None,
+    providers: tuple = (),
 ) -> dict:
     ip = get_client_ip(request)
     current = now() if now else datetime.now(policy.timezone)
     if current.tzinfo is None:
         raise ValueError("clock must return an aware datetime")
+    attrs = dict.fromkeys(PROVIDED_ATTRIBUTES)
+    for provider in providers:
+        provided = await provider(request, user, db)
+        unknown = set(provided) - PROVIDED_ATTRIBUTES
+        if unknown:
+            raise ValueError(f"provider returned unknown attribute(s): {sorted(unknown)}")
+        attrs.update(provided)
     return {
+        **attrs,
         "role": getattr(user, "role", None),
         "ip_address": None if ip in (None, "", "unknown") else ip,
         "request_time": current.astimezone(policy.timezone),
-        "target_severity": await _target_severity_from_request(request),
+        "operation": "read" if request.method.upper() in READ_METHODS else "action",
     }
 
 
@@ -333,17 +413,22 @@ def require_abac(
     resource: str,
     policy_provider: Callable[[], Policy] = get_policy,
     clock: Optional[Callable[[], datetime]] = None,
+    providers: tuple = (),
 ):
     """FastAPI dependency factory: Depends(require_abac("ngfw_rules")).
+
+    `providers` supply resource attributes for this endpoint, e.g.
+    providers=(cve_severity_provider,) on CVE pipeline routes.
 
     Returns the authenticated user on allow; raises 403 on deny. Apply it
     per endpoint, next to (not instead of) the existing role checks.
     """
 
-    async def dependency(request: Request, user=Depends(abac_user)):
+    async def dependency(request: Request, user=Depends(abac_user), db: AsyncSession = Depends(get_db)):
         try:
             policy = policy_provider()
-            attrs = await build_attributes(request, user, policy, now=clock)
+            attrs = await build_attributes(request, user, policy, now=clock, db=db,
+                                           providers=providers)
             decision = evaluate(policy, resource, attrs)
         except Exception as exc:  # noqa: BLE001 — any failure fails closed
             logger.warning("ABAC evaluation error for %s: %s", resource, type(exc).__name__)
