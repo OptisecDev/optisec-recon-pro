@@ -423,8 +423,9 @@ async def scan_authz_provider(
     """Provider for POST /api/scan (web/app.py:run_scan), which takes a JSON body
     {"target": str, "scan_types": [str]}.
 
-    scan_checks is scan_authz.expand_checks(scan_types), so an empty list means
-    every module. target_authorized is scan_authz.decide(target, checks, scopes).ok,
+    scan_checks is scan_authz.expand_checks(scan_types), never the raw list: an
+    empty or missing scan_types means every module (SQLi included), and if the
+    expansion fails scan_checks stays missing, which denies. target_authorized is scan_authz.decide(target, checks, scopes).ok,
     where scopes are the user's verified domains (load_verified_scopes by default).
     That is taken at face value, like preview_authorization(); run_scan still calls
     check_scan_authorization(), which re-checks DNS, so this can only narrow.
@@ -437,7 +438,11 @@ async def scan_authz_provider(
     target, scan_types = body.get("target"), body.get("scan_types", [])
     if not isinstance(scan_types, list) or not all(isinstance(t, str) for t in scan_types):
         return out
-    checks = scan_authz.expand_checks(scan_types)
+    try:
+        checks = scan_authz.expand_checks(scan_types)
+    except Exception as exc:  # noqa: BLE001 — no expanded list => scan_checks missing => deny
+        logger.warning("ABAC scan check expansion error: %s", type(exc).__name__)
+        return out
     out["scan_checks"] = checks
     if not isinstance(target, str) or not target.strip():
         return out
