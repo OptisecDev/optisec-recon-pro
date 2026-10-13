@@ -8,7 +8,7 @@
   "params": {
     "sqli_class_checks": ["sqli"],
     "internal_networks": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7"],
-    "business_hours": {"start": "09:00", "end": "17:00", "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}
+    "business_hours": {"start": "09:00", "end": "17:00", "days": ["sun", "mon", "tue", "wed", "thu"]}
   },
 
   "rules": [
@@ -75,7 +75,7 @@
         {"attr": "request_time", "op": "outside_hours", "value": "$business_hours"}
       ],
       "effect": "deny",
-      "note": "Roadmap: any role -> NGFW Rules denied outside configured business hours."
+      "note": "Roadmap: any role -> NGFW Rules denied outside configured business hours. Resource = GET /ngfw/api/rules (web/routers/ngfw.py:73), the only NGFW rules endpoint. Window: params.business_hours (Sun-Thu, start inclusive, end exclusive) in the ABAC_TIMEZONE zone, else config 'timezone'."
     },
     {
       "id": "ngfw-rules-business-hours-allow",

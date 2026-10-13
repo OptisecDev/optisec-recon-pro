@@ -230,6 +230,58 @@ def test_business_days_restriction_and_overnight_window():
     assert not evaluate(p, "r", attrs(when=mon_12)).allowed
 
 
+# Week of 2026-10-11: Sun 11, Mon 12, Tue 13, Wed 14, Thu 15, Fri 16, Sat 17
+BGW = ZoneInfo("Asia/Baghdad")   # UTC+3, no DST
+
+
+@pytest.mark.parametrize("local, allowed", [
+    (datetime(2026, 10, 11, 9, 0, tzinfo=BGW), True),     # Sunday 09:00, start inclusive
+    (datetime(2026, 10, 11, 16, 59, tzinfo=BGW), True),   # Sunday 16:59
+    (datetime(2026, 10, 11, 17, 0, tzinfo=BGW), False),   # Sunday 17:00, end exclusive
+    (datetime(2026, 10, 11, 8, 59, tzinfo=BGW), False),   # Sunday 08:59
+    (datetime(2026, 10, 17, 10, 0, tzinfo=BGW), False),   # Saturday
+    (datetime(2026, 10, 15, 10, 0, tzinfo=BGW), True),    # Thursday
+    (datetime(2026, 10, 16, 10, 0, tzinfo=BGW), False),   # Friday
+])
+def test_ngfw_business_hours_sun_to_thu_in_abac_timezone(monkeypatch, local, allowed):
+    """Clock is injected in UTC; the window is evaluated in ABAC_TIMEZONE."""
+    monkeypatch.setenv("ABAC_TIMEZONE", "Asia/Baghdad")
+    utc_clock = local.astimezone(UTC)
+    c = _app("ngfw_rules", "analyst", clock=lambda: utc_clock)
+    assert c.get("/res").status_code == (200 if allowed else 403)
+
+
+def test_ngfw_business_hours_shipped_window(policy):
+    hours = next(r for r in policy.rules if r.id == "ngfw-rules-business-hours-allow").conditions[0].value
+    assert hours["days"] == {"sun", "mon", "tue", "wed", "thu"}
+    assert (hours["start"].isoformat(), hours["end"].isoformat()) == ("09:00:00", "17:00:00")
+
+
+def test_ngfw_business_days_and_hours_come_from_config():
+    with open(RULES_FILE, encoding="utf-8") as fh:
+        data = json.load(fh)
+    data["params"]["business_hours"] = {"start": "08:00", "end": "12:00", "days": ["fri"]}
+    p = policy_from_dict(data, timezone="UTC")
+    assert evaluate(p, "ngfw_rules", attrs(when=datetime(2026, 10, 16, 8, 0, tzinfo=UTC))).allowed
+    assert not evaluate(p, "ngfw_rules", attrs(when=datetime(2026, 10, 16, 12, 0, tzinfo=UTC))).allowed
+    assert not evaluate(p, "ngfw_rules", attrs(when=datetime(2026, 10, 11, 10, 0, tzinfo=UTC))).allowed
+
+
+@pytest.mark.parametrize("tz", ["Mars/Olympus", "Not/AZone", "../../etc/passwd", "UTC+3"])
+def test_ngfw_unknown_timezone_denies(monkeypatch, tz):
+    monkeypatch.setenv("ABAC_TIMEZONE", tz)
+    with pytest.raises(PolicyError):
+        load_policy(RULES_FILE)
+    c = _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 10, 0, tzinfo=UTC))
+    assert c.get("/res").status_code == 403
+
+
+def test_abac_timezone_env_overrides_config_timezone(monkeypatch):
+    assert load_policy(RULES_FILE).timezone == ZoneInfo("UTC")
+    monkeypatch.setenv("ABAC_TIMEZONE", "Asia/Baghdad")
+    assert load_policy(RULES_FILE).timezone == BGW
+
+
 # ── Default deny and missing attributes ──────────────────────────────────────
 
 def test_default_deny_for_unknown_resource(policy):
