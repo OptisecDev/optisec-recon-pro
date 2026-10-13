@@ -6,6 +6,7 @@
   "_timezone_comment": "IANA zone used to evaluate request_time. Override with the ABAC_TIMEZONE env var. CONFIRM: UTC is a placeholder.",
 
   "params": {
+    "sqli_class_checks": ["sqli"],
     "internal_networks": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8", "::1/128", "fc00::/7"],
     "business_hours": {"start": "09:00", "end": "17:00", "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}
   },
@@ -46,23 +47,25 @@
     {
       "id": "viewer-sqli-scan-external-deny",
       "roles": ["viewer"],
-      "resource": "sqli_scan",
+      "resource": "api_scan",
       "conditions": [
         {"attr": "ip_address", "op": "not_in_networks", "value": "$internal_networks"}
       ],
       "effect": "deny",
-      "note": "Roadmap: viewer -> SQLi scan denied unless from an internal network. NOT a substitute for target authorization (web/scan_authz.py)."
+      "note": "Roadmap: viewer -> SQLi scan denied unless from an internal network. Resource rebound from the abstract 'sqli_scan' to api_scan = POST /api/scan (web/app.py:run_scan)."
     },
     {
-      "id": "viewer-sqli-scan-internal-allow",
+      "id": "sqli_scan_viewer",
       "roles": ["viewer"],
-      "resource": "sqli_scan",
+      "resource": "api_scan",
       "conditions": [
-        {"attr": "ip_address", "op": "in_networks", "value": "$internal_networks"}
+        {"attr": "scan_checks", "op": "subset_of", "value": "$sqli_class_checks"},
+        {"attr": "ip_address", "op": "in_networks", "value": "$internal_networks"},
+        {"attr": "target_authorized", "op": "eq", "value": true}
       ],
       "effect": "allow",
-      "confirm": true,
-      "note": "Reads 'deny unless internal' as 'allow when internal'. Without it the default deny makes the rule meaningless. The existing role check (require_analyst_or_admin) still blocks viewers from scanning."
+      "confirm": false,
+      "note": "Repair of viewer-sqli-scan-internal-allow. Viewer may launch only SQLi-class checks (params.sqli_class_checks; empty scan_types means every module, so it never matches), only from an internal network, and only on a target web/scan_authz.decide() authorizes. run_scan's require_analyst_or_admin still blocks viewers live, so this rule cannot widen access."
     },
     {
       "id": "ngfw-rules-outside-business-hours-deny",

@@ -27,6 +27,9 @@ Resource attributes come from per-endpoint providers passed to require_abac()
 and are None (missing => deny) on endpoints that don't pass one:
   resource_severity — from a record, never from the request itself; see
                     resolve_resource_severity() / cve_severity_provider.
+  scan_checks     — scan_authz.expand_checks() of the body's "scan_types"
+  target_authorized — scan_authz.decide(...).ok for the body's "target"; see
+                    scan_authz_provider.
 """
 
 from __future__ import annotations
@@ -44,6 +47,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from web import scan_authz
 from web.auth import get_client_ip, get_current_user
 from web.database import get_db
 
@@ -53,7 +57,7 @@ RULES_PATH_ENV = "ABAC_RULES_PATH"
 TIMEZONE_ENV = "ABAC_TIMEZONE"
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "abac_rules.json"
 
-PROVIDED_ATTRIBUTES = frozenset({"resource_severity"})
+PROVIDED_ATTRIBUTES = frozenset({"resource_severity", "scan_checks", "target_authorized"})
 ATTRIBUTES = frozenset({"role", "ip_address", "request_time", "operation"}) | PROVIDED_ATTRIBUTES
 READ_METHODS = frozenset({"GET", "HEAD"})
 EFFECTS = frozenset({"allow", "deny"})
@@ -148,6 +152,18 @@ def _parse_list(value: Any) -> list:
     return value
 
 
+def _parse_nonempty_list(value: Any) -> frozenset:
+    if not isinstance(value, list) or not value:
+        raise PolicyError("'subset_of' needs a non-empty list")
+    return frozenset(value)
+
+
+def _subset(actual: Any, allowed: frozenset) -> bool:
+    if not isinstance(actual, (list, tuple, set, frozenset)) or not actual:
+        return False
+    return set(actual) <= allowed
+
+
 def _ip(value: Any):
     return ipaddress.ip_address(str(value))
 
@@ -158,6 +174,7 @@ _OPS: dict[str, tuple[Callable, Optional[str], Callable]] = {
            lambda a, v, c: (str(a).casefold() == str(v).casefold()) if c.case_insensitive else a == v),
     "in": (_parse_list, None,
            lambda a, v, c: (str(a).casefold() in {str(x).casefold() for x in v}) if c.case_insensitive else a in v),
+    "subset_of": (_parse_nonempty_list, "scan_checks", lambda a, v, c: _subset(a, v)),
     "in_networks": (_parse_networks, "ip_address", lambda a, nets, c: any(_ip(a) in n for n in nets)),
     "not_in_networks": (_parse_networks, "ip_address", lambda a, nets, c: not any(_ip(a) in n for n in nets)),
     "within_hours": (_parse_hours, "request_time", lambda a, h, c: _within_hours(a, h)),
@@ -305,17 +322,24 @@ def evaluate(policy: Policy, resource: str, attrs: Mapping[str, Any]) -> Decisio
 
 # ── FastAPI integration ──────────────────────────────────────────────────────
 
+async def _json_body(request: Request) -> Optional[dict]:
+    if "application/json" not in request.headers.get("content-type", ""):
+        return None
+    try:
+        body = await request.json()  # cached by Starlette; the handler can still read it
+    except Exception:  # noqa: BLE001 — malformed body => attributes missing => deny
+        return None
+    return body if isinstance(body, dict) else None
+
+
 async def _request_value(request: Request, name: str) -> Any:
     """Query parameter `name`, else the top-level JSON body field `name`, else None."""
     value = request.query_params.get(name)
     if value is not None:
         return value
-    if request.method in ("POST", "PUT", "PATCH") and "application/json" in request.headers.get("content-type", ""):
-        try:
-            body = await request.json()  # Starlette caches the body; the handler can still read it
-        except Exception:  # noqa: BLE001 — malformed body => attribute missing => deny
-            return None
-        if isinstance(body, dict):
+    if request.method in ("POST", "PUT", "PATCH"):
+        body = await _json_body(request)
+        if body is not None:
             return body.get(name)
     return None
 
@@ -374,6 +398,46 @@ async def resolve_resource_severity(
 async def cve_severity_provider(request: Request, user: Any, db: AsyncSession) -> dict:
     """Provider for CVE pipeline routes: require_abac("cve_pipeline", providers=(cve_severity_provider,))."""
     return {"resource_severity": await resolve_resource_severity(request, user, db)}
+
+
+ScopesLoader = Callable[[AsyncSession, Any], Awaitable[list]]
+
+
+async def scan_authz_provider(
+    request: Request,
+    user: Any,
+    db: AsyncSession,
+    scopes_loader: Optional[ScopesLoader] = None,
+) -> dict:
+    """Provider for POST /api/scan (web/app.py:run_scan), which takes a JSON body
+    {"target": str, "scan_types": [str]}.
+
+    scan_checks is scan_authz.expand_checks(scan_types), so an empty list means
+    every module. target_authorized is scan_authz.decide(target, checks, scopes).ok,
+    where scopes are the user's verified domains (load_verified_scopes by default).
+    That is taken at face value, like preview_authorization(); run_scan still calls
+    check_scan_authorization(), which re-checks DNS, so this can only narrow.
+    Malformed input or any error in the authorization path leaves the attribute
+    missing, which denies."""
+    out = {"scan_checks": None, "target_authorized": None}
+    body = await _json_body(request)
+    if body is None:
+        return out
+    target, scan_types = body.get("target"), body.get("scan_types", [])
+    if not isinstance(scan_types, list) or not all(isinstance(t, str) for t in scan_types):
+        return out
+    checks = scan_authz.expand_checks(scan_types)
+    out["scan_checks"] = checks
+    if not isinstance(target, str) or not target.strip():
+        return out
+    try:
+        if scopes_loader is None:
+            from web.domain_verification import load_verified_scopes as scopes_loader
+        scopes = await scopes_loader(db, user)
+        out["target_authorized"] = bool(scan_authz.decide(target.strip(), checks, scopes).ok)
+    except Exception as exc:  # noqa: BLE001 — fail closed
+        logger.warning("ABAC scan authorization error: %s", type(exc).__name__)
+    return out
 
 
 async def build_attributes(
