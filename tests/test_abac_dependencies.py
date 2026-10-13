@@ -72,6 +72,24 @@ def test_shipped_config_loads_with_expected_rules(policy):
         assert rule.effect in ("allow", "deny") and rule.roles and rule.resource
 
 
+def test_shipped_rules_have_explicit_confirm_flags(policy):
+    with open(RULES_FILE, encoding="utf-8") as fh:
+        raw = json.load(fh)["rules"]
+    for rule in raw:
+        assert {"id", "roles", "resource", "conditions", "effect", "confirm"} <= set(rule), rule["id"]
+        assert isinstance(rule["confirm"], bool)
+    # repaired / new rules await owner review; untouched roadmap rules are confirmed
+    assert {r.id: r.confirm for r in policy.rules} == {
+        "cve_read": False,
+        "cve_action": False,
+        "cve_admin": False,
+        "viewer-sqli-scan-external-deny": False,
+        "sqli_scan_viewer": False,
+        "ngfw-rules-outside-business-hours-deny": True,
+        "ngfw-rules-business-hours-allow": True,
+    }
+
+
 def test_default_rules_path_is_the_shipped_file():
     assert os.path.samefile(abac.DEFAULT_RULES_PATH, RULES_FILE)
     assert len(abac.get_policy().rules) == 7
@@ -119,7 +137,7 @@ def test_admin_cve_pipeline_allowed_without_severity(policy, op):
 
 def test_missing_attribute_never_lets_an_allow_rule_match():
     data = {"timezone": "UTC", "rules": [
-        {"id": "a", "roles": ["*"], "resource": "r", "effect": "allow",
+        {"id": "a", "roles": ["*"], "resource": "r", "effect": "allow", "confirm": True,
          "conditions": [{"attr": "resource_severity", "op": "eq", "value": "Critical"}]}]}
     d = evaluate(policy_from_dict(data), "r", attrs(severity=None))
     assert d == Decision(False, "a", "missing attribute: resource_severity")
@@ -216,7 +234,7 @@ def test_business_days_restriction_and_overnight_window():
     data = {
         "timezone": "UTC",
         "params": {"night": {"start": "22:00", "end": "06:00", "days": ["mon"]}},
-        "rules": [{"id": "night", "roles": ["*"], "resource": "r", "effect": "allow",
+        "rules": [{"id": "night", "roles": ["*"], "resource": "r", "effect": "allow", "confirm": True,
                    "conditions": [{"attr": "request_time", "op": "within_hours", "value": "$night"}]}],
     }
     p = policy_from_dict(data)
@@ -308,8 +326,8 @@ def test_missing_attribute_denies_even_when_another_rule_would_allow():
     data = {
         "timezone": "UTC",
         "rules": [
-            {"id": "open", "roles": ["*"], "resource": "r", "effect": "allow", "conditions": []},
-            {"id": "needs-ip", "roles": ["*"], "resource": "r", "effect": "deny",
+            {"id": "open", "roles": ["*"], "resource": "r", "effect": "allow", "confirm": True, "conditions": []},
+            {"id": "needs-ip", "roles": ["*"], "resource": "r", "effect": "deny", "confirm": True,
              "conditions": [{"attr": "ip_address", "op": "not_in_networks", "value": ["10.0.0.0/8"]}]},
         ],
     }
@@ -323,8 +341,8 @@ def test_deny_overrides_allow():
     data = {
         "timezone": "UTC",
         "rules": [
-            {"id": "a", "roles": ["*"], "resource": "r", "effect": "allow", "conditions": []},
-            {"id": "d", "roles": ["viewer"], "resource": "r", "effect": "deny", "conditions": []},
+            {"id": "a", "roles": ["*"], "resource": "r", "effect": "allow", "confirm": True, "conditions": []},
+            {"id": "d", "roles": ["viewer"], "resource": "r", "effect": "deny", "confirm": True, "conditions": []},
         ],
     }
     p = policy_from_dict(data)
@@ -335,7 +353,7 @@ def test_deny_overrides_allow():
 # ── Config validation fails closed ───────────────────────────────────────────
 
 def _one_rule(**overrides):
-    rule = {"id": "x", "roles": ["admin"], "resource": "r", "effect": "allow",
+    rule = {"id": "x", "roles": ["admin"], "resource": "r", "effect": "allow", "confirm": True,
             "conditions": [{"attr": "resource_severity", "op": "eq", "value": "Critical"}]}
     rule.update(overrides)
     return {"timezone": "UTC", "rules": [rule]}
@@ -343,6 +361,13 @@ def _one_rule(**overrides):
 
 @pytest.mark.parametrize("data", [
     _one_rule(effect="permit"),
+    _one_rule(confirm=None),
+    _one_rule(confirm="yes"),
+    _one_rule(confirm=1),
+    _one_rule(conditions=None),
+    _one_rule(conditions={"attr": "role"}),
+    {"timezone": "UTC", "rules": [{k: v for k, v in _one_rule()["rules"][0].items() if k != "confirm"}]},
+    {"timezone": "UTC", "rules": [{k: v for k, v in _one_rule()["rules"][0].items() if k != "conditions"}]},
     _one_rule(roles=[]),
     _one_rule(roles="admin"),
     _one_rule(resource=""),
@@ -727,3 +752,41 @@ def test_scan_provider_defaults_to_load_verified_scopes(monkeypatch):
     monkeypatch.setattr(dv, "load_verified_scopes", fake_load)
     c = _scan_app("viewer", scopes_loader=None)
     assert c.post("/api/scan", json=AUTHORIZED).status_code == 200 and calls == [1]
+
+
+# ── Global deny and integrity through the default policy provider ────────────
+
+def _default_provider_app(role, resource):
+    app = FastAPI()
+    dep = require_abac(resource, clock=lambda: IN_HOURS)   # default: get_policy()
+
+    @app.get("/res")
+    async def res(user=Depends(dep)):
+        return {"ok": True}
+
+    app.dependency_overrides[abac.abac_user] = lambda: _User(role)
+    app.dependency_overrides[abac.get_db] = lambda: None
+    return TestClient(app, client=("10.0.0.5", 50000))
+
+
+def test_depends_default_deny_for_unmatched_resource():
+    assert _default_provider_app("admin", "ngfw_rules").get("/res").status_code == 200
+    assert _default_provider_app("admin", "no_such_resource").get("/res").status_code == 403
+
+
+@pytest.mark.parametrize("content", [
+    "{not json",
+    json.dumps({"timezone": "UTC", "rules": [
+        {"id": "open", "roles": ["*"], "resource": "ngfw_rules", "effect": "allow", "conditions": []}]}),  # no confirm
+    json.dumps({"timezone": "UTC", "rules": [
+        {"id": "open", "roles": ["*"], "resource": "ngfw_rules", "effect": "allow", "confirm": True}]}),  # no conditions
+    json.dumps({"timezone": "UTC", "rules": "all"}),
+])
+@pytest.mark.parametrize("role, resource", [("admin", "ngfw_rules"), ("admin", "cve_pipeline"),
+                                            ("analyst", "cve_pipeline"), ("viewer", "ngfw_rules")])
+def test_invalid_rules_file_makes_dependency_deny_everything(tmp_path, monkeypatch, content, role, resource):
+    path = tmp_path / "rules.json"
+    path.write_text(content, encoding="utf-8")
+    monkeypatch.setenv("ABAC_RULES_PATH", str(path))
+    abac.reset_policy_cache()
+    assert _default_provider_app(role, resource).get("/res").status_code == 403

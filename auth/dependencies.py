@@ -1,8 +1,11 @@
 """Context-aware (ABAC) authorization layered on top of web/auth.py's role checks.
 
 Rules are data, not code. They are loaded from config/abac_rules.json
-(override the path with ABAC_RULES_PATH). Each rule has
-id / roles / resource / conditions / effect. Evaluation:
+(override the path with ABAC_RULES_PATH). Each rule must have
+id / roles / resource / conditions / effect / confirm; the file is validated
+at load and any error makes every require_abac() dependency deny. "confirm"
+is true for owner-approved rules and false for rules awaiting owner review;
+it is recorded, not enforced. Evaluation:
 
   1. Rules match on role (or "*") and resource.
   2. A missing attribute can never allow: a matching deny rule that needs it
@@ -85,6 +88,7 @@ class Rule:
     resource: str
     conditions: tuple
     effect: str
+    confirm: bool
 
     def targets(self, role: Optional[str], resource: str) -> bool:
         return self.resource == resource and ("*" in self.roles or (role is not None and role in self.roles))
@@ -243,11 +247,14 @@ def policy_from_dict(data: Mapping[str, Any], timezone: Optional[str] = None) ->
         effect = raw.get("effect")
         if effect not in EFFECTS:
             raise PolicyError(f"rule {rid}: 'effect' must be one of {sorted(EFFECTS)}")
-        conds = raw.get("conditions", [])
+        conds = raw.get("conditions")
         if not isinstance(conds, list):
             raise PolicyError(f"rule {rid}: 'conditions' must be a list")
+        confirm = raw.get("confirm")
+        if not isinstance(confirm, bool):
+            raise PolicyError(f"rule {rid}: 'confirm' must be true or false")
         rules.append(Rule(
-            id=rid, roles=frozenset(roles), resource=resource, effect=effect,
+            id=rid, roles=frozenset(roles), resource=resource, effect=effect, confirm=confirm,
             conditions=tuple(_build_condition(c, params, rid) for c in conds),
         ))
     return Policy(rules=tuple(rules), timezone=tz, params=params)

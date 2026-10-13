@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_comment": "Context-aware (ABAC) rules, evaluated by auth/dependencies.py. They run alongside the existing role checks in web/auth.py and never replace them. Combining: any matching deny wins, then any matching allow, otherwise deny. A matching rule whose condition attribute is missing denies. Entries with \"confirm\": true are interpretations that need product sign-off.",
+  "_comment": "Context-aware (ABAC) rules, evaluated by auth/dependencies.py. They run alongside the existing role checks in web/auth.py and never replace them. Combining: any matching deny wins, then any matching allow, otherwise deny. A matching rule whose condition attribute is missing denies. Every rule carries an explicit \"confirm\": true = approved by the owner, false = repaired or interpreted and awaiting owner review (recorded only; it does not change evaluation).",
 
   "timezone": "UTC",
   "_timezone_comment": "IANA zone used to evaluate request_time. Override with the ABAC_TIMEZONE env var. CONFIRM: UTC is a placeholder.",
@@ -52,6 +52,7 @@
         {"attr": "ip_address", "op": "not_in_networks", "value": "$internal_networks"}
       ],
       "effect": "deny",
+      "confirm": false,
       "note": "Roadmap: viewer -> SQLi scan denied unless from an internal network. Resource rebound from the abstract 'sqli_scan' to api_scan = POST /api/scan (web/app.py:run_scan)."
     },
     {
@@ -75,6 +76,7 @@
         {"attr": "request_time", "op": "outside_hours", "value": "$business_hours"}
       ],
       "effect": "deny",
+      "confirm": true,
       "note": "Roadmap: any role -> NGFW Rules denied outside configured business hours. Resource = GET /ngfw/api/rules (web/routers/ngfw.py:73), the only NGFW rules endpoint. Window: params.business_hours (Sun-Thu, start inclusive, end exclusive) in the ABAC_TIMEZONE zone, else config 'timezone'."
     },
     {
@@ -86,7 +88,7 @@
       ],
       "effect": "allow",
       "confirm": true,
-      "note": "Counterpart of the deny rule. Without it the default deny would block NGFW Rules at all hours."
+      "note": "Counterpart of the deny rule; without it the default deny would block NGFW Rules at all hours. Confirmed by the Task 4 spec (Sunday 09:00 / Thursday 10:00 must allow)."
     }
   ]
 }
