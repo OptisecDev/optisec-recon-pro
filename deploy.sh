@@ -58,24 +58,35 @@ command -v docker compose version >/dev/null 2>&1 || \
   err "Docker Compose is not installed."
 log "Docker $(docker --version | awk '{print $3}' | tr -d ',')"
 
+# ── Admin password (required) ───────────────────────────
+# FIRST_ADMIN_PASSWORD must be supplied by the operator, either exported in the
+# environment or already set in .env. It is never generated, hardcoded or
+# printed by this script.
+ENV_FILE_ADMIN_PASS=""
+if [ -f ".env" ]; then
+  ENV_FILE_ADMIN_PASS=$(grep -E '^FIRST_ADMIN_PASSWORD=' .env | tail -n 1 | cut -d= -f2- || true)
+fi
+if [ -z "${FIRST_ADMIN_PASSWORD:-}" ] && [ -z "$ENV_FILE_ADMIN_PASS" ]; then
+  err "FIRST_ADMIN_PASSWORD is required. Export it first (e.g. read -rs FIRST_ADMIN_PASSWORD && export FIRST_ADMIN_PASSWORD) or set it in .env, then re-run."
+fi
+unset ENV_FILE_ADMIN_PASS
+
 # ── .env setup ───────────────────────────────────────────
 if [ ! -f ".env" ]; then
   info "Creating .env from .env.example..."
   if [ -f ".env.example" ]; then
     cp .env.example .env
+    # .env.example ships FIRST_ADMIN_PASSWORD empty; fill it from the environment.
+    (umask 077 && { grep -v '^FIRST_ADMIN_PASSWORD=' .env; printf 'FIRST_ADMIN_PASSWORD=%s\n' "$FIRST_ADMIN_PASSWORD"; } > .env.tmp)
+    mv .env.tmp .env
   else
     # Generate minimal .env
     JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null || \
                  openssl rand -hex 32)
     PG_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(20))" 2>/dev/null || \
               openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 20)
-    # Prefer FIRST_ADMIN_PASSWORD from the environment; generate only as fallback
-    ADMIN_PASS="${FIRST_ADMIN_PASSWORD:-}"
-    if [ -z "$ADMIN_PASS" ]; then
-      ADMIN_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(20))" 2>/dev/null || \
-                   openssl rand -base64 16 | tr -dc 'a-zA-Z0-9' | head -c 20)
-      ADMIN_PASS_GENERATED=true
-    fi
+    # Required above; never generated here.
+    ADMIN_PASS="$FIRST_ADMIN_PASSWORD"
     # Prefer OPTISEC_LICENSE_SECRET from the environment; generate only as
     # fallback. Never echoed -- it is only written to .env below.
     LICENSE_SECRET="${OPTISEC_LICENSE_SECRET:-}"
@@ -228,15 +239,7 @@ else
   echo -e "  ${CYAN}Demo:${NC}      https://${SERVER_IP}/demo"
 fi
 echo ""
-if [ "${ADMIN_PASS_GENERATED:-false}" = true ]; then
-  ADMIN_CRED_FILE="${SCRIPT_DIR}/.admin_credentials.txt"
-  (umask 077 && printf 'admin / %s\n' "$ADMIN_PASS" > "$ADMIN_CRED_FILE")
-  chmod 600 "$ADMIN_CRED_FILE"
-  echo -e "  ${YELLOW}Admin:${NC}     admin / (generated password saved to ${ADMIN_CRED_FILE}, mode 0600)"
-  echo -e "  ${RED}${BOLD}⚠ Move it to a password manager, delete the file, then change the password after first login.${NC}"
-else
-  echo -e "  ${YELLOW}Admin:${NC}     admin / (FIRST_ADMIN_PASSWORD from your environment or .env)"
-fi
+echo -e "  ${YELLOW}Admin:${NC}     admin / (FIRST_ADMIN_PASSWORD from your environment or .env)"
 echo ""
 echo -e "  Useful commands:"
 echo -e "  ${CYAN}docker compose logs -f app${NC}    — app logs"
