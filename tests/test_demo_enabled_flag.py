@@ -110,9 +110,16 @@ def _patch_startup_sequence(monkeypatch, calls):
     async def _demo():
         calls.append("demo")
 
-    import web.migrate_add_scan_authz_columns as scan_authz_migration
     monkeypatch.setattr(app_module, "init_db", _noop)
-    monkeypatch.setattr(scan_authz_migration, "migrate", _noop)
+    # The scan-authz column migration only exists on branches that carry the
+    # scan authorization feature; stub it out when present so startup never
+    # touches a real database, but don't require it.
+    try:
+        import web.migrate_add_scan_authz_columns as scan_authz_migration
+    except ImportError:
+        scan_authz_migration = None
+    if scan_authz_migration is not None:
+        monkeypatch.setattr(scan_authz_migration, "migrate", _noop)
     monkeypatch.setattr(app_module, "_users_table_has_api_key_hash", _has_col)
     monkeypatch.setattr(app_module, "_ensure_first_admin", _admin)
     monkeypatch.setattr(app_module, "_ensure_demo_account", _demo)
