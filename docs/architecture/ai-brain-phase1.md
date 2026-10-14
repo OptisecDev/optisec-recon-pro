@@ -196,12 +196,12 @@ This section is the single reference for ABAC Activation Stages: Stage A
 enforcement). These are distinct from the roadmap implementation phases
 used in sections 1–8.
 
-**ABAC is not enforced in production in Activation Stage A (current).** `require_abac()`
-(`auth/dependencies.py`) is not attached to any production router or
-endpoint in `web/` or `app/`. Every production request is still decided only
-by the existing gates in section 7 (`get_current_user`, `require_roles`,
-`require_feature_or_402`, `web/scan_authz.py`). ABAC is exercised only by
-tests:
+**ABAC is not enforced in production in Activation Stage A (current).**
+`require_abac()` (`auth/dependencies.py`) is not attached to any production
+router or endpoint in `web/` or `app/`. Every production request is still
+decided only by the existing gates in section 7 (`get_current_user`,
+`require_roles`, `require_feature_or_402`, `web/scan_authz.py`). ABAC is
+exercised only by tests:
 
 - unit tests: `tests/test_abac_dependencies.py`;
 - integration: `tests/test_abac_ngfw_http_integration.py`, which mounts
@@ -240,10 +240,29 @@ Nothing below exists in code yet.
   endpoints and log the decision (allow/deny, matching rule id, reason)
   without blocking any request. The existing gates remain the only
   enforcement.
-- **B2 — Log review.** Review the shadow logs for a fixed, agreed period to
-  confirm there are no false denies, with particular attention to the NGFW
-  business-hours rules (timezone, day boundaries, after-hours admin work)
-  and to missing-attribute denies.
+- **B2 — Log review.** Review the shadow logs of each target endpoint until
+  its review period is complete, to confirm there are no false denies, with
+  particular attention to the NGFW business-hours rules (timezone, day
+  boundaries, after-hours admin work) and to missing-attribute denies.
+
+  Review period criteria. Both conditions must hold at the same time:
+  1. at least 7 consecutive days have elapsed, so that a full week is
+     covered, including Friday and Saturday (important for the NGFW
+     business-hours rule and working hours);
+  2. at least 50 ABAC decisions have been logged for the endpoint under
+     review during that period.
+
+  If 7 days pass with fewer than 50 decisions, the period is extended and
+  enforcement is not turned on: no false denies under low traffic does not
+  show that the rule is correct.
+
+  A false deny is a `deny` decision in the log for a request that should
+  have been allowed under the intended permissions. A single false deny
+  restarts the review period from zero (both days and decisions) once the
+  rule has been fixed.
+
+  The two thresholds (7 days, 50 decisions) are an owner decision and may
+  be changed in this document later.
 - **B3 — Gradual enforcement (two-variable kill switch).** Enforcement is
   turned on one endpoint at a time and is controlled by two proposed
   environment variables read by `require_abac()`:
@@ -272,8 +291,11 @@ Nothing below exists in code yet.
   code (`1ee3cc2`).
 
   Transition rule: a new endpoint is added to `ABAC_ENFORCED_ENDPOINTS`
-  only after the previously enforced endpoint has run for the agreed review
-  period with no false denies in its decision logs.
+  only after the previously enforced endpoint has completed a review period
+  that meets the B2 criteria (at least 7 consecutive days and at least 50
+  logged ABAC decisions for that endpoint) with no false denies in its
+  decision logs. If 7 days pass with fewer than 50 decisions, the period is
+  extended and the next endpoint is not enforced yet.
 
   Both variables are proposals only: neither is read anywhere in the code
   today. The ABAC environment variables that actually exist are
