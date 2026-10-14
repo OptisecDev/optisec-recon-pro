@@ -25,9 +25,9 @@ Attributes:
   request_time    — now, as an aware datetime in the policy's IANA zone:
                     ABAC_TIMEZONE, else config "timezone", else Asia/Baghdad
                     (owner decision). Never the server's local zone: Render
-                    runs in UTC. An invalid ABAC_TIMEZONE logs a warning and
+                    runs in UTC. An invalid ABAC_TIMEZONE logs an ERROR and
                     falls back to Asia/Baghdad; an invalid config "timezone"
-                    fails closed like any other config error.
+                    fails closed like any other config error (also ERROR).
   operation       — "read" for GET/HEAD, "action" for every other method
   route           — path template of the matched FastAPI route, e.g.
                     "/api/cve/drafts/{draft_id}/export" (never the raw URL)
@@ -239,7 +239,7 @@ def _resolve_timezone(explicit: Optional[str], configured: Any) -> ZoneInfo:
         try:
             return _zone(env_name)
         except PolicyError:
-            logger.warning("Invalid %s=%r; falling back to %s", TIMEZONE_ENV, env_name, DEFAULT_TIMEZONE)
+            logger.error("Invalid %s=%r rejected; using %s instead", TIMEZONE_ENV, env_name, DEFAULT_TIMEZONE)
             return ZoneInfo(DEFAULT_TIMEZONE)
     if configured is None:
         return ZoneInfo(DEFAULT_TIMEZONE)
@@ -543,6 +543,9 @@ def require_abac(
             attrs = await build_attributes(request, user, policy, now=clock, db=db,
                                            providers=providers)
             decision = evaluate(policy, resource, attrs)
+        except PolicyError as exc:
+            logger.error("ABAC evaluation rejected for %s: invalid policy config: %s", resource, exc)
+            decision = Decision(False, None, "invalid policy config")
         except Exception as exc:  # noqa: BLE001 — any failure fails closed
             logger.warning("ABAC evaluation error for %s: %s", resource, type(exc).__name__)
             decision = Decision(False, None, "evaluation error")
