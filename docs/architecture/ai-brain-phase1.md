@@ -5,6 +5,18 @@ today, where DPI/WAF decisions are made, and where authentication /
 authorization lives. Nothing in this phase changes code. Every path and
 symbol below was checked with `grep` against the tree at the time of writing.
 
+> **Phase numbering.** This document uses "Phase" in two separate senses:
+>
+> - **Implementation phases** of the original AI Brain roadmap (Phase 1 =
+>   this read-only analysis, Phase 2 = the AI middleware / audit table,
+>   Phase 4 = the ABAC rules). Sections 1–8 use "Phase" in this sense.
+> - **ABAC activation phases**, defined only in section 9: Phase 1 = ABAC
+>   not wired to production (current state), Phase 2 = gradual rollout
+>   (shadow → log review → enforcement).
+>
+> "Phase 2" in sections 2–3 therefore means the AI middleware work, not the
+> ABAC rollout.
+
 ## 1. Path mapping (roadmap name → actual location)
 
 The roadmap refers to some paths that do not exist in this repository:
@@ -163,6 +175,10 @@ These existing gates matter for Phase 4: wiring the roadmap rules onto these
 endpoints would change current behaviour (see the Phase 4 notes in the final
 report).
 
+Note: "Phase 4" above is the roadmap implementation phase that built the
+ABAC rules, not an ABAC activation phase. Activation status is tracked
+separately in section 9.
+
 ## 8. Secrets check
 
 A pattern scan over tracked, non-test source files (Groq/OpenAI-style keys,
@@ -170,6 +186,10 @@ AWS access keys, GitHub/Slack tokens, PEM private keys) found no hard-coded
 secrets. `.env` is git-ignored and was not opened.
 
 ## 9. حالة التفعيل (Activation Status)
+
+This section is the single reference for ABAC activation phases. "Phase 1"
+and "Phase 2" here mean activation phases, not the roadmap implementation
+phases used in sections 1–8.
 
 **ABAC is not enforced in production in Phase 1.** `require_abac()`
 (`auth/dependencies.py`) is not attached to any production router or
@@ -218,6 +238,13 @@ Nothing below exists in code yet.
    confirm there are no false denies, with particular attention to the NGFW
    business-hours rules (timezone, day boundaries, after-hours admin work)
    and to missing-attribute denies.
-3. **Gradual enforcement.** Switch enforcement on one endpoint at a time,
-   with a kill switch environment variable that returns every endpoint to
-   shadow (log-only) mode without a deploy of new code.
+3. **Gradual enforcement.** Turn on enforcement for one target endpoint
+   at a time; `require_abac()` returns HTTP 403 on deny only for that
+   endpoint, while every other endpoint stays in shadow mode. Move on to
+   the next endpoint only after the enforced one has run for the agreed
+   review period with no false denies in its decision logs. Kill switch:
+   a proposed environment variable `ABAC_ENFORCEMENT_MODE` (`shadow` |
+   `enforce`, default `shadow`) read by `require_abac()`; setting it to
+   `shadow` returns every endpoint to log-only mode with an environment
+   change and restart, with no new code deployed. This variable is a
+   proposal only: it is not read anywhere in the code today.
