@@ -31,10 +31,9 @@ services:
         condition: service_started
     networks:
       - internal
-    # nmap needs NET_RAW + NET_ADMIN for raw socket scanning
+    # nmap running as root needs only NET_RAW for raw-socket scanning
     cap_add:
       - NET_RAW
-      - NET_ADMIN
 
   # ── Nginx Reverse Proxy ───────────────────────────────────
   nginx:
