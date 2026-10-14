@@ -438,7 +438,7 @@ def test_ngfw_decision_independent_of_server_timezone(monkeypatch, server_tz, se
 
 @pytest.mark.parametrize("tz", ["Mars/Olympus", "Not/AZone", "../../etc/passwd", "UTC+3", "Asia", " "])
 def test_invalid_abac_timezone_falls_back_to_baghdad(monkeypatch, caplog, tz):
-    """(c) A bad ABAC_TIMEZONE warns and uses Asia/Baghdad; it never widens access."""
+    """(c) A bad ABAC_TIMEZONE logs an ERROR and uses Asia/Baghdad; it never widens access."""
     monkeypatch.setenv("ABAC_TIMEZONE", tz)
     with caplog.at_level(logging.WARNING, logger="auth.abac"):
         p = load_policy(RULES_FILE)
@@ -448,6 +448,46 @@ def test_invalid_abac_timezone_falls_back_to_baghdad(monkeypatch, caplog, tz):
     assert _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 10, 0, tzinfo=UTC)).get("/res").status_code == 200
     assert _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 17, 10, 0, tzinfo=UTC)).get("/res").status_code == 403
     assert _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 15, 0, tzinfo=UTC)).get("/res").status_code == 403
+
+
+@pytest.mark.parametrize("tz", ["Mars/Olympus", "Not/AZone", " "])
+def test_invalid_abac_timezone_logs_error_with_rejected_and_fallback_values(monkeypatch, caplog, tz):
+    monkeypatch.setenv("ABAC_TIMEZONE", tz)
+    with caplog.at_level(logging.DEBUG, logger="auth.abac"):
+        load_policy(RULES_FILE)
+    records = [r for r in caplog.records if "ABAC_TIMEZONE" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    msg = records[0].getMessage()
+    assert repr(tz) in msg and "Asia/Baghdad" in msg
+
+
+def test_invalid_config_timezone_logs_error_and_rejects_evaluation(tmp_path, caplog):
+    bad = tmp_path / "rules.json"
+    with open(RULES_FILE, encoding="utf-8") as fh:
+        data = json.load(fh)
+    data["timezone"] = "Mars/Olympus"
+    bad.write_text(json.dumps(data), encoding="utf-8")
+    c = _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 10, 0, tzinfo=UTC),
+             policy_provider=lambda: load_policy(bad))
+    with caplog.at_level(logging.DEBUG, logger="auth.abac"):
+        assert c.get("/res").status_code == 403
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1
+    msg = errors[0].getMessage()
+    assert "rejected" in msg and "invalid policy config" in msg and "Mars/Olympus" in msg
+    assert "ngfw_rules" in msg
+
+
+def test_non_config_evaluation_error_stays_warning(caplog):
+    def boom():
+        raise RuntimeError("provider crashed")
+
+    c = _app("ngfw_rules", "admin", clock=lambda: IN_HOURS, policy_provider=boom)
+    with caplog.at_level(logging.DEBUG, logger="auth.abac"):
+        assert c.get("/res").status_code == 403
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any(r.levelno == logging.WARNING and "evaluation error" in r.getMessage() for r in caplog.records)
 
 
 def test_invalid_config_timezone_still_fails_closed(tmp_path):
