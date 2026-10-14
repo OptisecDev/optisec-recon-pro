@@ -703,8 +703,8 @@ async def session_refresh_middleware(request: Request, call_next):
     token = request.cookies.get("access_token")
     if token and response.status_code < 400:
         try:
-            from jose import jwt as jose_jwt
-            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            import jwt as pyjwt
+            payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             new_token = create_access_token(int(payload["sub"]), payload["role"])
             response.set_cookie(
                 "access_token", new_token,
@@ -1097,8 +1097,8 @@ async def login_page(request: Request, next: str = "/", error: str = ""):
     token = request.cookies.get("access_token")
     if token:
         try:
-            from jose import jwt as jose_jwt
-            jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            import jwt as pyjwt
+            pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return RedirectResponse("/", status_code=302)
         except Exception:
             pass
@@ -1232,8 +1232,8 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     username = "unknown"
     if token:
         try:
-            from jose import jwt as jose_jwt
-            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            import jwt as pyjwt
+            payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             # "sub" is the user id (create_access_token), not the username --
             # resolve it so LOGOUT rows show the same username LOGIN rows do.
             user_id = payload.get("sub")

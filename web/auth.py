@@ -12,7 +12,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from fastapi import HTTPException, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -282,7 +283,7 @@ async def get_current_user(request: Request, db: AsyncSession):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+    except (InvalidTokenError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     result = await db.execute(
@@ -308,7 +309,7 @@ async def _load_user_from_bearer(token: str, db: AsyncSession):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+    except (InvalidTokenError, KeyError, ValueError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     result = await db.execute(

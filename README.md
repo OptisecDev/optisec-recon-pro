@@ -627,7 +627,7 @@ header comment for the full writeup).
 | **Database (dev)** | SQLite via aiosqlite | — |
 | **Database (prod)** | PostgreSQL via asyncpg | — |
 | **Migrations** | Alembic | ≥ 1.13 |
-| **Auth** | python-jose (JWT) + bcrypt | — |
+| **Auth** | PyJWT (JWT) + bcrypt | — |
 | **AI Engine** | Groq LLaMA-3.3-70B | — |
 | **HTTP Client** | httpx + aiohttp | — |
 | **DNS/Recon** | dnspython + python-whois | — |
