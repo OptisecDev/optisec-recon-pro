@@ -80,7 +80,7 @@
       ],
       "effect": "allow",
       "confirm": false,
-      "note": "Repair of viewer-sqli-scan-internal-allow. Viewer may launch only SQLi-class checks (params.sqli_class_checks), judged on scan_checks = scan_authz.expand_checks(scan_types), never the raw list: empty or missing scan_types expands to every module, SQLi included, so it never matches; a failed expansion leaves scan_checks missing and denies, only from an internal network, and only on a target web/scan_authz.decide() authorizes. run_scan's require_analyst_or_admin still blocks viewers live, so this rule cannot widen access."
+      "note": "Repair of viewer-sqli-scan-internal-allow. Viewer may launch only SQLi-class checks (params.sqli_class_checks), judged on scan_checks = scan_authz.expand_checks(scan_types), never the raw list: empty or missing scan_types expands to every module, SQLi included, so it never matches; a failed expansion leaves scan_checks missing and denies, only from an internal network, and only on a target web/scan_authz.decide() authorizes. run_scan's require_analyst_or_admin still blocks viewers live, so this rule cannot widen access. Owner decision (least privilege): the match stays strict subset_of, so a mixed list such as [sqli, xss, nmap] is denied even from an internal network on an authorized target; do not loosen it to an intersects/contains check."
     },
     {
       "id": "ngfw-rules-outside-business-hours-deny",
