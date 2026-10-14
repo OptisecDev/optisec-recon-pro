@@ -890,6 +890,17 @@ def test_scan_viewer_internal_empty_scan_types_authorized_target_denied():
     assert _scan_app("viewer").post("/api/scan", json=body).status_code == 403
 
 
+def test_scan_viewer_internal_authorized_mixed_checks_denied(policy):
+    # Owner decision A1 (least privilege): sqli_scan_viewer stays subset_of. A list that
+    # contains SQLi plus anything else is denied even when IP and target both qualify.
+    body = {"target": AUTHORIZED["target"], "scan_types": ["sqli", "xss", "nmap"]}
+    out = _provider_output(body)
+    assert out == {"scan_checks": ["sqli", "xss", "nmap"], "target_authorized": True}
+    d = evaluate(policy, "api_scan", sqli(checks=out["scan_checks"]))
+    assert d == Decision(False, None, "no matching rule (default deny)")
+    assert _scan_app("viewer").post("/api/scan", json=body).status_code == 403
+
+
 def test_viewer_sqli_rule_never_matches_raw_empty_list(policy):
     # Even if a caller handed the raw [] through, an empty list never satisfies subset_of.
     assert not evaluate(policy, "api_scan", sqli(checks=())).allowed
