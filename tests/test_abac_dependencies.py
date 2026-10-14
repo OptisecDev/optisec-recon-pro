@@ -79,21 +79,30 @@ def test_shipped_rules_have_explicit_confirm_flags(policy):
     for rule in raw:
         assert {"id", "roles", "resource", "conditions", "effect", "confirm"} <= set(rule), rule["id"]
         assert isinstance(rule["confirm"], bool)
-    # repaired / new rules await owner review; untouched roadmap rules are confirmed
+    # every shipped rule has been approved by the owner (Task 6)
     assert {r.id: r.confirm for r in policy.rules} == {
-        "cve_read": False,
-        "cve_export": False,
-        "cve_action": False,
-        "cve_admin": False,
-        "viewer-sqli-scan-external-deny": False,
-        "sqli_scan_viewer": False,
+        "cve_read": True,
+        "cve_export": True,
+        "cve_action": True,
+        "cve_admin": True,
+        "viewer-sqli-scan-external-deny": True,
+        "sqli_scan_viewer": True,
         "ngfw-rules-outside-business-hours-deny": True,
         "ngfw-rules-business-hours-allow": True,
     }
 
 
 # Rules the owner explicitly approved. Adding an id here is an owner decision.
-OWNER_APPROVED_RULES = {"ngfw-rules-outside-business-hours-deny", "ngfw-rules-business-hours-allow"}
+OWNER_APPROVED_RULES = {
+    "cve_read",
+    "cve_export",
+    "cve_action",
+    "cve_admin",
+    "viewer-sqli-scan-external-deny",
+    "sqli_scan_viewer",
+    "ngfw-rules-outside-business-hours-deny",
+    "ngfw-rules-business-hours-allow",
+}
 
 
 def test_confirm_flag_means_owner_review_status(policy):

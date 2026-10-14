@@ -22,7 +22,7 @@
         {"attr": "route", "op": "not_in", "value": "$cve_export_routes"}
       ],
       "effect": "allow",
-      "confirm": false,
+      "confirm": true,
       "note": "Repair of analyst-cve-pipeline-critical-only, read half. GET/HEAD on CVE routes (e.g. NVD search) carry no target, so they are allowed without a severity. Export routes (params.cve_export_routes) are excluded and covered by cve_export instead. A missing route denies."
     },
     {
@@ -34,7 +34,7 @@
         {"attr": "route", "op": "in", "value": "$cve_export_routes"}
       ],
       "effect": "allow",
-      "confirm": false,
+      "confirm": true,
       "note": "Repair of the overly broad cve_read: GET /api/cve/drafts/{draft_id}/export (web/routers/cve_submission.py:cve_draft_export) exports data and also sets the draft status to exported, so it is admin only. Analysts lose export under ABAC; this narrows a rule, it does not remove the feature. To revert, drop the route condition from cve_read and delete this rule. Admin is also covered by cve_admin; this rule makes the export grant explicit."
     },
     {
@@ -46,7 +46,7 @@
         {"attr": "resource_severity", "op": "eq", "value": "Critical", "case_insensitive": true}
       ],
       "effect": "allow",
-      "confirm": false,
+      "confirm": true,
       "note": "Repair of analyst-cve-pipeline-critical-only, write/run half. resource_severity is Finding.severity of the finding_id the request targets (Target has no severity column). No target, or a CVE-only request (no verified CVSS->severity mapping), means no severity, so deny."
     },
     {
@@ -55,7 +55,7 @@
       "resource": "cve_pipeline",
       "conditions": [],
       "effect": "allow",
-      "confirm": false,
+      "confirm": true,
       "note": "Keeps admin aligned with the live role logic: CVE routes have no role check, so admin is not narrowed here. Without it the default deny would block admin."
     },
     {
@@ -66,7 +66,7 @@
         {"attr": "ip_address", "op": "not_in_networks", "value": "$internal_networks"}
       ],
       "effect": "deny",
-      "confirm": false,
+      "confirm": true,
       "note": "Roadmap: viewer -> SQLi scan denied unless from an internal network. Resource rebound from the abstract 'sqli_scan' to api_scan = POST /api/scan (web/app.py:run_scan)."
     },
     {
@@ -79,7 +79,7 @@
         {"attr": "target_authorized", "op": "eq", "value": true}
       ],
       "effect": "allow",
-      "confirm": false,
+      "confirm": true,
       "note": "Repair of viewer-sqli-scan-internal-allow. Viewer may launch only SQLi-class checks (params.sqli_class_checks), judged on scan_checks = scan_authz.expand_checks(scan_types), never the raw list: empty or missing scan_types expands to every module, SQLi included, so it never matches; a failed expansion leaves scan_checks missing and denies, only from an internal network, and only on a target web/scan_authz.decide() authorizes. run_scan's require_analyst_or_admin still blocks viewers live, so this rule cannot widen access. Owner decision (least privilege): the match stays strict subset_of, so a mixed list such as [sqli, xss, nmap] is denied even from an internal network on an authorized target; do not loosen it to an intersects/contains check."
     },
     {
