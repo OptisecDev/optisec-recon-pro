@@ -44,6 +44,7 @@
             <th>Name</th>
             <th>Added</th>
             <th>Scans</th>
+            <th>Authorization</th>
             <th>Actions</th>
           </tr>
         </thead>
@@ -61,8 +62,23 @@
             <td>
               <span class="badge badge-info">{{ scan_counts.get(t.id, 0) }}</span>
             </td>
+            {% set authz = target_authz.get(t.id, {}) %}
+            <td>
+              {% if authz.kind == 'verified' %}
+              <span class="badge badge-success" title="{{ authz.basis }}">✓ Verified</span>
+              {% elif authz.kind == 'training' %}
+              <span class="badge badge-low" title="Public training target — limited active modules">🎓 Training</span>
+              {% elif authz.kind == 'unenforced' %}
+              <span class="badge badge-medium" title="SCAN_AUTHZ_ENFORCE=false (log-only)">Not enforced</span>
+              {% else %}
+              <span class="badge badge-info" title="Active modules need domain verification">Passive only</span>
+              {% endif %}
+            </td>
             <td>
               <a href="/scan?target={{ t.url }}" class="btn btn-secondary btn-sm">🔍 Scan</a>
+              {% if user.role in ('admin', 'analyst') and authz.verifiable and authz.kind not in ('verified', 'training') %}
+              <button class="btn btn-secondary btn-sm" data-onclick="verifyTarget" data-onclick-args='{{ [authz.host] | tojson }}'>🔐 Verify</button>
+              {% endif %}
               {% if user.role in ('admin', 'analyst') %}
               <button class="btn btn-danger btn-sm" data-onclick="deleteTarget" data-onclick-args='{{ [t.id] | tojson }}'>✕</button>
               {% endif %}
@@ -77,4 +93,199 @@
     {% endif %}
   </div>
 </div>
+
+<div class="card" id="verify-card">
+  <div class="card-header">
+    <div>
+      <div class="card-title">🔐 Domain Ownership Verification</div>
+      <div class="card-subtitle">
+        Passive modules (DNS, WHOIS, OSINT, SSL, headers) run against any target.
+        Active modules (subdomains, ports, Nmap, XSS, SQLi, SSRF, LFI, open redirect)
+        run only on domains you prove you control.
+      </div>
+    </div>
+  </div>
+  {% if user.role in ('admin', 'analyst') %}
+  <div class="grid-2">
+    <div class="form-group">
+      <label>Domain</label>
+      <input type="text" id="verify-domain" placeholder="example.com" />
+    </div>
+    <div class="form-group">
+      <label>Method</label>
+      <select id="verify-method">
+        <option value="dns_txt">DNS TXT record — covers the domain and all subdomains</option>
+        <option value="http_file">Verification file — covers that exact host only</option>
+      </select>
+    </div>
+  </div>
+  <button class="btn btn-primary" data-onclick="startVerification">Get verification instructions</button>
+  <div id="verify-instructions" class="verify-instructions is-hidden"></div>
+  {% endif %}
+
+  {% if verifications %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Domain</th><th>Method</th><th>Status</th><th>Last check</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for v in verifications %}
+        <tr id="verification-row-{{ v.id }}">
+          <td class="mono">{{ v.domain }}</td>
+          <td>{{ 'DNS TXT' if v.method == 'dns_txt' else 'File' }}</td>
+          <td>
+            {% if v.status == 'verified' %}<span class="badge badge-success">verified</span>
+            {% elif v.status == 'revoked' %}<span class="badge badge-critical">revoked</span>
+            {% elif v.status == 'failed' %}<span class="badge badge-high">failed</span>
+            {% else %}<span class="badge badge-info">pending</span>{% endif %}
+          </td>
+          <td class="dim">
+            {{ v.last_checked_at.strftime('%Y-%m-%d %H:%M') if v.last_checked_at else '—' }}
+            {% if v.last_error %}<br>{{ v.last_error }}{% endif %}
+          </td>
+          <td>
+            {% if user.role in ('admin', 'analyst') %}
+            <button class="btn btn-secondary btn-sm" data-onclick="showVerification" data-onclick-args='{{ [v.id] | tojson }}'>Instructions</button>
+            <button class="btn btn-secondary btn-sm" data-onclick="checkVerification" data-onclick-args='{{ [v.id] | tojson }}'>Check now</button>
+            <button class="btn btn-danger btn-sm" data-onclick="deleteVerification" data-onclick-args='{{ [v.id] | tojson }}'>✕</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ request.state.csp_nonce }}">
+// Domain verification (web/routers/domain_verification.py). Every value from
+// the server is inserted with textContent / setAttribute, never as HTML.
+async function domainsRequest(url, method, body) {
+  const opts = { method, headers: { 'X-CSRF-Token': document.getElementById('csrf-token')?.value || '' } };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(url, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || data.detail || `Request failed (HTTP ${r.status})`);
+  return data;
+}
+
+window.verifyTarget = function(host) {
+  const input = document.getElementById('verify-domain');
+  if (!input) return;
+  input.value = host;
+  document.getElementById('verify-card')?.scrollIntoView({ behavior: 'smooth' });
+  input.focus();
+};
+
+window.copyText = async function(text) {
+  try { await navigator.clipboard.writeText(text); toast('Copied'); }
+  catch (e) { toast('Copy failed — select the text manually', 'error'); }
+};
+
+function cell(text, cls) {
+  const td = document.createElement('td');
+  if (cls) td.className = cls;
+  td.textContent = text;
+  return td;
+}
+
+function button(label, fn, args, cls) {
+  const b = document.createElement('button');
+  b.className = 'btn btn-sm ' + (cls || 'btn-secondary');
+  b.textContent = label;
+  b.setAttribute('data-onclick', fn);
+  b.setAttribute('data-onclick-args', JSON.stringify(args));
+  return b;
+}
+
+function renderInstructions(rec) {
+  const box = document.getElementById('verify-instructions');
+  if (!box) return;
+  box.replaceChildren();
+  const ins = rec.instructions || {};
+  const rows = rec.method === 'dns_txt'
+    ? [['Record type', ins.type], ['Name', ins.name], ['Value', ins.value]]
+    : [['File URL', ins.url], ['File content', ins.content]];
+
+  const intro = document.createElement('p');
+  intro.textContent = rec.method === 'dns_txt'
+    ? `Add this TXT record at your DNS provider. It covers ${ins.covers}.`
+    : `Serve this file with exactly this content. It covers ${ins.covers}.`;
+  box.appendChild(intro);
+
+  const table = document.createElement('table');
+  const tbody = document.createElement('tbody');
+  rows.forEach(([k, v]) => {
+    const tr = document.createElement('tr');
+    tr.appendChild(cell(k, 'dim'));
+    tr.appendChild(cell(v, 'mono'));
+    const td = document.createElement('td');
+    td.appendChild(button('Copy', 'copyText', [v]));
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+  wrap.appendChild(table);
+  box.appendChild(wrap);
+
+  const status = document.createElement('p');
+  status.id = 'verify-status';
+  status.textContent = `Status: ${rec.status}` + (rec.last_error ? ` — ${rec.last_error}` : '');
+  box.appendChild(status);
+  box.appendChild(button('Check now', 'checkVerification', [rec.id], 'btn-primary'));
+  optisecSetVisible(box, true, 'block');
+}
+
+window.startVerification = async function() {
+  const domain = document.getElementById('verify-domain')?.value?.trim();
+  const method = document.getElementById('verify-method')?.value;
+  if (!domain) { toast('Enter a domain', 'error'); return; }
+  try {
+    renderInstructions(await domainsRequest('/api/domains/verify', 'POST', { domain, method }));
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+window.showVerification = async function(id) {
+  try {
+    const data = await domainsRequest('/api/domains', 'GET');
+    const rec = (data.verifications || []).find(v => v.id === id);
+    if (rec) {
+      renderInstructions(rec);
+      document.getElementById('verify-card')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+window.checkVerification = async function(id) {
+  try {
+    const rec = await domainsRequest(`/api/domains/${id}/check`, 'POST');
+    if (rec.status === 'verified') {
+      toast(`${rec.domain} verified — active modules unlocked`);
+      setTimeout(() => location.reload(), 800);
+      return;
+    }
+    toast(rec.last_error || `Status: ${rec.status}`, 'error');
+    const status = document.getElementById('verify-status');
+    if (status) status.textContent = `Status: ${rec.status}` + (rec.last_error ? ` — ${rec.last_error}` : '');
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+window.deleteVerification = async function(id) {
+  if (!confirm('Remove this verification? Active scans on this domain will be refused until it is verified again.')) return;
+  try {
+    await domainsRequest(`/api/domains/${id}`, 'DELETE');
+    document.getElementById(`verification-row-${id}`)?.remove();
+    toast('Verification removed');
+  } catch (e) { toast(e.message, 'error'); }
+};
+</script>
 {% endblock %}

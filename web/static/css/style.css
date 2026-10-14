@@ -363,6 +363,12 @@ textarea { resize: vertical; min-height: 80px; }
 .checkbox-item:hover { border-color: var(--accent); }
 .checkbox-item input { accent-color: var(--accent); }
 .checkbox-item.checked { border-color: var(--accent); background: rgba(0,255,136,0.05); }
+/* Active scan module the current target isn't authorized for (scan.html) */
+.checkbox-item.is-locked { opacity: 0.45; cursor: not-allowed; }
+.checkbox-item.is-locked:hover { border-color: var(--border); }
+.authz-note { margin-bottom: 12px; }
+.authz-note a { color: inherit; text-decoration: underline; }
+.verify-instructions td.mono { word-break: break-all; }
 
 /* NLP BAR */
 .nlp-bar {

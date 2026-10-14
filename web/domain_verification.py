@@ -311,13 +311,46 @@ async def check_scan_authorization(
     )
     if enforced:
         return decision
+    return _apply_log_only(decision)
 
+
+def _apply_log_only(decision: AuthzDecision) -> AuthzDecision:
     bypassed = decision.denied & ACTIVE_CHECKS
+    if not bypassed:
+        return decision
     decision.allowed |= bypassed
     decision.denied -= bypassed
     decision.basis = f"unenforced:{decision.basis}"
     if not decision.denied:
         decision.reason = None
+    return decision
+
+
+async def load_verified_scopes(db: AsyncSession, user: User) -> list:
+    rows = (await db.execute(
+        select(DomainVerification.domain, DomainVerification.method).where(
+            DomainVerification.user_id == user.id,
+            DomainVerification.status == STATUS_VERIFIED,
+        )
+    )).all()
+    return [VerifiedScope(domain, method) for domain, method in rows]
+
+
+async def preview_authorization(
+    db: AsyncSession, user: User, target: str, scopes: Optional[list] = None,
+) -> AuthzDecision:
+    """What the UI shows before a scan: the decision for every check, with
+    no network I/O and no logging. Verified records are taken at face value
+    here -- a stale one is still re-checked by check_scan_authorization()
+    when a scan is actually launched, so the preview can only be more
+    permissive than the real gate, never let anything run by itself.
+    Pass `scopes` (from load_verified_scopes) to preview many targets with
+    one query."""
+    if scopes is None:
+        scopes = await load_verified_scopes(db, user)
+    decision = decide(target, None, scopes)
+    if decision.denied and not scan_authz_enforced():
+        decision = _apply_log_only(decision)
     return decision
 
 

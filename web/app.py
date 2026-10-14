@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, inspect
 
 from web.database import get_db, init_db, SessionLocal, engine
-from web.models import User, Target, Scan, Finding, Report
+from web.models import User, Target, Scan, Finding, Report, DomainVerification
 from web.schemas import (
     LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
     APIKeyResponse, ScanRequest, ScanLaunchResponse, ScanStatusResponse,
@@ -78,8 +78,10 @@ from web.routers import license_routes
 from web.routers import payment_routes
 from web.routers import ioc as ioc_router
 from web.routers import domain_verification as domain_verification_router
-from web.domain_verification import check_scan_authorization, denial_response
-from web.scan_authz import SCAN_STEP_ORDER
+from web.domain_verification import (
+    check_scan_authorization, denial_response, load_verified_scopes, preview_authorization,
+)
+from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS, SCAN_STEP_ORDER, is_ip_literal, normalize_host
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -1518,6 +1520,24 @@ async def targets_page(request: Request, user: User = Depends(web_user), db: Asy
         .group_by(Scan.target_id)
     )).all()) if targets else {}
 
+    # Authorization badge per target: one query for the user's verified
+    # domains, then the pure decision per target (no DNS/HTTP re-checks).
+    scopes = await load_verified_scopes(db, user)
+    target_authz = {}
+    for t in targets:
+        d = await preview_authorization(db, user, t.url, scopes)
+        host = normalize_host(t.url)
+        target_authz[t.id] = {
+            "host": host,
+            "kind": d.basis.split(":", 1)[0],
+            "basis": d.basis,
+            "verifiable": bool(host) and not is_ip_literal(host),
+        }
+    verifications = (await db.execute(
+        select(DomainVerification).where(DomainVerification.user_id == user.id)
+        .order_by(DomainVerification.created_at.desc(), DomainVerification.id.desc())
+    )).scalars().all()
+
     # CSRF token for the add-target form and delete-target requests -- same
     # cookie-bound double-submit token as /license (see CSRF_COOKIE_NAME /
     # _current_csrf_secret below), just also handed to a plain fetch/FormData
@@ -1526,6 +1546,7 @@ async def targets_page(request: Request, user: User = Depends(web_user), db: Asy
     response = templates.TemplateResponse(request, "targets.html", {
         "app_name": APP_NAME, "active": "targets", "user": user,
         "targets": targets, "scan_counts": scan_counts,
+        "target_authz": target_authz, "verifications": verifications,
         "csrf_token": generate_csrf_token(csrf_secret),
     })
     if is_new:
@@ -1696,6 +1717,37 @@ async def admin_panel(request: Request, user: User = Depends(web_user), db: Asyn
 
 
 # ─── Scan API ─────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/api/scan-authorization",
+    tags=["Scans"],
+    summary="Which scan modules are allowed for a target",
+    description=(
+        "Preview of the authorization `POST /api/scan` applies: passive modules are always "
+        "allowed; active modules need a verified domain or a listed training target. "
+        "No DNS/HTTP checks are run -- a verification past its re-check interval is still "
+        "re-checked when a scan is actually launched."
+    ),
+)
+async def scan_authorization_preview(
+    target: str = "", user: User = Depends(web_user), db: AsyncSession = Depends(get_db),
+):
+    target = target.strip()
+    if not target:
+        raise HTTPException(400, "target is required")
+    d = await preview_authorization(db, user, target)
+    order = list(SCAN_STEP_ORDER)
+    return JSONResponse({
+        "target": target,
+        "host": normalize_host(target),
+        "basis": d.basis,
+        "reason": d.reason,
+        "allowed": [c for c in order if c in d.allowed],
+        "denied": [c for c in order if c in d.denied],
+        "passive": [c for c in order if c in PASSIVE_CHECKS],
+        "active": [c for c in order if c in ACTIVE_CHECKS],
+    })
+
 
 @app.post(
     "/api/scan",
