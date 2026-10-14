@@ -22,8 +22,12 @@ Attributes:
   role            — user.role
   ip_address      — web.auth.get_client_ip(request), the trusted-proxy-aware
                     resolver. Raw X-Forwarded-For is never read here.
-  request_time    — now, in the configured IANA timezone (config "timezone",
-                    overridable by ABAC_TIMEZONE)
+  request_time    — now, as an aware datetime in the policy's IANA zone:
+                    ABAC_TIMEZONE, else config "timezone", else Asia/Baghdad
+                    (owner decision). Never the server's local zone: Render
+                    runs in UTC. An invalid ABAC_TIMEZONE logs a warning and
+                    falls back to Asia/Baghdad; an invalid config "timezone"
+                    fails closed like any other config error.
   operation       — "read" for GET/HEAD, "action" for every other method
   route           — path template of the matched FastAPI route, e.g.
                     "/api/cve/drafts/{draft_id}/export" (never the raw URL)
@@ -60,6 +64,7 @@ logger = logging.getLogger("auth.abac")
 
 RULES_PATH_ENV = "ABAC_RULES_PATH"
 TIMEZONE_ENV = "ABAC_TIMEZONE"
+DEFAULT_TIMEZONE = "Asia/Baghdad"
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "abac_rules.json"
 
 PROVIDED_ATTRIBUTES = frozenset({"resource_severity", "scan_checks", "target_authorized"})
@@ -218,16 +223,35 @@ def _build_condition(raw: Any, params: Mapping[str, Any], rule_id: str) -> Condi
     return Condition(attr=attr, op=op, value=value, case_insensitive=bool(raw.get("case_insensitive", False)))
 
 
+def _zone(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError) as exc:
+        raise PolicyError(f"unknown timezone {name!r}") from exc
+
+
+def _resolve_timezone(explicit: Optional[str], configured: Any) -> ZoneInfo:
+    """Explicit argument > ABAC_TIMEZONE > config "timezone" > DEFAULT_TIMEZONE."""
+    if explicit:
+        return _zone(explicit)
+    env_name = os.environ.get(TIMEZONE_ENV)
+    if env_name:
+        try:
+            return _zone(env_name)
+        except PolicyError:
+            logger.warning("Invalid %s=%r; falling back to %s", TIMEZONE_ENV, env_name, DEFAULT_TIMEZONE)
+            return ZoneInfo(DEFAULT_TIMEZONE)
+    if configured is None:
+        return ZoneInfo(DEFAULT_TIMEZONE)
+    if not isinstance(configured, str) or not configured:
+        raise PolicyError("policy 'timezone' must be a non-empty IANA zone name")
+    return _zone(configured)
+
+
 def policy_from_dict(data: Mapping[str, Any], timezone: Optional[str] = None) -> Policy:
     if not isinstance(data, Mapping):
         raise PolicyError("policy must be an object")
-    tz_name = timezone or os.environ.get(TIMEZONE_ENV) or data.get("timezone")
-    if not tz_name:
-        raise PolicyError("policy timezone is not configured")
-    try:
-        tz = ZoneInfo(tz_name)
-    except (ZoneInfoNotFoundError, ValueError) as exc:
-        raise PolicyError(f"unknown timezone {tz_name!r}") from exc
+    tz = _resolve_timezone(timezone, data.get("timezone"))
 
     params = data.get("params", {}) or {}
     raw_rules = data.get("rules")
@@ -304,6 +328,14 @@ def evaluate(policy: Policy, resource: str, attrs: Mapping[str, Any]) -> Decisio
     role = attrs.get("role")
     if _is_missing(role):
         return Decision(False, None, "missing attribute: role")
+
+    when = attrs.get("request_time")
+    if isinstance(when, datetime):
+        # Business hours are wall-clock times in policy.timezone, whatever zone
+        # the caller's datetime is in. A naive datetime has no instant: deny.
+        if when.utcoffset() is None:
+            return Decision(False, None, "invalid attribute value: naive request_time")
+        attrs = {**attrs, "request_time": when.astimezone(policy.timezone)}
 
     applicable = [r for r in policy.rules if r.targets(role, resource)]
     allow_hit: Optional[Rule] = None

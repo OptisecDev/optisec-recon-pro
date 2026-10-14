@@ -8,8 +8,10 @@ with the user dependency overridden, so no database is touched.
 """
 
 import json
+import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -278,8 +280,8 @@ def test_ngfw_rules_denied_outside_business_hours(policy, role):
 
 
 def test_ngfw_rules_boundaries(policy):
-    at_start = datetime(2026, 10, 13, 9, 0, tzinfo=UTC)
-    at_end = datetime(2026, 10, 13, 17, 0, tzinfo=UTC)
+    at_start = datetime(2026, 10, 13, 6, 0, tzinfo=UTC)    # 09:00 Baghdad
+    at_end = datetime(2026, 10, 13, 14, 0, tzinfo=UTC)     # 17:00 Baghdad
     assert evaluate(policy, "ngfw_rules", attrs(when=at_start)).allowed
     assert not evaluate(policy, "ngfw_rules", attrs(when=at_end)).allowed   # end is exclusive
 
@@ -295,7 +297,7 @@ def test_business_hours_use_configured_timezone_not_utc(monkeypatch):
     # 07:00 UTC == 10:00 in Asia/Baghdad (UTC+3)
     early_utc = datetime(2026, 10, 13, 7, 0, tzinfo=UTC)
 
-    utc_policy = policy_from_dict(data)
+    utc_policy = policy_from_dict(data, timezone="UTC")
     assert not evaluate(utc_policy, "ngfw_rules", attrs(when=early_utc.astimezone(utc_policy.timezone))).allowed
 
     monkeypatch.setenv("ABAC_TIMEZONE", "Asia/Baghdad")
@@ -359,19 +361,106 @@ def test_ngfw_business_days_and_hours_come_from_config():
     assert not evaluate(p, "ngfw_rules", attrs(when=datetime(2026, 10, 11, 10, 0, tzinfo=UTC))).allowed
 
 
-@pytest.mark.parametrize("tz", ["Mars/Olympus", "Not/AZone", "../../etc/passwd", "UTC+3"])
-def test_ngfw_unknown_timezone_denies(monkeypatch, tz):
-    monkeypatch.setenv("ABAC_TIMEZONE", tz)
-    with pytest.raises(PolicyError):
-        load_policy(RULES_FILE)
-    c = _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 10, 0, tzinfo=UTC))
-    assert c.get("/res").status_code == 403
+def test_shipped_timezone_is_asia_baghdad(policy):
+    assert policy.timezone == BGW
+    with open(RULES_FILE, encoding="utf-8") as fh:
+        data = json.load(fh)
+    assert data["timezone"] == "Asia/Baghdad"
+    assert "placeholder" not in data["_timezone_comment"].lower()
+
+
+def test_timezone_defaults_to_asia_baghdad_when_unconfigured():
+    assert abac.DEFAULT_TIMEZONE == "Asia/Baghdad"
+    assert policy_from_dict({"rules": []}).timezone == BGW
 
 
 def test_abac_timezone_env_overrides_config_timezone(monkeypatch):
-    assert load_policy(RULES_FILE).timezone == ZoneInfo("UTC")
-    monkeypatch.setenv("ABAC_TIMEZONE", "Asia/Baghdad")
     assert load_policy(RULES_FILE).timezone == BGW
+    monkeypatch.setenv("ABAC_TIMEZONE", "UTC")
+    assert load_policy(RULES_FILE).timezone == ZoneInfo("UTC")
+
+
+def test_ngfw_0900_baghdad_is_within_business_hours(policy):
+    """(a) Tue 06:00 UTC is 09:00 in Baghdad: inside the NGFW window."""
+    six_utc = datetime(2026, 10, 13, 6, 0, tzinfo=UTC)
+    assert six_utc.astimezone(BGW).hour == 9
+    d = evaluate(policy, "ngfw_rules", attrs(when=six_utc.astimezone(policy.timezone)))
+    assert d.allowed and d.rule_id == "ngfw-rules-business-hours-allow"
+    c = _app("ngfw_rules", "analyst", clock=lambda: six_utc)
+    assert c.get("/res").status_code == 200
+
+
+def test_evaluate_converts_request_time_to_policy_zone_and_rejects_naive(policy):
+    six_utc = datetime(2026, 10, 13, 6, 0, tzinfo=UTC)   # 09:00 Baghdad
+    assert evaluate(policy, "ngfw_rules", attrs(when=six_utc)).allowed
+    assert evaluate(policy, "ngfw_rules", attrs(when=six_utc.astimezone(ZoneInfo("Asia/Tokyo")))).allowed
+    d = evaluate(policy, "ngfw_rules", attrs(when=datetime(2026, 10, 13, 10, 0)))
+    assert not d.allowed and "naive" in d.reason
+
+
+@pytest.fixture
+def server_tz(monkeypatch):
+    """Switch the process-local zone (TZ + tzset) and restore it afterwards."""
+    if not hasattr(time, "tzset"):
+        pytest.skip("time.tzset is unavailable on this platform")
+
+    def _set(name):
+        monkeypatch.setenv("TZ", name)
+        time.tzset()
+
+    yield _set
+    monkeypatch.undo()
+    time.tzset()
+
+
+@pytest.mark.parametrize("server_zone", ["UTC", "America/Los_Angeles", "Asia/Tokyo"])
+def test_ngfw_decision_independent_of_server_timezone(monkeypatch, server_tz, server_zone):
+    """(b) Default clock at 06:00 UTC: same allow whatever the server's TZ is.
+
+    The fake datetime.now() returns the *server-local* naive time when called
+    without a tz, so any regression to naive/local time would change the result.
+    """
+    instant = datetime(2026, 10, 13, 6, 0, tzinfo=UTC)   # Tue 09:00 Baghdad
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return instant.astimezone().replace(tzinfo=None)
+            return instant.astimezone(tz)
+
+    server_tz(server_zone)
+    assert time.localtime(instant.timestamp()).tm_hour == instant.astimezone(ZoneInfo(server_zone)).hour
+    monkeypatch.setattr(abac, "datetime", FrozenDatetime)
+    c = _app("ngfw_rules", "analyst", clock=None)   # real default clock path
+    assert c.get("/res").status_code == 200
+
+
+@pytest.mark.parametrize("tz", ["Mars/Olympus", "Not/AZone", "../../etc/passwd", "UTC+3", "Asia", " "])
+def test_invalid_abac_timezone_falls_back_to_baghdad(monkeypatch, caplog, tz):
+    """(c) A bad ABAC_TIMEZONE warns and uses Asia/Baghdad; it never widens access."""
+    monkeypatch.setenv("ABAC_TIMEZONE", tz)
+    with caplog.at_level(logging.WARNING, logger="auth.abac"):
+        p = load_policy(RULES_FILE)
+    assert p.timezone == BGW
+    assert any("ABAC_TIMEZONE" in r.getMessage() for r in caplog.records)
+    # Sun 10:00 UTC = 13:00 Baghdad: allowed. Sat 10:00 UTC and Sun 15:00 UTC (18:00 Baghdad): denied.
+    assert _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 10, 0, tzinfo=UTC)).get("/res").status_code == 200
+    assert _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 17, 10, 0, tzinfo=UTC)).get("/res").status_code == 403
+    assert _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 15, 0, tzinfo=UTC)).get("/res").status_code == 403
+
+
+def test_invalid_config_timezone_still_fails_closed(tmp_path):
+    bad = tmp_path / "rules.json"
+    with open(RULES_FILE, encoding="utf-8") as fh:
+        data = json.load(fh)
+    data["timezone"] = "Mars/Olympus"
+    bad.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(PolicyError):
+        load_policy(bad)
+    c = _app("ngfw_rules", "admin", clock=lambda: datetime(2026, 10, 11, 10, 0, tzinfo=UTC),
+             policy_provider=lambda: load_policy(bad))
+    assert c.get("/res").status_code == 403
 
 
 # ── Default deny and missing attributes ──────────────────────────────────────
@@ -457,7 +546,8 @@ def _one_rule(**overrides):
                            "value": {"start": "09:00", "end": "17:00", "days": ["funday"]}}]),
     {"timezone": "UTC", "rules": [_one_rule()["rules"][0], _one_rule()["rules"][0]]},  # duplicate id
     {"timezone": "Mars/Olympus", "rules": []},
-    {"rules": []},
+    {"timezone": "", "rules": []},
+    {"timezone": 3, "rules": []},
     {"timezone": "UTC"},
 ])
 def test_invalid_policy_rejected(data):
