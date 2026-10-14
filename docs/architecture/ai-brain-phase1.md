@@ -168,3 +168,56 @@ report).
 A pattern scan over tracked, non-test source files (Groq/OpenAI-style keys,
 AWS access keys, GitHub/Slack tokens, PEM private keys) found no hard-coded
 secrets. `.env` is git-ignored and was not opened.
+
+## 9. حالة التفعيل (Activation Status)
+
+**ABAC is not enforced in production in Phase 1.** `require_abac()`
+(`auth/dependencies.py`) is not attached to any production router or
+endpoint in `web/` or `app/`. Every production request is still decided only
+by the existing gates in section 7 (`get_current_user`, `require_roles`,
+`require_feature_or_402`, `web/scan_authz.py`). ABAC is exercised only by
+tests:
+
+- unit tests: `tests/test_abac_dependencies.py`;
+- integration: `tests/test_abac_ngfw_http_integration.py`, which mounts
+  `require_abac()` on a test-only FastAPI app and drives it over HTTP. It
+  does not import or modify `web.app`.
+
+What exists today:
+
+- **Rules** in `config/abac_rules.json` (path overridable with
+  `ABAC_RULES_PATH`). All eight rules are owner-approved (`"confirm": true`):
+  `cve_read`, `cve_export`, `cve_action`, `cve_admin` (resource
+  `cve_pipeline`); `viewer-sqli-scan-external-deny`, `sqli_scan_viewer`
+  (resource `api_scan`); `ngfw-rules-outside-business-hours-deny`,
+  `ngfw-rules-business-hours-allow` (resource `ngfw_rules`, business hours
+  09:00–17:00, Sunday–Thursday).
+- **Timezone**: `request_time` is evaluated in `Asia/Baghdad`. Precedence:
+  `ABAC_TIMEZONE` env var, then the config `"timezone"`, then
+  `Asia/Baghdad`. The server's local zone is never used (Render runs in UTC).
+  An invalid `ABAC_TIMEZONE` logs an ERROR and falls back to `Asia/Baghdad`;
+  an invalid config `"timezone"` fails closed.
+- **Fail-closed**: any policy load/validation error, evaluation exception,
+  missing attribute on a matching rule, or no matching allow results in
+  deny (HTTP 403 from `require_abac()`). Deny overrides allow. Config errors
+  are logged at ERROR.
+- **Naive time rejected**: `evaluate()` denies a naive `request_time`
+  (reason `invalid attribute value: naive request_time`), and
+  `build_attributes()` raises if the clock returns a naive datetime.
+- ABAC can only narrow access: an endpoint that adopts it keeps its existing
+  role check.
+
+### Phase 2 rollout plan (documentation only, not implemented)
+
+Nothing below exists in code yet.
+
+1. **Shadow mode.** Evaluate ABAC on every request to the target endpoints
+   and log the decision (allow/deny, matching rule id, reason) without
+   blocking any request. The existing gates remain the only enforcement.
+2. **Log review.** Review the shadow logs for a fixed, agreed period to
+   confirm there are no false denies, with particular attention to the NGFW
+   business-hours rules (timezone, day boundaries, after-hours admin work)
+   and to missing-attribute denies.
+3. **Gradual enforcement.** Switch enforcement on one endpoint at a time,
+   with a kill switch environment variable that returns every endpoint to
+   shadow (log-only) mode without a deploy of new code.
