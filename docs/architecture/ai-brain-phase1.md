@@ -5,17 +5,20 @@ today, where DPI/WAF decisions are made, and where authentication /
 authorization lives. Nothing in this phase changes code. Every path and
 symbol below was checked with `grep` against the tree at the time of writing.
 
-> **Phase numbering.** This document uses "Phase" in two separate senses:
+> **Phase numbering.** This document keeps two naming schemes apart:
 >
-> - **Implementation phases** of the original AI Brain roadmap (Phase 1 =
->   this read-only analysis, Phase 2 = the AI middleware / audit table,
->   Phase 4 = the ABAC rules). Sections 1–8 use "Phase" in this sense.
-> - **ABAC activation phases**, defined only in section 9: Phase 1 = ABAC
->   not wired to production (current state), Phase 2 = gradual rollout
->   (shadow → log review → enforcement).
+> - **Phase** = an implementation phase of the original AI Brain roadmap
+>   (Phase 1 = this read-only analysis, Phase 2 = the AI middleware / audit
+>   table, Phase 4 = the ABAC rules). "Phase" is used only in this sense,
+>   in sections 1–8.
+> - **Activation Stage** = ABAC activation in production, defined only in
+>   section 9: Stage A = ABAC not wired to any production endpoint (current
+>   state), Stage B = gradual rollout (B1 shadow → B2 log review → B3
+>   endpoint-by-endpoint enforcement).
 >
 > "Phase 2" in sections 2–3 therefore means the AI middleware work, not the
-> ABAC rollout.
+> ABAC rollout. Commit `4a71a03` used the older names "Phase 1 / Phase 2"
+> for the activation stages; they correspond to Stage A / Stage B.
 
 ## 1. Path mapping (roadmap name → actual location)
 
@@ -176,7 +179,7 @@ endpoints would change current behaviour (see the Phase 4 notes in the final
 report).
 
 Note: "Phase 4" above is the roadmap implementation phase that built the
-ABAC rules, not an ABAC activation phase. Activation status is tracked
+ABAC rules, not an ABAC Activation Stage. Activation status is tracked
 separately in section 9.
 
 ## 8. Secrets check
@@ -187,11 +190,13 @@ secrets. `.env` is git-ignored and was not opened.
 
 ## 9. حالة التفعيل (Activation Status)
 
-This section is the single reference for ABAC activation phases. "Phase 1"
-and "Phase 2" here mean activation phases, not the roadmap implementation
-phases used in sections 1–8.
+This section is the single reference for ABAC Activation Stages: Stage A
+(not wired to any production endpoint, the current state) and Stage B
+(gradual rollout: B1 shadow, B2 log review, B3 endpoint-by-endpoint
+enforcement). These are distinct from the roadmap implementation phases
+used in sections 1–8.
 
-**ABAC is not enforced in production in Phase 1.** `require_abac()`
+**ABAC is not enforced in production in Activation Stage A (current).** `require_abac()`
 (`auth/dependencies.py`) is not attached to any production router or
 endpoint in `web/` or `app/`. Every production request is still decided only
 by the existing gates in section 7 (`get_current_user`, `require_roles`,
@@ -227,24 +232,49 @@ What exists today:
 - ABAC can only narrow access: an endpoint that adopts it keeps its existing
   role check.
 
-### Phase 2 rollout plan (documentation only, not implemented)
+### Activation Stage B rollout plan (documentation only, not implemented)
 
 Nothing below exists in code yet.
 
-1. **Shadow mode.** Evaluate ABAC on every request to the target endpoints
-   and log the decision (allow/deny, matching rule id, reason) without
-   blocking any request. The existing gates remain the only enforcement.
-2. **Log review.** Review the shadow logs for a fixed, agreed period to
-   confirm there are no false denies, with particular attention to the NGFW
-   business-hours rules (timezone, day boundaries, after-hours admin work)
-   and to missing-attribute denies.
-3. **Gradual enforcement.** Turn on enforcement for one target endpoint
-   at a time; `require_abac()` returns HTTP 403 on deny only for that
-   endpoint, while every other endpoint stays in shadow mode. Move on to
-   the next endpoint only after the enforced one has run for the agreed
-   review period with no false denies in its decision logs. Kill switch:
-   a proposed environment variable `ABAC_ENFORCEMENT_MODE` (`shadow` |
-   `enforce`, default `shadow`) read by `require_abac()`; setting it to
-   `shadow` returns every endpoint to log-only mode with an environment
-   change and restart, with no new code deployed. This variable is a
-   proposal only: it is not read anywhere in the code today.
+- **B1 — Shadow mode.** Evaluate ABAC on every request to the target
+  endpoints and log the decision (allow/deny, matching rule id, reason)
+  without blocking any request. The existing gates remain the only
+  enforcement.
+- **B2 — Log review.** Review the shadow logs for a fixed, agreed period to
+  confirm there are no false denies, with particular attention to the NGFW
+  business-hours rules (timezone, day boundaries, after-hours admin work)
+  and to missing-attribute denies.
+- **B3 — Gradual enforcement (two-variable kill switch).** Enforcement is
+  turned on one endpoint at a time and is controlled by two proposed
+  environment variables read by `require_abac()`:
+  - `ABAC_ENFORCEMENT_MODE` = `shadow` | `enforce`, default `shadow`. This
+    is the global kill switch: setting it to `shadow` returns every
+    endpoint to log-only mode immediately with an environment change and
+    restart, with no new code deployed.
+  - `ABAC_ENFORCED_ENDPOINTS` = the list of enforced endpoints (proposed
+    format: comma-separated `"METHOD /path"` entries, e.g.
+    `"POST /api/scan"`). A deny returns HTTP 403 only for an endpoint in
+    this list, and only when `ABAC_ENFORCEMENT_MODE=enforce`. Any endpoint
+    not in the list stays in shadow mode.
+
+  | `ABAC_ENFORCEMENT_MODE` | Endpoint listed? | Result on deny                    |
+  |-------------------------|------------------|-----------------------------------|
+  | `shadow`                | any              | log only, request passes          |
+  | `enforce`               | no               | log only, request passes          |
+  | `enforce`               | yes              | HTTP 403 + log                    |
+  | invalid value           | any              | treated as `shadow` + ERROR log   |
+
+  Why an invalid mode falls back to `shadow`: the kill switch must fail
+  towards shadow, not towards blocking, because a configuration mistake
+  that blocks everyone defeats its purpose. This is separate from policy
+  errors: if an error in the policy file itself produces a deny on an
+  enforced endpoint, that stays fail-closed (HTTP 403), as in the current
+  code (`1ee3cc2`).
+
+  Transition rule: a new endpoint is added to `ABAC_ENFORCED_ENDPOINTS`
+  only after the previously enforced endpoint has run for the agreed review
+  period with no false denies in its decision logs.
+
+  Both variables are proposals only: neither is read anywhere in the code
+  today. The ABAC environment variables that actually exist are
+  `ABAC_TIMEZONE` and `ABAC_RULES_PATH`.
