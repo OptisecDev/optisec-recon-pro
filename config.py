@@ -51,6 +51,7 @@ DATABASE_URL = os.environ.get(
 # Groq-API-specific despite the name.
 _DEV_TESTING_ENV_VALUES = {"development", "dev", "test", "testing"}
 _INSECURE_DEV_JWT_SECRET = "optisec-INSECURE-dev-default-key-do-not-use-in-production"
+_MIN_JWT_SECRET_BYTES = 32
 
 
 def _resolve_is_production() -> bool:
@@ -66,6 +67,19 @@ IS_PRODUCTION = _resolve_is_production()
 def _resolve_jwt_secret() -> str:
     secret = os.environ.get("JWT_SECRET")
     if secret:
+        # Never include the secret value in these errors.
+        if "-----BEGIN" in secret:
+            raise RuntimeError(
+                "JWT_SECRET looks like a PEM-formatted key. Refusing to start: "
+                "HS256 needs a random shared secret, not a PEM key — set "
+                "JWT_SECRET to a long random string (e.g. secrets.token_hex(32))."
+            )
+        if len(secret.encode("utf-8")) < _MIN_JWT_SECRET_BYTES:
+            raise RuntimeError(
+                f"JWT_SECRET is shorter than {_MIN_JWT_SECRET_BYTES} bytes. Refusing "
+                "to start: set JWT_SECRET to a long random string "
+                "(e.g. secrets.token_hex(32))."
+            )
         return secret
 
     is_production = os.environ.get("GROQ_ENV") == "production" or bool(os.environ.get("RENDER"))

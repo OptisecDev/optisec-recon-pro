@@ -34,9 +34,9 @@ def _clear_env(monkeypatch):
 
 def test_real_secret_is_used_regardless_of_env_mode(monkeypatch):
     _clear_env(monkeypatch)
-    monkeypatch.setenv("JWT_SECRET", "a-real-random-secret")
+    monkeypatch.setenv("JWT_SECRET", "a-real-random-secret-of-at-least-32-bytes")
     monkeypatch.setenv("GROQ_ENV", "production")
-    assert config._resolve_jwt_secret() == "a-real-random-secret"
+    assert config._resolve_jwt_secret() == "a-real-random-secret-of-at-least-32-bytes"
 
 
 def test_missing_secret_in_production_raises(monkeypatch):
