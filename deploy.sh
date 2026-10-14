@@ -229,8 +229,11 @@ else
 fi
 echo ""
 if [ "${ADMIN_PASS_GENERATED:-false}" = true ]; then
-  echo -e "  ${YELLOW}Admin:${NC}     admin / ${ADMIN_PASS}"
-  echo -e "  ${RED}${BOLD}⚠ Generated admin password — shown ONCE. Save it in a password manager now, then change it after first login.${NC}"
+  ADMIN_CRED_FILE="${SCRIPT_DIR}/.admin_credentials.txt"
+  (umask 077 && printf 'admin / %s\n' "$ADMIN_PASS" > "$ADMIN_CRED_FILE")
+  chmod 600 "$ADMIN_CRED_FILE"
+  echo -e "  ${YELLOW}Admin:${NC}     admin / (generated password saved to ${ADMIN_CRED_FILE}, mode 0600)"
+  echo -e "  ${RED}${BOLD}⚠ Move it to a password manager, delete the file, then change the password after first login.${NC}"
 else
   echo -e "  ${YELLOW}Admin:${NC}     admin / (FIRST_ADMIN_PASSWORD from your environment or .env)"
 fi
