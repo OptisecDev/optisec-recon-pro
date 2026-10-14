@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -15,6 +16,17 @@ from config import LICENSE_SECRET
 # ─── Config ───────────────────────────────────────────────────────────────────
 
 _LICENSE_FILE = Path(__file__).parent.parent / "data" / "license.json"
+
+# New keys carry the full 64-hex-char HMAC-SHA256 signature. Keys issued before
+# that carry only its first 16 hex chars (64 bits); those short-signature keys
+# are still accepted unless OPTISEC_LICENSE_REQUIRE_FULL_SIG is set, so existing
+# installs keep working until their keys are reissued.
+_FULL_SIG_LEN = 64
+_SHORT_SIG_LEN = 16
+
+
+def _require_full_sig() -> bool:
+    return os.environ.get("OPTISEC_LICENSE_REQUIRE_FULL_SIG", "").strip().lower() in ("1", "true", "yes", "on")
 
 # ─── Feature Definitions ──────────────────────────────────────────────────────
 
@@ -197,7 +209,7 @@ def generate_license_key(
     data_bytes = json.dumps(payload, separators=(",", ":")).encode()
     sig = hmac.new(LICENSE_SECRET.encode(), data_bytes, hashlib.sha256).hexdigest()
     encoded = base64.urlsafe_b64encode(data_bytes).decode().rstrip("=")
-    return f"OPS4-{tier.upper()}-{encoded}.{sig[:16]}"
+    return f"OPS4-{tier.upper()}-{encoded}.{sig}"
 
 
 # ─── Key Verification ─────────────────────────────────────────────────────────
@@ -212,12 +224,12 @@ def verify_license_key(key: str) -> tuple[bool, str, Optional[License]]:
         return False, "No license key provided", None
 
     try:
-        # Expected format: OPS4-TIER-{b64}.{sig16}
+        # Expected format: OPS4-TIER-{b64}.{sig64} (older keys: {sig16})
         parts = key.split("-", 2)
         if len(parts) < 3 or parts[0] != "OPS4":
             return False, "Invalid key format (must start with OPS4-)", None
 
-        rest = parts[2]  # {b64}.{sig16}
+        rest = parts[2]  # {b64}.{sig}
         if "." not in rest:
             return False, "Invalid key format (missing signature separator)", None
 
@@ -228,12 +240,19 @@ def verify_license_key(key: str) -> tuple[bool, str, Optional[License]]:
         if pad != 4:
             b64_part += "=" * pad
 
+        sig_part = sig_part.lower()
+        if len(sig_part) == _SHORT_SIG_LEN:
+            if _require_full_sig():
+                return False, "Short license signature not accepted — reissue the key with a full signature", None
+        elif len(sig_part) != _FULL_SIG_LEN:
+            return False, "License signature invalid — key may be tampered or forged", None
+
         data_bytes = base64.urlsafe_b64decode(b64_part)
         expected_sig = hmac.new(
             LICENSE_SECRET.encode(), data_bytes, hashlib.sha256
-        ).hexdigest()[:16]
+        ).hexdigest()[:len(sig_part)]
 
-        if not hmac.compare_digest(expected_sig, sig_part.lower()):
+        if not hmac.compare_digest(expected_sig, sig_part):
             return False, "License signature invalid — key may be tampered or forged", None
 
         payload = json.loads(data_bytes)
