@@ -9,6 +9,7 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import bcrypt
 from jose import JWTError, jwt
@@ -293,23 +294,16 @@ async def get_current_user(request: Request, db: AsyncSession):
     return user
 
 
-async def get_ws_user(websocket: WebSocket, db: AsyncSession):
-    """Authenticate a WebSocket handshake.
+def _ws_origin_is_same_site(websocket) -> bool:
+    origin = websocket.headers.get("origin")
+    host = websocket.headers.get("host")
+    if not origin or not host:
+        return False
+    return urlsplit(origin).netloc.lower() == host.lower()
 
-    Browsers cannot attach custom headers to a WebSocket handshake, so a
-    `?token=` query param is accepted in addition to the same
-    Authorization/cookie sources `get_current_user` reads (WebSocket and
-    Request both expose `.headers`/`.cookies`, so same-origin page loads
-    that already carry the `access_token` cookie work with no frontend
-    changes). Raises HTTPException(401) on any failure — callers must
-    catch this and close the socket themselves, since a WebSocket has not
-    been accepted yet and cannot be answered like a normal HTTP request.
-    """
+
+async def _load_user_from_bearer(token: str, db: AsyncSession):
     from web.models import User
-
-    token = websocket.query_params.get("token")
-    if not token:
-        return await get_current_user(websocket, db)
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -324,6 +318,27 @@ async def get_ws_user(websocket: WebSocket, db: AsyncSession):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+
+async def get_ws_user(websocket: WebSocket, db: AsyncSession):
+    """Authenticate a WebSocket handshake.
+
+    - Authorization: Bearer header is accepted (non-browser clients).
+    - Cookie auth is accepted only when Origin matches Host: browsers attach
+      cookies to cross-site WebSocket handshakes, so without this check any
+      external page could open /ws/scan/<id> as the logged-in victim
+      (Cross-Site WebSocket Hijacking).
+    - Query-string tokens (`?token=`) are NOT accepted; they leaked into
+      access logs.
+    Raises HTTPException on any failure — callers must catch this and close
+    the socket themselves, since a WebSocket has not been accepted yet.
+    """
+    auth_header = websocket.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return await _load_user_from_bearer(auth_header[7:].strip(), db)
+    if not _ws_origin_is_same_site(websocket):
+        raise HTTPException(status_code=403, detail="Cross-origin WebSocket rejected")
+    return await get_current_user(websocket, db)
 
 
 def require_roles(*roles: str):
