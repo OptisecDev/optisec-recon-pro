@@ -34,7 +34,7 @@ def _run_scan_task_step_names() -> set:
     src = open(APP_PY, encoding="utf-8").read()
     body = src[src.index("async def _run_scan_task("):]
     body = body[:body.index("\n@app.")]
-    return set(re.findall(r'"([a-z_]+)" in scan_types', body))
+    return set(re.findall(r'"([a-z_]+)" in authorized', body))
 
 
 def test_passive_and_active_sets_are_disjoint():

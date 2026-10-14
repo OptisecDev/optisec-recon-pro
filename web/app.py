@@ -7,7 +7,7 @@ import secrets
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Iterable, Optional, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -78,6 +78,8 @@ from web.routers import license_routes
 from web.routers import payment_routes
 from web.routers import ioc as ioc_router
 from web.routers import domain_verification as domain_verification_router
+from web.domain_verification import check_scan_authorization, denial_response
+from web.scan_authz import SCAN_STEP_ORDER
 from modules.ioc_correlation import run_correlation, load_cached
 
 BASE_DIR = Path(__file__).parent
@@ -733,6 +735,10 @@ async def _startup_db_sequence():
     for attempt in range(max_attempts):
         try:
             await init_db()
+            # Nullable columns create_all can't add to an existing scans
+            # table; see the module docstring for why this one runs here.
+            from web.migrate_add_scan_authz_columns import migrate as _migrate_scan_authz_columns
+            await _migrate_scan_authz_columns()
 
             # init_db() only runs Base.metadata.create_all, which never adds
             # columns to a table that already exists. The users.api_key_hash
@@ -1701,12 +1707,16 @@ async def admin_panel(request: Request, user: User = Depends(web_user), db: Asyn
         "for real-time progress events.\n\n"
         "**Available scan modules:** `subdomain`, `dns`, `whois`, `nmap`, `ssl`, `headers`, "
         "`ports`, `xss`, `sqli`, `ssrf`, `lfi`, `redirect`, `osint`\n\n"
-        "Leave `scan_types` empty to run **all modules**. Requires **analyst** or **admin** role."
+        "Leave `scan_types` empty to run **all modules**. Requires **analyst** or **admin** role.\n\n"
+        "Passive modules (`dns`, `whois`, `osint`, `ssl`, `headers`) run against any target. "
+        "Active modules (`subdomain`, `nmap`, `ports`, `xss`, `sqli`, `ssrf`, `lfi`, `redirect`) "
+        "need a domain you have verified via `POST /api/domains/verify`, or a listed training "
+        "target; otherwise the whole request is refused with 403 and `denied_checks`."
     ),
     responses={
         200: {"description": "Scan launched", "model": ScanLaunchResponse},
-        400: {"description": "Missing target", "model": ErrorResponse},
-        403: {"description": "Insufficient role", "model": ErrorResponse},
+        400: {"description": "Missing target or malformed scan_types", "model": ErrorResponse},
+        403: {"description": "Insufficient role, or active checks not authorized for this target", "model": ErrorResponse},
     },
 )
 async def run_scan(
@@ -1722,6 +1732,12 @@ async def run_scan(
 
     if not target_url:
         raise HTTPException(400, "Target is required")
+    if not isinstance(scan_types, list) or not all(isinstance(s, str) for s in scan_types):
+        raise HTTPException(400, "scan_types must be a list of strings")
+
+    decision = await check_scan_authorization(db, user, target_url, scan_types, source="api_scan")
+    if not decision.ok:
+        return denial_response(decision)
 
     scan_id = f"scan_{uuid.uuid4().hex[:16]}"
 
@@ -1737,11 +1753,16 @@ async def run_scan(
         id=scan_id, user_id=user.id, target_id=target_id,
         target_url=target_url, scan_types=scan_types,
         status="pending", progress=0,
+        authz_basis=decision.basis,
+        authz_checks=[c for c in SCAN_STEP_ORDER if c in decision.allowed],
     )
     db.add(scan)
     await db.commit()
 
-    background_tasks.add_task(_run_scan_task, scan_id, target_url, scan_types, user.id, target_id)
+    background_tasks.add_task(
+        _run_scan_task, scan_id, target_url, scan_types, user.id, target_id,
+        authorized_checks=decision.allowed,
+    )
     return JSONResponse({"scan_id": scan_id})
 
 
@@ -1902,7 +1923,14 @@ async def _extract_and_store_iocs(db: AsyncSession, finding_rows: list) -> None:
 async def _run_scan_task(
     scan_id: str, target: str, scan_types: list,
     user_id: int, target_id: Optional[int],
+    *, authorized_checks: Iterable[str],
 ):
+    """`authorized_checks` is the AuthzDecision.allowed set from
+    check_scan_authorization() (web/domain_verification.py) -- required and
+    keyword-only so no caller can reach the scan modules without an
+    authorization decision. Only steps in it run; `scan_types` is kept for
+    the record only."""
+    authorized = frozenset(authorized_checks)
     domain = target.replace("https://", "").replace("http://", "").split("/")[0]
     url = target if target.startswith("http") else f"https://{target}"
     results: dict = {}
@@ -1951,9 +1979,7 @@ async def _run_scan_task(
                 scan.started_at = datetime.utcnow()
                 await db.commit()
 
-        run_all = not scan_types
-
-        if run_all or "subdomain" in scan_types:
+        if "subdomain" in authorized:
             await push_start("subdomain")
             try:
                 sub_result = await asyncio.wait_for(asyncio.to_thread(enumerate_subdomains, domain), timeout=40)
@@ -1965,7 +1991,7 @@ async def _run_scan_task(
             results["subdomains"] = d
             await push("subdomain", _STEP_PROGRESS["subdomain"], d)
 
-        if run_all or "dns" in scan_types:
+        if "dns" in authorized:
             await push_start("dns")
             try:
                 d = await asyncio.wait_for(asyncio.to_thread(dns_lookup, domain), timeout=45)
@@ -1975,7 +2001,7 @@ async def _run_scan_task(
             results["dns"] = d
             await push("dns", _STEP_PROGRESS["dns"], d)
 
-        if run_all or "whois" in scan_types:
+        if "whois" in authorized:
             await push_start("whois")
             try:
                 d = await asyncio.wait_for(asyncio.to_thread(whois_lookup, domain), timeout=25)
@@ -1985,7 +2011,7 @@ async def _run_scan_task(
             results["whois"] = d
             await push("whois", _STEP_PROGRESS["whois"], d)
 
-        if run_all or "nmap" in scan_types:
+        if "nmap" in authorized:
             await push_start("nmap")
             try:
                 d = await asyncio.wait_for(asyncio.to_thread(nmap_scan, domain), timeout=120)
@@ -1995,7 +2021,7 @@ async def _run_scan_task(
             results["nmap"] = d
             await push("nmap", _STEP_PROGRESS["nmap"], d)
 
-        if run_all or "ssl" in scan_types:
+        if "ssl" in authorized:
             from modules.recon.ssl_analysis import analyze_ssl
             await push_start("ssl")
             try:
@@ -2006,7 +2032,7 @@ async def _run_scan_task(
             results["ssl"] = d
             await push("ssl", _STEP_PROGRESS["ssl"], d)
 
-        if run_all or "headers" in scan_types:
+        if "headers" in authorized:
             from modules.recon.security_headers import check_security_headers
             await push_start("headers")
             try:
@@ -2017,7 +2043,7 @@ async def _run_scan_task(
             results["headers"] = d
             await push("headers", _STEP_PROGRESS["headers"], d)
 
-        if run_all or "ports" in scan_types:
+        if "ports" in authorized:
             from modules.recon.port_scanner import scan_ports
             await push_start("ports")
             try:
@@ -2030,7 +2056,7 @@ async def _run_scan_task(
 
         _vuln_scan_types = {"xss", "sqli", "ssrf", "lfi", "redirect"}
         crawled_urls, crawled_forms = [], []
-        if run_all or (_vuln_scan_types & set(scan_types or [])):
+        if _vuln_scan_types & authorized:
             # One bounded, same-origin crawl feeds every vuln scanner below
             # real params/forms discovered across the target's linked pages
             # instead of each scanner guessing off `url` alone — see
@@ -2043,7 +2069,7 @@ async def _run_scan_task(
             except Exception as e:
                 logger.warning("[scan %s] crawl step failed/timed out: %s", scan_id, e)
 
-        if run_all or "xss" in scan_types:
+        if "xss" in authorized:
             await push_start("xss")
             try:
                 d = await asyncio.wait_for(
@@ -2055,7 +2081,7 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "xss", 75)
                 await push("xss", _STEP_PROGRESS["xss"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "sqli" in scan_types:
+        if "sqli" in authorized:
             await push_start("sqli")
             try:
                 d = await asyncio.wait_for(
@@ -2067,7 +2093,7 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "sqli", 75)
                 await push("sqli", _STEP_PROGRESS["sqli"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "ssrf" in scan_types:
+        if "ssrf" in authorized:
             await push_start("ssrf")
             try:
                 d = await asyncio.wait_for(
@@ -2079,7 +2105,7 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "ssrf", 75)
                 await push("ssrf", _STEP_PROGRESS["ssrf"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "lfi" in scan_types:
+        if "lfi" in authorized:
             await push_start("lfi")
             try:
                 d = await asyncio.wait_for(
@@ -2091,7 +2117,7 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "lfi", 75)
                 await push("lfi", _STEP_PROGRESS["lfi"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "redirect" in scan_types:
+        if "redirect" in authorized:
             await push_start("redirect")
             try:
                 d = await asyncio.wait_for(
@@ -2103,7 +2129,7 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "redirect", 75)
                 await push("redirect", _STEP_PROGRESS["redirect"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "osint" in scan_types:
+        if "osint" in authorized:
             await push_start("osint")
 
             async def _run_osint():
@@ -2293,11 +2319,14 @@ async def scan_headers(request: Request, user: User = Depends(web_user)):
     ),
     responses={200: {"description": "Port scan results"}},
 )
-async def scan_ports(request: Request, user: User = Depends(web_user)):
+async def scan_ports(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
         raise HTTPException(400, "Target is required")
+    decision = await check_scan_authorization(db, user, target, ["nmap"], source="api_scan_ports")
+    if not decision.ok:
+        return denial_response(decision)
     result = await asyncio.to_thread(nmap_scan, target)
     return JSONResponse(result)
 
@@ -2391,18 +2420,28 @@ async def download_report(
     ),
     responses={200: {"description": "Aggregated OSINT results"}},
 )
-async def run_osint(request: Request, user: User = Depends(web_user)):
+async def run_osint(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     data = await request.json()
     domain = data.get("domain", "").strip()
     if not domain:
         raise HTTPException(400, "Domain is required")
+
+    # Subdomain enumeration probes every name that resolves (an active
+    # check, web/scan_authz.py); the rest of this endpoint is passive. So an
+    # unauthorized target gets everything except subdomains, with the
+    # reason in the response, rather than a 403 for the whole lookup.
+    decision = await check_scan_authorization(db, user, domain, ["subdomain"], source="api_osint")
+    subdomains_skipped = None if decision.ok else decision.reason
+
+    async def _no_subdomains():
+        return {"subdomains": [], "unconfirmed": []}
 
     # Run all OSINT tasks concurrently
     emails_task = find_emails(domain)
     social_task = find_social_profiles(domain)
     dns_task = asyncio.to_thread(dns_lookup, domain)
     whois_task = asyncio.to_thread(whois_lookup, domain)
-    subs_task = asyncio.to_thread(enumerate_subdomains, domain)
+    subs_task = asyncio.to_thread(enumerate_subdomains, domain) if decision.ok else _no_subdomains()
 
     emails, social, dns_data, whois_data, subs = await asyncio.gather(
         emails_task, social_task, dns_task, whois_task, subs_task,
@@ -2417,6 +2456,7 @@ async def run_osint(request: Request, user: User = Depends(web_user)):
         "whois": whois_data if not isinstance(whois_data, Exception) else {},
         "subdomains": subs_ok["subdomains"],
         "subdomains_unconfirmed": subs_ok["unconfirmed"],
+        "subdomains_skipped": subdomains_skipped,
     })
 
 

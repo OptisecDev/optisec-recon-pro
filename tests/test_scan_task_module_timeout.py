@@ -102,6 +102,7 @@ class TestModuleTimeoutIsolatesOneStep:
         _run(app_module._run_scan_task(
             scan_id, "example.com", ["subdomain", "dns", "whois"],
             user_id=1, target_id=None,
+            authorized_checks={"subdomain", "dns", "whois"},
         ))
 
         async def _read():

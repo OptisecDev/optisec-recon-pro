@@ -139,6 +139,12 @@ class Scan(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
+    # Why this scan was allowed to run (web/scan_authz.py AuthzDecision):
+    # "passive_only" | "verified:<method>:<domain>" | "training:<host>",
+    # prefixed "unenforced:" under SCAN_AUTHZ_ENFORCE=false. NULL for scans
+    # created before scan authorization existed.
+    authz_basis = Column(String(300), nullable=True)
+    authz_checks = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="scans")
     target = relationship("Target", back_populates="scans")
