@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User, Target
 from web.auth import get_current_user, require_analyst_or_admin
-from web.domain_verification import check_scan_authorization, denial_response
+from web.domain_verification import check_scan_authorization, denial_response, network_scope_for
+from modules.scan_scope import scan_scope
 from web.license import require_feature_or_402
 from web.rate_limit import rate_limiter
 from web.shared_templates import templates
@@ -92,13 +93,17 @@ async def start_simulation(request: Request, user: User = Depends(_user), db: As
     decision = await check_scan_authorization(db, user, target.url, checks, source="autonomous_rt_start")
     if not decision.ok:
         return denial_response(decision)
-    session = await start_autonomous_simulation(
-        target=target.url,
-        attack_types=attack_types,
-        stealth_level=data.get("stealth_level", "medium"),
-        auto_exploit=data.get("auto_exploit", False),
-        user_id=user.id,
-    )
+    # The scope set here is copied into every asyncio.to_thread the recon and
+    # web-scan phases use, so their traffic stays on the authorized target.
+    scope = await network_scope_for(decision, target.url)
+    with scan_scope(scope):
+        session = await start_autonomous_simulation(
+            target=target.url,
+            attack_types=attack_types,
+            stealth_level=data.get("stealth_level", "medium"),
+            auto_exploit=data.get("auto_exploit", False),
+            user_id=user.id,
+        )
     return session
 
 

@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+import modules.scan_scope as scan_scope_module
 import web.app as app_module
 import web.domain_verification as dv
 import web.rate_limit as rate_limit
@@ -45,6 +46,8 @@ def _isolation(monkeypatch):
         raise AssertionError("the preview/UI must never run a DNS/HTTP ownership check")
     monkeypatch.setattr(dv, "check_dns_txt", no_network)
     monkeypatch.setattr(dv, "check_http_file", no_network)
+    # network_scope_for() resolves the scope's hosts; keep that offline.
+    monkeypatch.setattr(scan_scope_module, "_resolve", lambda host: {"93.184.216.34"})
     yield
     rate_limit._buckets.clear()
 

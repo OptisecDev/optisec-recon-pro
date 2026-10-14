@@ -224,3 +224,24 @@ def decide(
         decision.reason = ". ".join(parts)
 
     return decision
+
+
+def scope_targets(decision: AuthzDecision) -> Optional[tuple]:
+    """(exact_hosts, domain_suffixes) an active scan under `decision` may
+    contact -- the input to modules/scan_scope.build_scope(). None when no
+    network scope applies: nothing active was allowed (passive_only), or the
+    decision came from log-only mode ("unenforced:" basis), which must not
+    block anything.
+
+    A dns_txt verification covers the domain and its subdomains (suffix); a
+    file verification or a training target covers only that exact host.
+    """
+    kind, _, rest = decision.basis.partition(":")
+    if kind == "verified":
+        method, _, domain = rest.partition(":")
+        if method == VERIFY_METHOD_DNS_TXT:
+            return frozenset(), frozenset({domain})
+        return frozenset({domain}), frozenset()
+    if kind == "training":
+        return frozenset({rest}), frozenset()
+    return None

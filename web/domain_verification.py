@@ -40,11 +40,12 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from modules.scan_scope import ScanScope, build_scope
 from web.models import DomainVerification, User
 from web.scan_authz import (
     ACTIVE_CHECKS, VERIFY_METHOD_DNS_TXT, VERIFY_METHOD_HTTP_FILE,
     AuthzDecision, VerifiedScope, decide, expand_checks, host_in_verified_scope,
-    is_ip_literal, normalize_host,
+    is_ip_literal, normalize_host, scope_targets,
 )
 from web.schemas import _is_ssrf_blocked_host
 
@@ -352,6 +353,17 @@ async def preview_authorization(
     if decision.denied and not scan_authz_enforced():
         decision = _apply_log_only(decision)
     return decision
+
+
+async def network_scope_for(decision: AuthzDecision, target: str) -> Optional[ScanScope]:
+    """The ScanScope active checks under `decision` must stay inside (see
+    modules/scan_scope.py), or None when nothing should be restricted --
+    passive-only or log-only decisions. Resolves DNS, off the event loop."""
+    targets = scope_targets(decision)
+    if targets is None:
+        return None
+    hosts, suffixes = targets
+    return await asyncio.to_thread(build_scope, hosts, suffixes, [normalize_host(target)])
 
 
 def denial_response(decision: AuthzDecision) -> JSONResponse:

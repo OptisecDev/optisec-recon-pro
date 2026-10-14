@@ -1,7 +1,7 @@
 import http.client
 import socket
 import ssl
-from concurrent.futures import ThreadPoolExecutor
+from modules.scan_scope import ScopedThreadPoolExecutor
 from typing import Callable, Optional
 from config import WORDLIST_PATH, MAX_THREADS
 from modules.recon.ssl_analysis import _parse_cert_der
@@ -107,7 +107,18 @@ def _verify_live_host(hostname: str) -> tuple:
     return False, "probe_failed"
 
 
-def enumerate_subdomains(domain: str, progress_cb: Optional[Callable] = None) -> dict:
+def enumerate_subdomains(domain: str, progress_cb: Optional[Callable] = None, *, passive: bool = False) -> dict:
+    """Wordlist DNS brute-force, then (unless `passive`) a TLS/HTTP probe of
+    every name that resolved to confirm a real host is behind it.
+
+    passive=True stops after DNS: nothing connects to the target's hosts --
+    the only traffic is DNS queries through the resolver -- so every resolved
+    name is returned unconfirmed with reason "dns_only". This is the mode for
+    targets the user isn't authorized to actively scan (web/scan_authz.py
+    classifies the probing mode as the active `subdomain` check). Note that
+    on a wildcard-DNS domain every guess resolves, so passive results there
+    can't tell real subdomains from wildcard noise.
+    """
     wordlist = []
     if WORDLIST_PATH.exists():
         wordlist = [l.strip() for l in WORDLIST_PATH.read_text().splitlines() if l.strip()]
@@ -131,7 +142,7 @@ def enumerate_subdomains(domain: str, progress_cb: Optional[Callable] = None) ->
     subdomains = [f"{w}.{domain}" for w in wordlist]
     total = len(subdomains)
 
-    with ThreadPoolExecutor(max_workers=MAX_THREADS) as ex:
+    with ScopedThreadPoolExecutor(max_workers=MAX_THREADS) as ex:
         futures = {ex.submit(_resolve, sub): sub for sub in subdomains}
         done = 0
         for future, sub in futures.items():
@@ -142,6 +153,13 @@ def enumerate_subdomains(domain: str, progress_cb: Optional[Callable] = None) ->
             if progress_cb and done % 50 == 0:
                 progress_cb(done, total)
 
+    if passive:
+        return {
+            "subdomains": [],
+            "unconfirmed": [{**r, "reason": "dns_only"} for r in resolved],
+            "mode": "passive",
+        }
+
     # A resolved A record only proves DNS answered — on wildcard-DNS domains
     # (GitHub Pages, Vercel, Netlify, Heroku, etc.) that's true for every
     # guess regardless of whether anything real is hosted there. Confirm
@@ -150,7 +168,7 @@ def enumerate_subdomains(domain: str, progress_cb: Optional[Callable] = None) ->
     confirmed = []
     unconfirmed = []
     if resolved:
-        with ThreadPoolExecutor(max_workers=MAX_THREADS) as ex:
+        with ScopedThreadPoolExecutor(max_workers=MAX_THREADS) as ex:
             futures = {ex.submit(_verify_live_host, r["subdomain"]): r for r in resolved}
             for future, r in futures.items():
                 is_live, reason = future.result()
@@ -159,4 +177,4 @@ def enumerate_subdomains(domain: str, progress_cb: Optional[Callable] = None) ->
                 else:
                     unconfirmed.append({**r, "reason": reason})
 
-    return {"subdomains": confirmed, "unconfirmed": unconfirmed}
+    return {"subdomains": confirmed, "unconfirmed": unconfirmed, "mode": "active"}
