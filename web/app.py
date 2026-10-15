@@ -367,7 +367,6 @@ register_template_globals(templates)
 
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger(request: Request):
-    token = request.cookies.get("access_token", "")
     return HTMLResponse(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -471,9 +470,10 @@ window.onload = () => {{
     defaultModelsExpandDepth: 1,
     persistAuthorization: true,
     tryItOutEnabled: false,
+    // Same-origin "Try it out" calls carry the HttpOnly session cookie
+    // automatically; the session token is never copied into page JS.
     requestInterceptor: req => {{
-      const cookie = '{token}';
-      if (cookie) req.headers['Cookie'] = 'access_token=' + cookie;
+      req.credentials = 'same-origin';
       return req;
     }},
     onComplete: () => {{
