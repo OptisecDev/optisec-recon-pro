@@ -53,7 +53,6 @@
 - `/` بدون auth → صفحة Landing (بدلاً من redirect للـ login)
 - `/landing` — صفحة Landing مباشرة
 - `/demo` — دخول فوري بنقرة واحدة (يُنشئ session للـ demo user)
-- Demo Account (`demo` / `Demo@optisec1`):
   - يُنشأ تلقائياً عند startup
   - 5 أهداف: tesla/google/microsoft/apple/amazon
   - 5 فحوصات كاملة، 8 ثغرات (2 critical، 3 high، 2 medium، 1 low)
@@ -82,8 +81,6 @@
 ---
 
 ## معلومات المشروع
-- Admin: admin / Optisec123!
-- Demo: demo / Demo@optisec1
 - Launch: `source venv/bin/activate && python -m uvicorn web.app:app --host 0.0.0.0 --port 8000`
 - أو: `./start.sh web`
 - Path: /home/ehsan/projects/optisec-recon-pro

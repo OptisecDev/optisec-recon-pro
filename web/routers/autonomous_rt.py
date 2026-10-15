@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User, Target
 from web.auth import get_current_user, require_analyst_or_admin
+from web.domain_verification import check_scan_authorization, denial_response, network_scope_for
+from modules.scan_scope import scan_scope
 from web.license import require_feature_or_402
 from web.rate_limit import rate_limiter
 from web.shared_templates import templates
@@ -20,12 +22,19 @@ router = APIRouter(prefix="/autonomous-redteam", tags=["autonomous_redteam"])
 # instance-wide credential, not per-user (same shape as the fixes in
 # web/routers/{bug_bounty,ai_security,osint}.py) -- and also runs real,
 # expensive scanners (nmap, port scan, XSS/SQLi/SSRF) for Phases 1/3.
-# Target ownership is already enforced, so this can't be pointed at
-# someone else's infrastructure, but a single account could still flood
-# the scan pipeline and the shared Groq quota with repeat calls.
+# Scan authorization (web/scan_authz.py) keeps this off infrastructure the
+# user hasn't verified, but a single account could still flood the scan
+# pipeline and the shared Groq quota with repeat calls.
 _start_simulation_limiter = rate_limiter(
     "autonomous_rt_start", lambda: int(os.environ.get("RATE_LIMIT_AUTONOMOUS_RT_START", "5")), 60,
 )
+
+
+# What start_autonomous_simulation() really runs: _run_recon_phase() always,
+# _run_web_scan_phase() only when phase 3 is selected
+# (modules/ai_advanced/autonomous_redteam.py).
+_RECON_PHASE_CHECKS = ("ports", "subdomain", "whois", "dns", "nmap")
+_WEB_PHASE_CHECKS = ("xss", "sqli")
 
 
 async def _user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
@@ -72,14 +81,29 @@ async def start_simulation(request: Request, user: User = Depends(_user), db: As
     except (TypeError, ValueError):
         raise HTTPException(400, "target_id is required")
     target = await check_target_ownership(target_id, user, db)
-    from modules.ai_advanced.autonomous_redteam import start_autonomous_simulation
-    session = await start_autonomous_simulation(
-        target=target.url,
-        attack_types=data.get("attack_types", ["web"]),
-        stealth_level=data.get("stealth_level", "medium"),
-        auto_exploit=data.get("auto_exploit", False),
-        user_id=user.id,
-    )
+    attack_types = data.get("attack_types", ["web"])
+    if not isinstance(attack_types, list) or not all(isinstance(a, str) for a in attack_types):
+        raise HTTPException(400, "attack_types must be a list of strings")
+    from modules.ai_advanced.autonomous_redteam import start_autonomous_simulation, _select_phases
+    # Owning the Target row only proves the user typed the URL in; the real
+    # recon/web-scan phases still need scan authorization for it.
+    checks = list(_RECON_PHASE_CHECKS)
+    if any(p["phase"] == 3 for p in _select_phases(attack_types)):
+        checks += _WEB_PHASE_CHECKS
+    decision = await check_scan_authorization(db, user, target.url, checks, source="autonomous_rt_start")
+    if not decision.ok:
+        return denial_response(decision)
+    # The scope set here is copied into every asyncio.to_thread the recon and
+    # web-scan phases use, so their traffic stays on the authorized target.
+    scope = await network_scope_for(decision, target.url)
+    with scan_scope(scope):
+        session = await start_autonomous_simulation(
+            target=target.url,
+            attack_types=attack_types,
+            stealth_level=data.get("stealth_level", "medium"),
+            auto_exploit=data.get("auto_exploit", False),
+            user_id=user.id,
+        )
     return session
 
 

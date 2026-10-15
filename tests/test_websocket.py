@@ -72,8 +72,11 @@ class SimpleFixture:
         self.client = client
         self._session_factory = session_factory
 
-    def websocket_connect(self, url):
-        return self.client.websocket_connect(url)
+    def websocket_connect(self, url, token=None):
+        # get_ws_user no longer reads ?token= (it leaked into access logs);
+        # non-browser clients authenticate with an Authorization: Bearer header.
+        headers = {"authorization": f"Bearer {token}"} if token else {}
+        return self.client.websocket_connect(url, headers=headers)
 
     def seed_user(self, username: str, role: str = "viewer") -> tuple:
         async def go():
@@ -112,7 +115,7 @@ class TestWebSocketAuthentication:
 
     def test_rejects_connection_with_garbage_token(self, client):
         with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect("/ws/scan/some-scan-id?token=not-a-real-jwt"):
+            with client.websocket_connect("/ws/scan/some-scan-id", token="not-a-real-jwt"):
                 pass
         assert exc_info.value.code == 1008
 
@@ -124,14 +127,14 @@ class TestWebSocketAuthorization:
         client.seed_scan("scan-owned-by-owner-a", owner_id)
 
         with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(f"/ws/scan/scan-owned-by-owner-a?token={attacker_token}"):
+            with client.websocket_connect("/ws/scan/scan-owned-by-owner-a", token=attacker_token):
                 pass
         assert exc_info.value.code == 1008
 
     def test_rejects_unknown_scan_id(self, client):
         _, token = client.seed_user("owner_b")
         with pytest.raises(WebSocketDisconnect) as exc_info:
-            with client.websocket_connect(f"/ws/scan/does-not-exist?token={token}"):
+            with client.websocket_connect("/ws/scan/does-not-exist", token=token):
                 pass
         assert exc_info.value.code == 1008
 
@@ -139,7 +142,7 @@ class TestWebSocketAuthorization:
         owner_id, owner_token = client.seed_user("owner_c")
         client.seed_scan("scan-owned-by-owner-c", owner_id, status="running", progress=42)
 
-        with client.websocket_connect(f"/ws/scan/scan-owned-by-owner-c?token={owner_token}") as ws:
+        with client.websocket_connect("/ws/scan/scan-owned-by-owner-c", token=owner_token) as ws:
             msg = ws.receive_json()
             assert msg["type"] == "state"
             assert msg["status"] == "running"
@@ -150,7 +153,7 @@ class TestWebSocketAuthorization:
         _, admin_token = client.seed_user("admin_d", role="admin")
         client.seed_scan("scan-owned-by-owner-d", owner_id)
 
-        with client.websocket_connect(f"/ws/scan/scan-owned-by-owner-d?token={admin_token}") as ws:
+        with client.websocket_connect("/ws/scan/scan-owned-by-owner-d", token=admin_token) as ws:
             msg = ws.receive_json()
             assert msg["type"] == "state"
 
@@ -163,11 +166,11 @@ class TestWebSocketConnectionLimit:
         sockets = []
         try:
             for _ in range(MAX_CONNECTIONS_PER_USER):
-                ws = client.websocket_connect(f"/ws/scan/scan-e?token={token}").__enter__()
+                ws = client.websocket_connect("/ws/scan/scan-e", token=token).__enter__()
                 sockets.append(ws)
 
             with pytest.raises(WebSocketDisconnect) as exc_info:
-                with client.websocket_connect(f"/ws/scan/scan-e?token={token}"):
+                with client.websocket_connect("/ws/scan/scan-e", token=token):
                     pass
             assert exc_info.value.code == 1008
         finally:

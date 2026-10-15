@@ -86,6 +86,7 @@ def live_server(tmp_path_factory):
     env["DATABASE_URL"] = f"sqlite+aiosqlite:///{db_path}"
     env["GROQ_ENV"] = "testing"  # opt into the insecure-but-fine-for-tests default JWT secret
     env.pop("GROQ_API_KEY", None)  # AI features degrade gracefully; keep this offline
+    env["DEMO_ENABLED"] = "true"  # these tests log in via the opt-in /demo route
     env.setdefault("PYTHONUNBUFFERED", "1")
 
     log_path = data_dir / "uvicorn.log"

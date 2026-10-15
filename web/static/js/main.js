@@ -117,11 +117,17 @@ window.optisecSetVisible = function (el, visible, displayValue) {
   el.style.display = visible ? (displayValue || '') : '';
 };
 
+// Double-submit CSRF token for this session (base.html meta tag); the
+// server requires it as X-CSRF-Token on cookie-authenticated scan routes.
+function csrfToken() {
+  return document.querySelector('meta[name="csrf-token"]')?.content || '';
+}
+
 const API = {
   async post(url, data) {
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
       body: JSON.stringify(data)
     });
     return r.json();
@@ -131,13 +137,13 @@ const API = {
     return r.json();
   },
   async delete(url) {
-    const r = await fetch(url, { method: 'DELETE' });
+    const r = await fetch(url, { method: 'DELETE', headers: { 'X-CSRF-Token': csrfToken() } });
     return r.json();
   },
   async patch(url, data) {
     const r = await fetch(url, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
       body: JSON.stringify(data)
     });
     return r.json();

@@ -35,6 +35,11 @@ URLHAUS_API_KEY = os.environ.get("URLHAUS_API_KEY", "")
 # explicitly sets this to true AND then explicitly triggers each share.
 ENABLE_THREAT_SHARING = os.environ.get("ENABLE_THREAT_SHARING", "false").strip().lower() == "true"
 
+# One-click demo login (/demo) and the seeded "demo" account. Disabled by
+# default: unless an operator explicitly sets DEMO_ENABLED=true, startup never
+# creates the demo account and /demo returns 404 without issuing a session.
+DEMO_ENABLED = os.environ.get("DEMO_ENABLED", "false").strip().lower() == "true"
+
 # Database — defaults to SQLite; set DATABASE_URL for PostgreSQL
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -46,6 +51,7 @@ DATABASE_URL = os.environ.get(
 # Groq-API-specific despite the name.
 _DEV_TESTING_ENV_VALUES = {"development", "dev", "test", "testing"}
 _INSECURE_DEV_JWT_SECRET = "optisec-INSECURE-dev-default-key-do-not-use-in-production"
+_MIN_JWT_SECRET_BYTES = 32
 
 
 def _resolve_is_production() -> bool:
@@ -61,6 +67,19 @@ IS_PRODUCTION = _resolve_is_production()
 def _resolve_jwt_secret() -> str:
     secret = os.environ.get("JWT_SECRET")
     if secret:
+        # Never include the secret value in these errors.
+        if "-----BEGIN" in secret:
+            raise RuntimeError(
+                "JWT_SECRET looks like a PEM-formatted key. Refusing to start: "
+                "HS256 needs a random shared secret, not a PEM key — set "
+                "JWT_SECRET to a long random string (e.g. secrets.token_hex(32))."
+            )
+        if len(secret.encode("utf-8")) < _MIN_JWT_SECRET_BYTES:
+            raise RuntimeError(
+                f"JWT_SECRET is shorter than {_MIN_JWT_SECRET_BYTES} bytes. Refusing "
+                "to start: set JWT_SECRET to a long random string "
+                "(e.g. secrets.token_hex(32))."
+            )
         return secret
 
     is_production = os.environ.get("GROQ_ENV") == "production" or bool(os.environ.get("RENDER"))

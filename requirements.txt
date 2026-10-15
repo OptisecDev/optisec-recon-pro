@@ -27,7 +27,7 @@ minio==7.2.20
 Pillow==12.3.0
 
 # Auth — JWT + password hashing
-python-jose[cryptography]==3.5.0
+PyJWT==2.15.0
 bcrypt==4.0.1
 
 # Background tasks & WebSocket

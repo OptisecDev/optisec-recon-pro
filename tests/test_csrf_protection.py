@@ -387,7 +387,7 @@ def test_expired_session_never_reaches_csrf_check():
     try:
         anon_client = TestClient(app_module.app)
         # No access_token cookie at all -- the "expired session" case
-        # (an expired JWT is likewise rejected by jose's decode()).
+        # (an expired JWT is likewise rejected by PyJWT's decode()).
         resp = anon_client.post(
             "/license/activate",
             data={"key": "not-a-real-key", "csrf_token": VALID_CSRF_TOKEN},

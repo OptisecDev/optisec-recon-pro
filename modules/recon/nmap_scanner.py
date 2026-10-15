@@ -3,7 +3,8 @@ import socket
 import subprocess
 import shutil
 import defusedxml.ElementTree as ET
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
+from modules.scan_scope import ScopedThreadPoolExecutor
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,7 @@ def socket_scan(target: str) -> dict:
         ip = target
 
     ports = []
-    with ThreadPoolExecutor(max_workers=50) as ex:
+    with ScopedThreadPoolExecutor(max_workers=50) as ex:
         futures = {ex.submit(_check_port, target, p): p for p in COMMON_PORTS}
         for fut in as_completed(futures):
             result = fut.result()

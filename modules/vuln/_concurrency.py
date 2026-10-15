@@ -7,7 +7,7 @@ those scanners slow relative to modules/recon/port_scanner.py, which already
 parallelizes its own independent per-port probes.
 """
 
-from concurrent.futures import ThreadPoolExecutor
+from modules.scan_scope import ScopedThreadPoolExecutor
 
 from config import VULN_SCAN_CONCURRENCY
 
@@ -23,7 +23,7 @@ def run_concurrent_scan(items, worker, max_workers: int = VULN_SCAN_CONCURRENCY)
     if not items:
         return []
     results = []
-    with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as ex:
+    with ScopedThreadPoolExecutor(max_workers=min(max_workers, len(items))) as ex:
         for out in ex.map(worker, items):
             if out:
                 results.extend(out)

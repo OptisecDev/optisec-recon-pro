@@ -23,11 +23,43 @@ class User(Base):
     subscription_tier = Column(String(20), default="free")
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
+    # Embedded in every session JWT as the "tv" claim and bumped on logout,
+    # so logging out revokes every token issued before it (web/auth.py
+    # get_current_user rejects a "tv" that no longer matches). Added to
+    # existing databases by web/migrate_add_user_token_version.py.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     targets = relationship("Target", back_populates="user", cascade="all, delete-orphan")
     scans = relationship("Scan", back_populates="user", cascade="all, delete-orphan")
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
     darkweb_monitors = relationship("DarkWebMonitor", back_populates="user", cascade="all, delete-orphan")
+    domain_verifications = relationship("DomainVerification", back_populates="user", cascade="all, delete-orphan")
+
+
+class DomainVerification(Base):
+    """Proof that a user controls a domain, which is what unlocks active scan
+    checks against it (web/scan_authz.py). Per-user: two users scanning the
+    same domain each verify it themselves. A dns_txt record covers the domain
+    and its subdomains; an http_file record covers only that exact host.
+    The token is not a secret -- it is published in DNS or on the site -- so
+    it is stored as-is. See web/domain_verification.py for the checks."""
+    __tablename__ = "domain_verifications"
+    __table_args__ = (
+        UniqueConstraint("user_id", "domain", "method", name="uq_domain_verification_user_domain_method"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    domain = Column(String(253), nullable=False)
+    method = Column(String(20), nullable=False)  # dns_txt | http_file
+    token = Column(String(64), unique=True, nullable=False)
+    status = Column(String(20), nullable=False, default="pending")  # pending | verified | failed | revoked
+    created_at = Column(DateTime, default=datetime.utcnow)
+    verified_at = Column(DateTime, nullable=True)
+    last_checked_at = Column(DateTime, nullable=True)
+    last_error = Column(Text, nullable=True)
+
+    user = relationship("User", back_populates="domain_verifications")
 
 
 class LicenseKey(Base):
@@ -112,6 +144,12 @@ class Scan(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
+    # Why this scan was allowed to run (web/scan_authz.py AuthzDecision):
+    # "passive_only" | "verified:<method>:<domain>" | "training:<host>",
+    # prefixed "unenforced:" under SCAN_AUTHZ_ENFORCE=false. NULL for scans
+    # created before scan authorization existed.
+    authz_basis = Column(String(300), nullable=True)
+    authz_checks = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="scans")
     target = relationship("Target", back_populates="scans")

@@ -9,9 +9,11 @@ import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from fastapi import HTTPException, Request, WebSocket
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -190,10 +192,10 @@ def validate_password_strength(password: str) -> list:
 
 # ─── JWT helpers ───────────────────────────────────────────────────────────────
 
-def create_access_token(user_id: int, role: str, expires_minutes: int = None) -> str:
+def create_access_token(user_id: int, role: str, expires_minutes: int = None, token_version: int = 0) -> str:
     expire = datetime.utcnow() + timedelta(minutes=expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
-        {"sub": str(user_id), "role": role, "exp": expire},
+        {"sub": str(user_id), "role": role, "tv": int(token_version or 0), "exp": expire},
         SECRET_KEY,
         algorithm=ALGORITHM,
     )
@@ -278,10 +280,38 @@ async def get_current_user(request: Request, db: AsyncSession):
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
+    user = await _load_user_from_bearer(token, db)
+    state = getattr(request, "state", None)
+    if state is not None and token == request.cookies.get("access_token"):
+        # Lets session_refresh_middleware (web/app.py) re-mint this exact
+        # cookie only after it was checked against the DB here -- including
+        # token_version, so a logged-out cookie can't be slid forward.
+        state.verified_session = (token, user)
+    return user
+
+
+def _token_version_claim(payload: dict) -> int:
+    """The token's "tv" claim. Tokens minted before token_version existed
+    carry none and count as 0, matching the column's backfill value."""
+    return int(payload.get("tv", 0))
+
+
+def _ws_origin_is_same_site(websocket) -> bool:
+    origin = websocket.headers.get("origin")
+    host = websocket.headers.get("host")
+    if not origin or not host:
+        return False
+    return urlsplit(origin).netloc.lower() == host.lower()
+
+
+async def _load_user_from_bearer(token: str, db: AsyncSession):
+    from web.models import User
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
-    except (JWTError, KeyError, ValueError):
+        token_version = _token_version_claim(payload)
+    except (InvalidTokenError, KeyError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     result = await db.execute(
@@ -290,40 +320,32 @@ async def get_current_user(request: Request, db: AsyncSession):
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    # Bumped on logout -- a token issued before the user's last logout is
+    # revoked even though its signature and exp are still valid.
+    if token_version != (user.token_version or 0):
+        raise HTTPException(status_code=401, detail="Session has been revoked")
     return user
 
 
 async def get_ws_user(websocket: WebSocket, db: AsyncSession):
     """Authenticate a WebSocket handshake.
 
-    Browsers cannot attach custom headers to a WebSocket handshake, so a
-    `?token=` query param is accepted in addition to the same
-    Authorization/cookie sources `get_current_user` reads (WebSocket and
-    Request both expose `.headers`/`.cookies`, so same-origin page loads
-    that already carry the `access_token` cookie work with no frontend
-    changes). Raises HTTPException(401) on any failure — callers must
-    catch this and close the socket themselves, since a WebSocket has not
-    been accepted yet and cannot be answered like a normal HTTP request.
+    - Authorization: Bearer header is accepted (non-browser clients).
+    - Cookie auth is accepted only when Origin matches Host: browsers attach
+      cookies to cross-site WebSocket handshakes, so without this check any
+      external page could open /ws/scan/<id> as the logged-in victim
+      (Cross-Site WebSocket Hijacking).
+    - Query-string tokens (`?token=`) are NOT accepted; they leaked into
+      access logs.
+    Raises HTTPException on any failure — callers must catch this and close
+    the socket themselves, since a WebSocket has not been accepted yet.
     """
-    from web.models import User
-
-    token = websocket.query_params.get("token")
-    if not token:
-        return await get_current_user(websocket, db)
-
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = int(payload["sub"])
-    except (JWTError, KeyError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.is_active == True)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
+    auth_header = websocket.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        return await _load_user_from_bearer(auth_header[7:].strip(), db)
+    if not _ws_origin_is_same_site(websocket):
+        raise HTTPException(status_code=403, detail="Cross-origin WebSocket rejected")
+    return await get_current_user(websocket, db)
 
 
 def require_roles(*roles: str):

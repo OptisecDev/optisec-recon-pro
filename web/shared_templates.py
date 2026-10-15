@@ -2,6 +2,7 @@
 import hashlib
 from pathlib import Path
 from fastapi.templating import Jinja2Templates
+from web.auth import generate_csrf_token
 from web.license import get_license, user_has_feature, user_tier, user_tier_label, user_tier_color
 
 BASE_DIR = Path(__file__).parent
@@ -33,6 +34,15 @@ def static_v(path: str) -> str:
     return f"/static/{path}?v={STATIC_VERSIONS[path]}"
 
 
+def csrf_token_for(request) -> str:
+    """The X-CSRF-Token value for this browser session (see
+    web/auth.generate_csrf_token), or "" when there's no csrf_secret cookie
+    yet -- base.html puts it in a meta tag that static/js/main.js sends on
+    every mutating fetch."""
+    secret = request.cookies.get("csrf_secret", "") if request is not None else ""
+    return generate_csrf_token(secret) if secret else ""
+
+
 def register_template_globals(instance: Jinja2Templates) -> None:
     """Register every Jinja global shared across the project's Jinja2Templates
     instances. Call this on each instance (see web/app.py) instead of setting
@@ -44,6 +54,7 @@ def register_template_globals(instance: Jinja2Templates) -> None:
     instance.env.globals["user_tier_label"] = user_tier_label
     instance.env.globals["user_tier_color"] = user_tier_color
     instance.env.globals["static_v"] = static_v
+    instance.env.globals["csrf_token_for"] = csrf_token_for
 
 
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))

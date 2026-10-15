@@ -44,6 +44,7 @@ and post-quantum-ready cryptography tooling in active development ([roadmap](#ro
   - [Deploy to Render](#deploy-to-render)
 - [API Documentation](#api-documentation)
 - [Licensing Tiers](#licensing-tiers)
+- [Scan Authorization](#scan-authorization)
 - [Ethical Use Policy](#ethical-use-policy)
 - [Security & Responsible Disclosure](#security--responsible-disclosure)
 - [Roadmap](#roadmap)
@@ -80,6 +81,10 @@ and post-quantum-ready cryptography tooling in active development ([roadmap](#ro
 |--------|-------------|------|
 | **Reconnaissance** | Subdomain enumeration (wordlist + DNS brute), DNS lookup (A/MX/TXT/NS/CNAME), WHOIS, Nmap service detection, SSL/TLS analysis, Security headers grading, Port scanning | FREE+ |
 | **Vulnerability Scanner** | XSS (reflected/stored), SQL Injection, SSRF (cloud metadata bypass), LFI (path traversal), Open Redirect | FREE+ |
+
+> Active modules (subdomain enumeration, port/Nmap scans, and every vulnerability scanner) run only against
+> domains you've verified ownership of, or a listed public training target — see [Scan Authorization](#scan-authorization).
+> Passive modules (DNS, WHOIS, OSINT, SSL/TLS, security headers) run against any target.
 | **OSINT Engine v5.0** | Unified multi-source intelligence search across 17 sources (12 keyless; 5 need a free API key; Amass is optional and not installed by default) with confidence scoring + correlation engine — see [deep dive](#osint-engine-v50--world-class-intelligence) — plus email discovery, social media footprint, phone intelligence, IP geolocation, username search (200+ platforms), device fingerprinting, vehicle plate recon, cell tower carrier identification (MCC/MNC) | FREE/PRO |
 
 ### AI & Intelligence
@@ -622,7 +627,7 @@ header comment for the full writeup).
 | **Database (dev)** | SQLite via aiosqlite | — |
 | **Database (prod)** | PostgreSQL via asyncpg | — |
 | **Migrations** | Alembic | ≥ 1.13 |
-| **Auth** | python-jose (JWT) + bcrypt | — |
+| **Auth** | PyJWT (JWT) + bcrypt | — |
 | **AI Engine** | Groq LLaMA-3.3-70B | — |
 | **HTTP Client** | httpx + aiohttp | — |
 | **DNS/Recon** | dnspython + python-whois | — |
@@ -829,7 +834,37 @@ curl -X POST https://your-instance/api/scan \
   }'
 
 # Response: { "scan_id": "scan_a3f9b2c1d4e5f6a7" }
+
+# If example.com isn't verified, the active modules are refused and nothing runs:
+# HTTP 403
+# { "error": "Active checks require verifying ownership of this domain (DNS TXT record or verification file)",
+#   "denied_checks": ["sqli", "subdomain", "xss"], "allowed_checks": ["dns"],
+#   "verify_endpoint": "/api/domains/verify" }
+
+# Preview which modules a target allows (no scan is started):
+curl -H "Authorization: Bearer $TOKEN" \
+  "https://your-instance/api/scan-authorization?target=example.com"
 ```
+
+#### Verify Domain Ownership
+
+```bash
+# 1. Get a token and instructions (method: dns_txt or http_file)
+curl -X POST https://your-instance/api/domains/verify \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "example.com", "method": "dns_txt"}'
+# { "id": 7, "status": "pending", "token": "...",
+#   "instructions": { "type": "TXT", "name": "_optisec-verify.example.com",
+#                     "value": "optisec-verify=..." }, ... }
+
+# 2. Publish the record (or file), then run the check
+curl -X POST https://your-instance/api/domains/7/check -H "Authorization: Bearer $TOKEN"
+# { "id": 7, "status": "verified", ... }
+```
+
+Browser sessions (cookie auth) must also send the page's CSRF token as
+`X-CSRF-Token`; API-key and Bearer clients don't need it.
 
 #### Monitor Scan Progress (WebSocket)
 
@@ -954,6 +989,87 @@ curl -X POST https://your-instance/api/license/activate \
 
 ---
 
+## Scan Authorization
+
+OPTISEC splits scan modules into two classes and enforces the difference
+server-side, on every endpoint that can start a scan (`POST /api/scan`,
+`/api/scan/ports`, `/api/osint`, `/api/osint/network-scan` with
+`deep_scan`, `/autonomous-redteam/api/start`, `/federation/api/scan`).
+
+| Class | Modules | Runs against |
+|-------|---------|--------------|
+| **Passive** | `dns`, `whois`, `osint`, `ssl`, `headers` | Any target. These query third-party data sources, or send the same single TLS handshake / GET request an ordinary visitor's browser would. |
+| **Active** | `subdomain`, `nmap`, `ports`, `xss`, `sqli`, `ssrf`, `lfi`, `redirect` | Only a domain **you have verified**, or a listed **training target**. Subdomain enumeration is active because it probes every name that resolves. |
+
+A request that includes any active module the target isn't authorized for is
+refused as a whole (HTTP 403 with `denied_checks`) — nothing partial runs.
+The OSINT lookups (`/api/osint`, `/api/osint/domain`) are the exception: for
+an unauthorized target they run subdomain enumeration in a **passive,
+DNS-only mode** (no connections to the hosts it finds; every name comes back
+unconfirmed with reason `dns_only`) and say so in `subdomains_mode` /
+`subdomains_note`.
+
+Authorizing the target isn't the end of it: while an active module runs, a
+**network scope guard** (`modules/scan_scope.py`) confines its connections to
+the authorized hosts — the verified domain and its subdomains for a DNS TXT
+verification, the exact host otherwise. A redirect, crawled link or CNAME
+that would take a scanner elsewhere is refused and listed in the scan's
+`scope_blocked` results. It covers `requests` traffic (every redirect hop)
+and raw TCP / `http.client` connections; nmap itself is a subprocess and is
+only ever given the authorized host.
+
+In the dashboard, the scan page locks the modules a target isn't authorized
+for, and the Targets page shows each target's status with a **Verify** button.
+
+### Verifying a domain
+
+Verification is per user — each account verifies the domains it scans.
+
+| Method | What to publish | Covers |
+|--------|-----------------|--------|
+| **DNS TXT** | TXT record `_optisec-verify.<domain>` = `optisec-verify=<token>` | The domain **and all its subdomains** |
+| **Verification file** | `https://<host>/.well-known/optisec-verify.txt` containing exactly `<token>` (plain `http://` is tried if HTTPS can't connect) | **That exact host only** |
+
+IP addresses can't be verified. The file check refuses hosts that resolve to
+internal addresses, only follows redirects on the same host, and never shows
+you the fetched content. A verified domain is re-checked when it's used for a
+scan more than `SCAN_VERIFICATION_TTL_DAYS` (default 7) after its last check:
+if the record or file is gone, the verification is revoked and active
+modules are refused again. A timeout or server error during a re-check
+refuses that scan but doesn't revoke anything.
+
+### Training targets
+
+These public, intentionally vulnerable hosts are allowed without
+verification, each limited to what its own published terms permit (exact
+hostname match only):
+
+| Host | Active modules allowed |
+|------|------------------------|
+| `scanme.nmap.org` | `nmap`, `ports` only ("a few scans in a day is fine") |
+| `public-firing-range.appspot.com` | `xss`, `redirect` |
+| `testasp.vulnweb.com`, `testaspnet.vulnweb.com` | `xss`, `sqli`, `ssrf`, `lfi`, `redirect` |
+| `demo.testfire.net`, `zero.webappsecurity.com` | `xss`, `sqli`, `ssrf`, `lfi`, `redirect` |
+
+### Operator notes
+
+- **Rollout switch:** `SCAN_AUTHZ_ENFORCE=false` puts the gate in log-only
+  mode for a deploy — denials are logged on the `optisec.scan_authz` logger
+  but active modules still run (scans are recorded with an `unenforced:`
+  basis). The default is to enforce.
+- **Audit trail:** every scan records why it was allowed in
+  `scans.authz_basis` (`passive_only`, `verified:<method>:<domain>`, or
+  `training:<host>`) and `scans.authz_checks`. Those two nullable columns
+  are added automatically at startup on an existing database
+  (`web/migrate_add_scan_authz_columns.py`, also runnable by hand).
+- **The local CLI (`main.py scan`) is not gated** — it runs on your own
+  machine, under your own responsibility.
+- **Verification is not permission.** It shows you control a domain's DNS
+  or web content; it doesn't make a scan legal. You still need the
+  authorization described in the [Ethical Use Policy](#ethical-use-policy).
+
+---
+
 ## Ethical Use Policy
 
 OPTISEC's OSINT, vulnerability scanning, and autonomous red team modules are
@@ -985,8 +1101,13 @@ over that target.
 
 ### Enforcement
 
-- Authorization is the user's sole responsibility — OPTISEC does not, and
-  cannot, verify that a given target/scan is authorized.
+- Active scan modules only run against domains the user has verified
+  control of (DNS TXT record or verification file) or a listed public
+  training target — see [Scan Authorization](#scan-authorization).
+- That check proves control of a domain, not legal authorization to test
+  it. Authorization remains the user's responsibility — OPTISEC can't verify
+  an engagement letter, a bug bounty scope, or who owns infrastructure
+  behind a domain you control.
 - Misuse of OSINT or scanning modules against unauthorized targets may
   violate computer-crime law (e.g. the U.S. CFAA, EU Cybercrime
   Directive, or local equivalents) independent of any OPTISEC license

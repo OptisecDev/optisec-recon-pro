@@ -10,6 +10,7 @@ from typing import Optional
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user, require_admin
+from web.domain_verification import check_scan_authorization, denial_response
 from web.license import require_feature_or_402, require_instance_feature_or_402
 from web.shared_templates import templates
 from config import APP_NAME
@@ -116,12 +117,21 @@ async def ping_all_api(user: User = Depends(_user)):
 
 
 @router.post("/api/scan")
-async def dispatch_scan(request: Request, user: User = Depends(_user)):
+async def dispatch_scan(request: Request, user: User = Depends(_user), db: AsyncSession = Depends(get_db)):
     require_feature_or_402("federation", user)
     data = await request.json()
+    target = data.get("target", "")
+    if not isinstance(target, str) or not target.strip():
+        return JSONResponse({"error": "target is required"}, status_code=400)
+    # Federation scan types ("recon", ...) don't map onto scan_authz check
+    # names and peers decide what they run, so authorize a dispatch as if
+    # it could run every module ([] = all checks).
+    decision = await check_scan_authorization(db, user, target, [], source="federation_scan")
+    if not decision.ok:
+        return denial_response(decision)
     from modules.federation.federated_scan import dispatch_scan as _dispatch
     return await _dispatch(
-        target=data.get("target", ""),
+        target=target,
         scan_types=data.get("scan_types", ["recon"]),
         strategy=data.get("strategy", "parallel"),
         preferred_regions=data.get("regions"),

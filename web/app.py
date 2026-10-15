@@ -7,7 +7,7 @@ import secrets
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List
+from typing import Iterable, Optional, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, inspect
 
 from web.database import get_db, init_db, SessionLocal, engine
-from web.models import User, Target, Scan, Finding, Report
+from web.models import User, Target, Scan, Finding, Report, DomainVerification
 from web.schemas import (
     LoginRequest, LoginResponse, RegisterRequest, RegisterResponse,
     APIKeyResponse, ScanRequest, ScanLaunchResponse, ScanStatusResponse,
@@ -67,7 +67,7 @@ from modules.ai.triage_engine import classify_findings_batch
 from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.report.pdf_generator import generate_report
-from config import APP_NAME, APP_VERSION, REPORTS_DIR, IS_PRODUCTION, GA_MEASUREMENT_ID
+from config import APP_NAME, APP_VERSION, REPORTS_DIR, IS_PRODUCTION, GA_MEASUREMENT_ID, DEMO_ENABLED
 from web.routers import bug_bounty, compliance, firewall, vpn, ai_security, quantum, federation, osint as osint_router
 from web.routers import attack_navigator, darkweb, autonomous_rt, ngfw, threat_feed, correlations as correlations_router
 from web.routers import darkweb_monitor
@@ -77,11 +77,28 @@ from web.routers import cve_submission as cve_router
 from web.routers import license_routes
 from web.routers import payment_routes
 from web.routers import ioc as ioc_router
+from web.routers import domain_verification as domain_verification_router
+from web.domain_verification import (
+    authorize_passive_target, check_scan_authorization, denial_response, load_verified_scopes,
+    network_scope_for,
+    preview_authorization,
+)
+from modules.scan_scope import ScanScope, install_scope_guard, run_in_scope
+from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS, SCAN_STEP_ORDER, is_ip_literal, normalize_host
 from modules.ioc_correlation import run_correlation, load_cached
+
+# Confines each active scan's traffic to its authorized hosts (pass-through
+# outside a scan scope) -- see modules/scan_scope.py.
+install_scope_guard()
 
 BASE_DIR = Path(__file__).parent
 
 logger = logging.getLogger("web.app")
+
+# Keep ?token=/?api_key=... values out of uvicorn's access log; see
+# web/log_redaction.py.
+from web import log_redaction
+log_redaction.install()
 
 # ─── Dark Web scheduler logging ────────────────────────────────────────────
 # modules/darkweb/scheduler.py logs under "darkweb.scheduler" but nothing
@@ -513,6 +530,7 @@ app.include_router(honeypot_router.page_router)
 app.include_router(threat_sharing_router.router)
 app.include_router(cve_router.router)
 app.include_router(ioc_router.router)
+app.include_router(domain_verification_router.router)
 app.include_router(license_routes.router)
 app.include_router(license_routes.page_router)
 app.include_router(payment_routes.router)
@@ -687,13 +705,19 @@ ACCESS_TOKEN_MAX_AGE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 @app.middleware("http")
 async def session_refresh_middleware(request: Request, call_next):
+    # Touch request.state first so scope["state"] exists before the route
+    # runs -- get_current_user records the DB-verified cookie there, and
+    # only a cookie verified *this request* (signature, user still active,
+    # token_version unchanged since logout) is re-minted below. Decoding the
+    # JWT alone would keep sliding a revoked session forward forever.
+    request.state.verified_session = None
     response = await call_next(request)
     token = request.cookies.get("access_token")
-    if token and response.status_code < 400:
+    verified = getattr(request.state, "verified_session", None)
+    if token and response.status_code < 400 and verified and verified[0] == token:
         try:
-            from jose import jwt as jose_jwt
-            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            new_token = create_access_token(int(payload["sub"]), payload["role"])
+            user = verified[1]
+            new_token = create_access_token(user.id, user.role, token_version=user.token_version)
             response.set_cookie(
                 "access_token", new_token,
                 httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION,
@@ -731,6 +755,14 @@ async def _startup_db_sequence():
     for attempt in range(max_attempts):
         try:
             await init_db()
+            # Nullable columns create_all can't add to an existing scans
+            # table; see the module docstring for why this one runs here.
+            from web.migrate_add_scan_authz_columns import migrate as _migrate_scan_authz_columns
+            await _migrate_scan_authz_columns()
+            # Same for users.token_version (logout revocation); see
+            # web/migrate_add_user_token_version.py.
+            from web.migrate_add_user_token_version import migrate as _migrate_user_token_version
+            await _migrate_user_token_version()
 
             # init_db() only runs Base.metadata.create_all, which never adds
             # columns to a table that already exists. The users.api_key_hash
@@ -753,7 +785,8 @@ async def _startup_db_sequence():
                 )
             else:
                 await _ensure_first_admin()
-                await _ensure_demo_account()
+                if DEMO_ENABLED:
+                    await _ensure_demo_account()
             return
         except Exception as exc:
             if attempt < len(_STARTUP_DB_RETRY_DELAYS):
@@ -1031,6 +1064,8 @@ async def session_heartbeat(user: User = Depends(web_user)):
 @app.get("/demo", response_class=HTMLResponse, include_in_schema=False)
 async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
     """One-click demo login — creates session for demo user."""
+    if not DEMO_ENABLED:
+        raise HTTPException(status_code=404, detail="Not Found")
     user = (await db.execute(
         select(User).where(User.username == "demo", User.is_active == True)
     )).scalar_one_or_none()
@@ -1038,7 +1073,7 @@ async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
         return RedirectResponse("/login?error=Demo+account+not+available", status_code=302)
     user.last_login = datetime.utcnow()
     await db.commit()
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     response = RedirectResponse("/", status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
@@ -1074,14 +1109,15 @@ def _safe_next_path(next_url: str) -> str:
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, next: str = "/", error: str = ""):
-    token = request.cookies.get("access_token")
-    if token:
+async def login_page(request: Request, next: str = "/", error: str = "", db: AsyncSession = Depends(get_db)):
+    if request.cookies.get("access_token"):
+        # Checked against the DB, not just the JWT signature: a cookie
+        # revoked by logging out elsewhere (token_version) would otherwise
+        # bounce between /login and / forever.
         try:
-            from jose import jwt as jose_jwt
-            jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            await get_current_user(request, db)
             return RedirectResponse("/", status_code=302)
-        except Exception:
+        except HTTPException:
             pass
     return templates.TemplateResponse(request, "login.html", {
         "app_name": APP_NAME, "next": _safe_next_path(next), "error": error,
@@ -1135,7 +1171,7 @@ async def login_submit(
     elif user.username == "demo":
         _cleanup_stale_initial_creds("demo")
 
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     response = RedirectResponse(_safe_next_path(next), status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
@@ -1199,7 +1235,7 @@ async def register_submit(
     clear_attempts(ip)
     await record_auth_event(db, "REGISTER", username, ip, True)
 
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     response = RedirectResponse("/", status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
@@ -1213,8 +1249,8 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
     username = "unknown"
     if token:
         try:
-            from jose import jwt as jose_jwt
-            payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            import jwt as pyjwt
+            payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             # "sub" is the user id (create_access_token), not the username --
             # resolve it so LOGOUT rows show the same username LOGIN rows do.
             user_id = payload.get("sub")
@@ -1224,6 +1260,12 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
                 )).scalar_one_or_none()
                 if looked_up:
                     username = looked_up.username
+                    # Revoke every token issued so far -- deleting the
+                    # cookie below only clears this browser's copy; a copy
+                    # captured elsewhere would otherwise stay valid until
+                    # its exp. get_current_user rejects a stale "tv".
+                    looked_up.token_version = (looked_up.token_version or 0) + 1
+                    await db.commit()
         except Exception:
             pass
     await record_auth_event(db, "LOGOUT", username, ip, True)
@@ -1280,7 +1322,7 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     elif user.username == "demo":
         _cleanup_stale_initial_creds("demo")
 
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     return JSONResponse({
         "access_token": token, "token_type": "bearer",
         "user": {"id": user.id, "username": user.username, "role": user.role},
@@ -1507,6 +1549,24 @@ async def targets_page(request: Request, user: User = Depends(web_user), db: Asy
         .group_by(Scan.target_id)
     )).all()) if targets else {}
 
+    # Authorization badge per target: one query for the user's verified
+    # domains, then the pure decision per target (no DNS/HTTP re-checks).
+    scopes = await load_verified_scopes(db, user)
+    target_authz = {}
+    for t in targets:
+        d = await preview_authorization(db, user, t.url, scopes)
+        host = normalize_host(t.url)
+        target_authz[t.id] = {
+            "host": host,
+            "kind": d.basis.split(":", 1)[0],
+            "basis": d.basis,
+            "verifiable": bool(host) and not is_ip_literal(host),
+        }
+    verifications = (await db.execute(
+        select(DomainVerification).where(DomainVerification.user_id == user.id)
+        .order_by(DomainVerification.created_at.desc(), DomainVerification.id.desc())
+    )).scalars().all()
+
     # CSRF token for the add-target form and delete-target requests -- same
     # cookie-bound double-submit token as /license (see CSRF_COOKIE_NAME /
     # _current_csrf_secret below), just also handed to a plain fetch/FormData
@@ -1515,6 +1575,7 @@ async def targets_page(request: Request, user: User = Depends(web_user), db: Asy
     response = templates.TemplateResponse(request, "targets.html", {
         "app_name": APP_NAME, "active": "targets", "user": user,
         "targets": targets, "scan_counts": scan_counts,
+        "target_authz": target_authz, "verifications": verifications,
         "csrf_token": generate_csrf_token(csrf_secret),
     })
     if is_new:
@@ -1686,6 +1747,37 @@ async def admin_panel(request: Request, user: User = Depends(web_user), db: Asyn
 
 # ─── Scan API ─────────────────────────────────────────────────────────────────
 
+@app.get(
+    "/api/scan-authorization",
+    tags=["Scans"],
+    summary="Which scan modules are allowed for a target",
+    description=(
+        "Preview of the authorization `POST /api/scan` applies: passive modules are always "
+        "allowed; active modules need a verified domain or a listed training target. "
+        "No DNS/HTTP checks are run -- a verification past its re-check interval is still "
+        "re-checked when a scan is actually launched."
+    ),
+)
+async def scan_authorization_preview(
+    target: str = "", user: User = Depends(web_user), db: AsyncSession = Depends(get_db),
+):
+    target = target.strip()
+    if not target:
+        raise HTTPException(400, "target is required")
+    d = await preview_authorization(db, user, target)
+    order = list(SCAN_STEP_ORDER)
+    return JSONResponse({
+        "target": target,
+        "host": normalize_host(target),
+        "basis": d.basis,
+        "reason": d.reason,
+        "allowed": [c for c in order if c in d.allowed],
+        "denied": [c for c in order if c in d.denied],
+        "passive": [c for c in order if c in PASSIVE_CHECKS],
+        "active": [c for c in order if c in ACTIVE_CHECKS],
+    })
+
+
 @app.post(
     "/api/scan",
     tags=["Scans"],
@@ -1696,12 +1788,16 @@ async def admin_panel(request: Request, user: User = Depends(web_user), db: Asyn
         "for real-time progress events.\n\n"
         "**Available scan modules:** `subdomain`, `dns`, `whois`, `nmap`, `ssl`, `headers`, "
         "`ports`, `xss`, `sqli`, `ssrf`, `lfi`, `redirect`, `osint`\n\n"
-        "Leave `scan_types` empty to run **all modules**. Requires **analyst** or **admin** role."
+        "Leave `scan_types` empty to run **all modules**. Requires **analyst** or **admin** role.\n\n"
+        "Passive modules (`dns`, `whois`, `osint`, `ssl`, `headers`) run against any target. "
+        "Active modules (`subdomain`, `nmap`, `ports`, `xss`, `sqli`, `ssrf`, `lfi`, `redirect`) "
+        "need a domain you have verified via `POST /api/domains/verify`, or a listed training "
+        "target; otherwise the whole request is refused with 403 and `denied_checks`."
     ),
     responses={
         200: {"description": "Scan launched", "model": ScanLaunchResponse},
-        400: {"description": "Missing target", "model": ErrorResponse},
-        403: {"description": "Insufficient role", "model": ErrorResponse},
+        400: {"description": "Missing target or malformed scan_types", "model": ErrorResponse},
+        403: {"description": "Insufficient role, or active checks not authorized for this target", "model": ErrorResponse},
     },
 )
 async def run_scan(
@@ -1711,12 +1807,19 @@ async def run_scan(
     db: AsyncSession = Depends(get_db),
 ):
     require_analyst_or_admin(user)
+    _require_csrf_for_cookie_auth(request)
     data = await request.json()
     target_url = data.get("target", "").strip()
     scan_types = data.get("scan_types", [])
 
     if not target_url:
         raise HTTPException(400, "Target is required")
+    if not isinstance(scan_types, list) or not all(isinstance(s, str) for s in scan_types):
+        raise HTTPException(400, "scan_types must be a list of strings")
+
+    decision = await check_scan_authorization(db, user, target_url, scan_types, source="api_scan")
+    if not decision.ok:
+        return denial_response(decision)
 
     scan_id = f"scan_{uuid.uuid4().hex[:16]}"
 
@@ -1732,11 +1835,17 @@ async def run_scan(
         id=scan_id, user_id=user.id, target_id=target_id,
         target_url=target_url, scan_types=scan_types,
         status="pending", progress=0,
+        authz_basis=decision.basis,
+        authz_checks=[c for c in SCAN_STEP_ORDER if c in decision.allowed],
     )
     db.add(scan)
     await db.commit()
 
-    background_tasks.add_task(_run_scan_task, scan_id, target_url, scan_types, user.id, target_id)
+    scope = await network_scope_for(decision, target_url)
+    background_tasks.add_task(
+        _run_scan_task, scan_id, target_url, scan_types, user.id, target_id,
+        authorized_checks=decision.allowed, scope=scope,
+    )
     return JSONResponse({"scan_id": scan_id})
 
 
@@ -1897,7 +2006,24 @@ async def _extract_and_store_iocs(db: AsyncSession, finding_rows: list) -> None:
 async def _run_scan_task(
     scan_id: str, target: str, scan_types: list,
     user_id: int, target_id: Optional[int],
+    *, authorized_checks: Iterable[str], scope: Optional[ScanScope],
 ):
+    """`authorized_checks` is the AuthzDecision.allowed set from
+    check_scan_authorization() (web/domain_verification.py) -- required and
+    keyword-only so no caller can reach the scan modules without an
+    authorization decision. Only steps in it run; `scan_types` is kept for
+    the record only.
+
+    `scope` (network_scope_for() of the same decision) confines every active
+    step's traffic to the authorized hosts -- see modules/scan_scope.py.
+    None only for passive-only or log-only decisions. Also required, so a
+    caller has to decide it explicitly."""
+    authorized = frozenset(authorized_checks)
+
+    def _active(fn, *args):
+        """asyncio.to_thread for an active step, run inside the scan scope."""
+        return asyncio.to_thread(run_in_scope, scope, fn, *args)
+
     domain = target.replace("https://", "").replace("http://", "").split("/")[0]
     url = target if target.startswith("http") else f"https://{target}"
     results: dict = {}
@@ -1946,12 +2072,10 @@ async def _run_scan_task(
                 scan.started_at = datetime.utcnow()
                 await db.commit()
 
-        run_all = not scan_types
-
-        if run_all or "subdomain" in scan_types:
+        if "subdomain" in authorized:
             await push_start("subdomain")
             try:
-                sub_result = await asyncio.wait_for(asyncio.to_thread(enumerate_subdomains, domain), timeout=40)
+                sub_result = await asyncio.wait_for(_active(enumerate_subdomains, domain), timeout=40)
                 d = sub_result["subdomains"]
                 results["subdomains_unconfirmed"] = sub_result["unconfirmed"]
             except asyncio.TimeoutError:
@@ -1960,7 +2084,7 @@ async def _run_scan_task(
             results["subdomains"] = d
             await push("subdomain", _STEP_PROGRESS["subdomain"], d)
 
-        if run_all or "dns" in scan_types:
+        if "dns" in authorized:
             await push_start("dns")
             try:
                 d = await asyncio.wait_for(asyncio.to_thread(dns_lookup, domain), timeout=45)
@@ -1970,7 +2094,7 @@ async def _run_scan_task(
             results["dns"] = d
             await push("dns", _STEP_PROGRESS["dns"], d)
 
-        if run_all or "whois" in scan_types:
+        if "whois" in authorized:
             await push_start("whois")
             try:
                 d = await asyncio.wait_for(asyncio.to_thread(whois_lookup, domain), timeout=25)
@@ -1980,17 +2104,17 @@ async def _run_scan_task(
             results["whois"] = d
             await push("whois", _STEP_PROGRESS["whois"], d)
 
-        if run_all or "nmap" in scan_types:
+        if "nmap" in authorized:
             await push_start("nmap")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(nmap_scan, domain), timeout=120)
+                d = await asyncio.wait_for(_active(nmap_scan, domain), timeout=120)
             except asyncio.TimeoutError:
                 d = {"error": "module_timeout", "timeout_seconds": 120}
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "nmap", 120)
             results["nmap"] = d
             await push("nmap", _STEP_PROGRESS["nmap"], d)
 
-        if run_all or "ssl" in scan_types:
+        if "ssl" in authorized:
             from modules.recon.ssl_analysis import analyze_ssl
             await push_start("ssl")
             try:
@@ -2001,7 +2125,7 @@ async def _run_scan_task(
             results["ssl"] = d
             await push("ssl", _STEP_PROGRESS["ssl"], d)
 
-        if run_all or "headers" in scan_types:
+        if "headers" in authorized:
             from modules.recon.security_headers import check_security_headers
             await push_start("headers")
             try:
@@ -2012,11 +2136,11 @@ async def _run_scan_task(
             results["headers"] = d
             await push("headers", _STEP_PROGRESS["headers"], d)
 
-        if run_all or "ports" in scan_types:
+        if "ports" in authorized:
             from modules.recon.port_scanner import scan_ports
             await push_start("ports")
             try:
-                d = await asyncio.wait_for(asyncio.to_thread(scan_ports, domain), timeout=30)
+                d = await asyncio.wait_for(_active(scan_ports, domain), timeout=30)
             except asyncio.TimeoutError:
                 d = {"error": "module_timeout", "timeout_seconds": 30}
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "ports", 30)
@@ -2025,7 +2149,7 @@ async def _run_scan_task(
 
         _vuln_scan_types = {"xss", "sqli", "ssrf", "lfi", "redirect"}
         crawled_urls, crawled_forms = [], []
-        if run_all or (_vuln_scan_types & set(scan_types or [])):
+        if _vuln_scan_types & authorized:
             # One bounded, same-origin crawl feeds every vuln scanner below
             # real params/forms discovered across the target's linked pages
             # instead of each scanner guessing off `url` alone — see
@@ -2033,16 +2157,16 @@ async def _run_scan_task(
             # block the scan: scanners fall back to their url-only behavior.
             try:
                 from modules.vuln.crawler import crawl
-                crawl_result = await asyncio.wait_for(asyncio.to_thread(crawl, url), timeout=30)
+                crawl_result = await asyncio.wait_for(_active(crawl, url), timeout=30)
                 crawled_urls, crawled_forms = crawl_result.urls, crawl_result.forms
             except Exception as e:
                 logger.warning("[scan %s] crawl step failed/timed out: %s", scan_id, e)
 
-        if run_all or "xss" in scan_types:
+        if "xss" in authorized:
             await push_start("xss")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_xss, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_xss, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("xss", _STEP_PROGRESS["xss"])
@@ -2050,11 +2174,11 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "xss", 75)
                 await push("xss", _STEP_PROGRESS["xss"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "sqli" in scan_types:
+        if "sqli" in authorized:
             await push_start("sqli")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_sqli, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_sqli, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("sqli", _STEP_PROGRESS["sqli"])
@@ -2062,11 +2186,11 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "sqli", 75)
                 await push("sqli", _STEP_PROGRESS["sqli"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "ssrf" in scan_types:
+        if "ssrf" in authorized:
             await push_start("ssrf")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_ssrf, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_ssrf, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("ssrf", _STEP_PROGRESS["ssrf"])
@@ -2074,11 +2198,11 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "ssrf", 75)
                 await push("ssrf", _STEP_PROGRESS["ssrf"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "lfi" in scan_types:
+        if "lfi" in authorized:
             await push_start("lfi")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_lfi, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_lfi, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("lfi", _STEP_PROGRESS["lfi"])
@@ -2086,11 +2210,11 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "lfi", 75)
                 await push("lfi", _STEP_PROGRESS["lfi"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "redirect" in scan_types:
+        if "redirect" in authorized:
             await push_start("redirect")
             try:
                 d = await asyncio.wait_for(
-                    asyncio.to_thread(scan_open_redirect, url, crawled_urls, crawled_forms), timeout=75
+                    _active(scan_open_redirect, url, crawled_urls, crawled_forms), timeout=75
                 )
                 all_vulns.extend(d)
                 await push("redirect", _STEP_PROGRESS["redirect"])
@@ -2098,7 +2222,7 @@ async def _run_scan_task(
                 logger.warning("[scan %s] step '%s' timed out after %ss", scan_id, "redirect", 75)
                 await push("redirect", _STEP_PROGRESS["redirect"], {"error": "module_timeout", "timeout_seconds": 75})
 
-        if run_all or "osint" in scan_types:
+        if "osint" in authorized:
             await push_start("osint")
 
             async def _run_osint():
@@ -2122,6 +2246,15 @@ async def _run_scan_task(
         # stay CONFIRMED-only to keep that client-facing surface unchanged.
         confirmed_vulns = [v for v in all_vulns if v.get("verdict") == "CONFIRMED"]
         results["vulnerabilities"] = confirmed_vulns
+
+        if scope is not None and scope.blocked:
+            # Redirects/links/CNAMEs that tried to take an active step off the
+            # authorized target -- refused, and reported rather than hidden.
+            results["scope_blocked"] = list(scope.blocked)
+            logger.warning(
+                "[scan %s] scope guard blocked %d out-of-scope connection(s): %s",
+                scan_id, len(scope.blocked), scope.blocked[:5],
+            )
 
         try:
             from modules.osint.mitre_mapping import finding_type_from_scan_results, generate_attack_path
@@ -2245,11 +2378,14 @@ async def ws_scan(websocket: WebSocket, scan_id: str, db: AsyncSession = Depends
     ),
     responses={200: {"description": "SSL analysis results"}},
 )
-async def scan_ssl(request: Request, user: User = Depends(web_user)):
+async def scan_ssl(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
         raise HTTPException(400, "Target is required")
+    refused = await authorize_passive_target(db, user, target, ["ssl"], source="api_scan_ssl")
+    if refused is not None:
+        return refused
     from modules.recon.ssl_analysis import analyze_ssl
     result = await asyncio.to_thread(analyze_ssl, target)
     return JSONResponse(result)
@@ -2266,11 +2402,14 @@ async def scan_ssl(request: Request, user: User = Depends(web_user)):
     ),
     responses={200: {"description": "Header analysis results"}},
 )
-async def scan_headers(request: Request, user: User = Depends(web_user)):
+async def scan_headers(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
         raise HTTPException(400, "Target is required")
+    refused = await authorize_passive_target(db, user, target, ["headers"], source="api_scan_headers")
+    if refused is not None:
+        return refused
     if not target.startswith(("http://", "https://")):
         target = f"https://{target}"
     from modules.recon.security_headers import check_security_headers
@@ -2288,12 +2427,17 @@ async def scan_headers(request: Request, user: User = Depends(web_user)):
     ),
     responses={200: {"description": "Port scan results"}},
 )
-async def scan_ports(request: Request, user: User = Depends(web_user)):
+async def scan_ports(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
+    _require_csrf_for_cookie_auth(request)
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
         raise HTTPException(400, "Target is required")
-    result = await asyncio.to_thread(nmap_scan, target)
+    decision = await check_scan_authorization(db, user, target, ["nmap"], source="api_scan_ports")
+    if not decision.ok:
+        return denial_response(decision)
+    scope = await network_scope_for(decision, target)
+    result = await asyncio.to_thread(run_in_scope, scope, nmap_scan, target)
     return JSONResponse(result)
 
 
@@ -2386,18 +2530,32 @@ async def download_report(
     ),
     responses={200: {"description": "Aggregated OSINT results"}},
 )
-async def run_osint(request: Request, user: User = Depends(web_user)):
+async def run_osint(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
+    _require_csrf_for_cookie_auth(request)
     data = await request.json()
     domain = data.get("domain", "").strip()
     if not domain:
         raise HTTPException(400, "Domain is required")
+    refused = await authorize_passive_target(db, user, domain, ["dns", "whois", "osint"], source="api_osint")
+    if refused is not None:
+        return refused
+
+    # Probing subdomain enumeration is the active `subdomain` check
+    # (web/scan_authz.py); the rest of this endpoint is passive. An
+    # unauthorized target gets the DNS-only passive mode instead (with the
+    # reason in the response) rather than a 403 for the whole lookup.
+    decision = await check_scan_authorization(db, user, domain, ["subdomain"], source="api_osint")
+    if decision.ok:
+        scope = await network_scope_for(decision, domain)
+        subs_task = asyncio.to_thread(run_in_scope, scope, enumerate_subdomains, domain)
+    else:
+        subs_task = asyncio.to_thread(enumerate_subdomains, domain, passive=True)
 
     # Run all OSINT tasks concurrently
     emails_task = find_emails(domain)
     social_task = find_social_profiles(domain)
     dns_task = asyncio.to_thread(dns_lookup, domain)
     whois_task = asyncio.to_thread(whois_lookup, domain)
-    subs_task = asyncio.to_thread(enumerate_subdomains, domain)
 
     emails, social, dns_data, whois_data, subs = await asyncio.gather(
         emails_task, social_task, dns_task, whois_task, subs_task,
@@ -2412,6 +2570,8 @@ async def run_osint(request: Request, user: User = Depends(web_user)):
         "whois": whois_data if not isinstance(whois_data, Exception) else {},
         "subdomains": subs_ok["subdomains"],
         "subdomains_unconfirmed": subs_ok["unconfirmed"],
+        "subdomains_mode": "active" if decision.ok else "passive",
+        "subdomains_note": None if decision.ok else decision.reason,
     })
 
 
@@ -2635,6 +2795,19 @@ async def admin_delete_user(
 # one session to the user.
 CSRF_COOKIE_NAME = "csrf_secret"
 CSRF_COOKIE_MAX_AGE = ACCESS_TOKEN_MAX_AGE_SECONDS
+
+
+def _require_csrf_for_cookie_auth(request: Request) -> None:
+    """X-CSRF-Token check for JSON endpoints a browser session can reach --
+    same double-submit token and same exemption as
+    web/routers/domain_verification.py: X-API-Key and Bearer clients skip it,
+    since a cross-site page can't make the browser attach either header. The
+    token is served to every page via the csrf-token meta tag (base.html)."""
+    if request.headers.get("X-API-Key") or request.headers.get("Authorization", "").startswith("Bearer "):
+        return
+    secret = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not verify_csrf_token(secret, request.headers.get("X-CSRF-Token", "")):
+        raise HTTPException(403, "CSRF token missing or invalid")
 
 
 def _current_csrf_secret(request: Request) -> tuple:

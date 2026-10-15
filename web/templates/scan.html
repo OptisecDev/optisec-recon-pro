@@ -15,7 +15,8 @@
 
       <div class="form-group">
         <label>Target</label>
-        <input type="text" id="scan-target" placeholder="example.com or https://target.com/path?id=1" />
+        <input type="text" id="scan-target" placeholder="example.com or https://target.com/path?id=1"
+               data-oninput="scheduleAuthzCheck" />
       </div>
 
       {% if targets %}
@@ -29,6 +30,8 @@
         </select>
       </div>
       {% endif %}
+
+      <div id="authz-status" class="alert authz-note is-hidden"></div>
 
       <div class="form-group">
         <label>Scan Modules</label>
@@ -107,18 +110,115 @@
 {% block scripts %}
 <script nonce="{{ request.state.csp_nonce }}">
 function selectAll(checked) {
-  document.querySelectorAll('.scan-type').forEach(cb => cb.checked = checked);
+  document.querySelectorAll('.scan-type').forEach(cb => { if (!cb.disabled) cb.checked = checked; });
 }
 
 window.copyToScanTarget = function() {
   document.getElementById('scan-target').value = this.value;
+  refreshAuthz();
 };
+
+// ─── Scan authorization (web/scan_authz.py) ────────────────────────────────
+// Passive modules always run; active ones need a verified domain or a listed
+// training target. Lock the modules the server would refuse, so the default
+// "everything checked" form doesn't just bounce off a 403.
+const AUTHZ_LOCK_TITLE = 'Requires domain ownership verification (Targets page)';
+let _authzTimer = null;
+let _authzSeq = 0;
+
+window.scheduleAuthzCheck = function() {
+  clearTimeout(_authzTimer);
+  _authzTimer = setTimeout(refreshAuthz, 400);
+};
+
+function setAuthzNote(kind, parts) {
+  const el = document.getElementById('authz-status');
+  if (!el) return;
+  el.classList.remove('alert-success', 'alert-info', 'alert-warning', 'alert-error');
+  el.replaceChildren();
+  if (!kind) { optisecSetVisible(el, false); return; }
+  el.classList.add('alert-' + kind);
+  parts.forEach(p => {
+    if (typeof p === 'string') { el.appendChild(document.createTextNode(p)); return; }
+    const a = document.createElement('a');
+    a.href = p.href; a.textContent = p.text;
+    el.appendChild(a);
+  });
+  optisecSetVisible(el, true, 'block');
+}
+
+function applyAuthz(data) {
+  const allowed = new Set(data.allowed || []);
+  document.querySelectorAll('.scan-type').forEach(cb => {
+    const label = cb.closest('.checkbox-item');
+    const ok = allowed.has(cb.value);
+    if (!ok) {
+      if (!cb.disabled) cb.dataset.wasChecked = cb.checked ? '1' : '';
+      cb.checked = false;
+      cb.disabled = true;
+      label?.classList.add('is-locked');
+      if (label) label.title = AUTHZ_LOCK_TITLE;
+    } else if (cb.disabled) {
+      cb.disabled = false;
+      cb.checked = cb.dataset.wasChecked === '1';
+      label?.classList.remove('is-locked');
+      if (label) label.title = '';
+    }
+  });
+
+  const basis = data.basis || '';
+  const host = data.host || data.target;
+  if (basis.startsWith('unenforced:')) {
+    setAuthzNote('warning', ['Scan authorization is in log-only mode: every module is enabled, but active modules on unverified targets are being logged.']);
+  } else if (basis.startsWith('verified:')) {
+    const [, method, domain] = basis.split(':');
+    setAuthzNote('success', [`✓ Ownership of ${domain} verified (${method === 'dns_txt' ? 'DNS TXT' : 'verification file'}) — all modules available.`]);
+  } else if (basis.startsWith('training:')) {
+    const active = (data.active || []).filter(c => allowed.has(c));
+    setAuthzNote('info', [`🎓 ${host} is a public training target. Active modules it permits: ${active.join(', ') || 'none'}.`]);
+  } else if ((data.denied || []).length) {
+    setAuthzNote('warning', [
+      `Passive modules only for ${host}. Active modules (${data.denied.join(', ')}) need proof you own this domain — `,
+      { href: '/targets', text: 'verify it on the Targets page' }, '.',
+    ]);
+  } else {
+    setAuthzNote(null);
+  }
+}
+
+async function refreshAuthz() {
+  const target = document.getElementById('scan-target')?.value?.trim();
+  const seq = ++_authzSeq;
+  if (!target) { applyAuthz({ allowed: [...document.querySelectorAll('.scan-type')].map(cb => cb.value) }); return; }
+  try {
+    const r = await fetch('/api/scan-authorization?target=' + encodeURIComponent(target));
+    if (seq !== _authzSeq || !r.ok) return;  // superseded by a newer keystroke, or invalid target
+    applyAuthz(await r.json());
+  } catch (e) { /* the server still enforces; the preview is just guidance */ }
+}
+
+function showScanRefused(data) {
+  const statusEl = document.getElementById('scan-status');
+  if (!statusEl) return;
+  const box = document.createElement('div');
+  box.className = 'alert alert-error';
+  box.appendChild(document.createTextNode(data.error || 'Scan not authorized'));
+  if ((data.denied_checks || []).length) {
+    box.appendChild(document.createElement('br'));
+    box.appendChild(document.createTextNode('Refused modules: ' + data.denied_checks.join(', ') + '. '));
+    const a = document.createElement('a');
+    a.href = '/targets'; a.textContent = 'Verify domain ownership';
+    box.appendChild(a);
+  }
+  statusEl.replaceChildren(box);
+}
 
 window.startScan = async function() {
   const target = document.getElementById('scan-target')?.value?.trim();
   if (!target) { toast('Please enter a target', 'error'); return; }
 
   const scanTypes = [...document.querySelectorAll('.scan-type:checked')].map(cb => cb.value);
+  if (!scanTypes.length) { toast('Select at least one module', 'error'); return; }
   const btn = document.getElementById('scan-btn');
   const statusEl = document.getElementById('scan-status');
   const resultsEl = document.getElementById('scan-results');
@@ -147,7 +247,25 @@ window.startScan = async function() {
   }
 
   try {
-    const resp = await API.post('/api/scan', { target, scan_types: scanTypes, target_id: targetId });
+    const r = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+      body: JSON.stringify({ target, scan_types: scanTypes, target_id: targetId }),
+    });
+    const resp = await r.json().catch(() => ({}));
+    if (!r.ok || !resp.scan_id) {
+      btn.disabled = false;
+      btn.innerHTML = '▶ Start Scan';
+      if (fill) fill.style.width = '0%';
+      if (wsCard) optisecSetVisible(wsCard, false);
+      if (r.status === 403 && resp.denied_checks) {
+        showScanRefused(resp);
+        refreshAuthz();
+      } else if (statusEl) {
+        statusEl.innerHTML = `<div class="alert alert-error">${esc(resp.error || resp.detail || `Scan failed to start (HTTP ${r.status})`)}</div>`;
+      }
+      return;
+    }
     const scanId = resp.scan_id;
     window._currentScanId = scanId;
     logStep(`Scan started: ${scanId}`);
@@ -255,6 +373,7 @@ window.addEventListener('load', () => {
   const el = document.getElementById('scan-target');
   const t = new URLSearchParams(location.search).get('target') || sessionStorage.getItem('quickTarget');
   if (t && el) { el.value = t; sessionStorage.removeItem('quickTarget'); }
+  refreshAuthz();
 });
 </script>
 {% endblock %}
