@@ -110,3 +110,11 @@ def test_docs_do_not_claim_api_is_not_rate_limited(client, token, path):
     assert resp.status_code == 200
     found = RATE_LIMIT_CLAIM in resp.text
     assert not found, f"{path} still states that API endpoints are not rate-limited"
+
+
+def test_openapi_does_not_use_google_as_example_domain(client, token):
+    c, _ = client
+    resp = _get(c, token, "/openapi.json")
+    assert resp.status_code == 200
+    found = "google.com" in resp.text
+    assert not found, "/openapi.json still contains google.com as an example domain"
