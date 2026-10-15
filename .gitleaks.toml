@@ -1,0 +1,6 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known false positive: PEM test fixture in historical commit ed506ae (fake key, not a secret)"
+commits = ["ed506ae2030f2b34844003be58f24d1083633276"]
