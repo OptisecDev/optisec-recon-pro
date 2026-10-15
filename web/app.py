@@ -156,7 +156,7 @@ OPENAPI_TAGS = [
         "name": "NLP",
         "description": (
             "Natural-language command parser supporting Arabic and English. "
-            "Submit commands like `افحص tesla.com عن ثغرات XSS` and receive "
+            "Submit commands like `افحص example.com عن ثغرات XSS` and receive "
             "structured action + target data."
         ),
     },
@@ -312,7 +312,6 @@ Obtain a token via `POST /api/auth/login`.
 ### Rate Limiting
 
 Login endpoints are rate-limited to **5 failed attempts** before a 15-minute lockout.
-API endpoints are not currently rate-limited but require a valid token.
 
 ---
 
@@ -341,7 +340,7 @@ Connect to `ws://host/ws/{scan_id}` after launching a scan to receive live progr
 The `/api/nlp` endpoint accepts commands in **Arabic or English**:
 
 ```
-افحص tesla.com عن ثغرات XSS
+افحص example.com عن ثغرات XSS
 اجمع النطاقات الفرعية لـ example.com
 ابدأ فحص شامل وأنشئ تقرير
 ```
@@ -2640,7 +2639,7 @@ async def ai_analyze(request: Request, user: User = Depends(web_user)):
         "Parse an Arabic or English free-text command into a structured action + target. "
         "First tries Groq AI (if `GROQ_API_KEY` is set); falls back to local rule-based parser.\n\n"
         "**Example inputs:**\n"
-        "- `افحص tesla.com عن ثغرات XSS`\n"
+        "- `افحص example.com عن ثغرات XSS`\n"
         "- `Scan example.com for SQL injection`\n"
         "- `اجمع النطاقات الفرعية لـ google.com`\n"
         "- `Generate report for last scan`"

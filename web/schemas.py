@@ -99,7 +99,7 @@ def _is_ssrf_blocked_host(hostname: str) -> bool:
 
 
 class TargetCreate(BaseModel):
-    url: str = Field(..., example="https://tesla.com",
+    url: str = Field(..., example="https://example.com",
                      description="Target URL or domain (required)")
     name: str = Field("", example="Tesla Main",
                       description="Friendly name (optional)")
@@ -139,7 +139,7 @@ SCAN_TYPES = ["subdomain", "dns", "whois", "nmap", "ssl", "headers",
 
 
 class ScanRequest(BaseModel):
-    target: str = Field(..., example="tesla.com",
+    target: str = Field(..., example="example.com",
                         description="Domain or URL to scan")
     scan_types: List[str] = Field(
         default=[],
@@ -192,14 +192,14 @@ class FindingResponse(BaseModel):
 # ─── NLP ──────────────────────────────────────────────────────────────────────
 
 class NLPRequest(BaseModel):
-    text: str = Field(..., example="افحص tesla.com عن ثغرات XSS",
+    text: str = Field(..., example="افحص example.com عن ثغرات XSS",
                       description="Natural-language command in Arabic or English")
 
 
 class NLPResponse(BaseModel):
     action: str = Field(..., example="scan",
                         description="Parsed action: scan | subdomain | osint | report | unknown")
-    target: Optional[str] = Field(None, example="tesla.com")
+    target: Optional[str] = Field(None, example="example.com")
     scan_type: Optional[str] = Field(None, example="xss")
     raw: str = Field(..., description="Original input text")
 
