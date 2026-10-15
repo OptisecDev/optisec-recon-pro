@@ -81,3 +81,6 @@ qrcode[pil]==8.2
 # Real PQC (requires the liboqs native C library — built in the Dockerfile's
 # builder stage; see modules/quantum/encryption.py)
 liboqs-python==0.16.0.1
+
+# Email validation (silences pydantic startup warning)
+email-validator==2.3.0
