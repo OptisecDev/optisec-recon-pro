@@ -133,7 +133,7 @@ engagement or compliance sign-off yet.
 ### Platform Features
 
 - **Real-time WebSocket** — Live scan progress streaming (`ws://host/ws/scan/{scan_id}`)
-- **Arabic/English NLP** — Natural language command interface (`افحص tesla.com عن ثغرات XSS`)
+- **Arabic/English NLP** — Natural language command interface (`افحص example.com عن ثغرات XSS`)
 - **Role-Based Access** — Admin / Analyst / Viewer permission model
 - **PDF Reports** — Professional executive-grade security reports with ReportLab
 - **REST API** — Full OpenAPI 3.0 spec at `/docs` and `/redoc`
@@ -883,9 +883,9 @@ ws.onmessage = (e) => {
 curl -X POST https://your-instance/api/nlp \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"text": "افحص tesla.com عن ثغرات XSS"}'
+  -d '{"text": "افحص example.com عن ثغرات XSS"}'
 
-# Response: { "action": "scan_xss", "target": "tesla.com", "confidence": 0.95 }
+# Response: { "action": "scan_xss", "target": "example.com", "confidence": 0.95 }
 ```
 
 #### AI Security Analysis
