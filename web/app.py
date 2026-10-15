@@ -52,7 +52,9 @@ from web.license import (
 )
 from web.rate_limit import rate_limiter
 from web.shared_templates import register_template_globals
-from pydantic import ValidationError
+from pydantic import EmailStr, TypeAdapter, ValidationError
+
+_EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 from modules.recon.subdomains import enumerate_subdomains
 from modules.recon.dns_lookup import dns_lookup
@@ -1355,6 +1357,12 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     if not allowed:
         await record_auth_event(db, "API_REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
         raise HTTPException(429, f"Too many attempts. Try again in {remaining} seconds.")
+
+    try:
+        _EMAIL_ADAPTER.validate_python(email)
+    except ValidationError:
+        record_failed_attempt(ip)
+        raise HTTPException(400, "Invalid email address")
 
     pw_errors = validate_password_strength(password)
     if pw_errors:
