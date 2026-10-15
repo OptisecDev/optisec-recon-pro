@@ -120,6 +120,12 @@ def _patch_startup_sequence(monkeypatch, calls):
         scan_authz_migration = None
     if scan_authz_migration is not None:
         monkeypatch.setattr(scan_authz_migration, "migrate", _noop)
+    try:
+        import web.migrate_add_user_token_version as token_version_migration
+    except ImportError:
+        token_version_migration = None
+    if token_version_migration is not None:
+        monkeypatch.setattr(token_version_migration, "migrate", _noop)
     monkeypatch.setattr(app_module, "_users_table_has_api_key_hash", _has_col)
     monkeypatch.setattr(app_module, "_ensure_first_admin", _admin)
     monkeypatch.setattr(app_module, "_ensure_demo_account", _demo)
