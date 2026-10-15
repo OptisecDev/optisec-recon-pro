@@ -52,7 +52,9 @@ from web.license import (
 )
 from web.rate_limit import rate_limiter
 from web.shared_templates import register_template_globals
-from pydantic import ValidationError
+from pydantic import EmailStr, TypeAdapter, ValidationError
+
+_EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
 from modules.recon.subdomains import enumerate_subdomains
 from modules.recon.dns_lookup import dns_lookup
@@ -1189,7 +1191,9 @@ async def register_page(request: Request, error: str = ""):
 async def register_submit(
     request: Request,
     username: str = Form(...),
-    email: str = Form(...),
+    # Default "" so an empty/missing email reaches the EmailStr check below and
+    # re-renders the form with a 400, instead of FastAPI's bare 422 JSON.
+    email: str = Form(""),
     password: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1203,6 +1207,14 @@ async def register_submit(
             "app_name": APP_NAME,
             "error": f"Too many attempts. Try again in {minutes} minute(s).",
         }, status_code=429)
+
+    try:
+        _EMAIL_ADAPTER.validate_python(email)
+    except ValidationError:
+        record_failed_attempt(ip)
+        return templates.TemplateResponse(request, "register.html", {
+            "app_name": APP_NAME, "error": "Invalid email address",
+        }, status_code=400)
 
     pw_errors = validate_password_strength(password)
     if pw_errors:
@@ -1345,7 +1357,18 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     },
 )
 async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
-    data = await request.json()
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        # File parts are not valid values for any field; drop them so they
+        # fall through to the same validation as a missing field.
+        data = {k: v for k, v in (await request.form()).items() if isinstance(v, str)}
+    else:
+        try:
+            data = await request.json()
+        except ValueError:
+            raise HTTPException(400, "Request body must be JSON or form data")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "Request body must be a JSON object")
     username = data.get("username", "")
     email = data.get("email", "")
     password = data.get("password", "")
@@ -1355,6 +1378,12 @@ async def api_register(request: Request, db: AsyncSession = Depends(get_db)):
     if not allowed:
         await record_auth_event(db, "API_REGISTER", username, ip, False, f"rate_limited remaining={remaining}s")
         raise HTTPException(429, f"Too many attempts. Try again in {remaining} seconds.")
+
+    try:
+        _EMAIL_ADAPTER.validate_python(email)
+    except ValidationError:
+        record_failed_attempt(ip)
+        raise HTTPException(400, "Invalid email address")
 
     pw_errors = validate_password_strength(password)
     if pw_errors:
