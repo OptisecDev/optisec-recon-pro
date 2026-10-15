@@ -468,7 +468,7 @@ window.onload = () => {{
     layout: 'BaseLayout',
     docExpansion: 'none',
     defaultModelsExpandDepth: 1,
-    persistAuthorization: true,
+    persistAuthorization: false,
     tryItOutEnabled: false,
     // Same-origin "Try it out" calls carry the HttpOnly session cookie
     // automatically; the session token is never copied into page JS.
