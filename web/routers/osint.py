@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from web.database import get_db
 from web.models import User
 from web.auth import get_current_user
-from web.domain_verification import check_scan_authorization, denial_response, network_scope_for
+from web.domain_verification import (
+    authorize_passive_target, check_scan_authorization, denial_response, network_scope_for,
+)
 from modules.scan_scope import run_in_scope, scan_scope
 from web.license import require_feature_or_402
 from web.rate_limit import rate_limiter
@@ -190,6 +192,9 @@ async def osint_domain(request: Request, user: User = Depends(_user), db: AsyncS
     domain = data.get("domain", "").strip()
     if not domain:
         raise HTTPException(400, "Domain is required")
+    refused = await authorize_passive_target(db, user, domain, ["dns", "whois", "osint"], source="osint_domain")
+    if refused is not None:
+        return refused
 
     # Same split as web/app.py's /api/osint: probing subdomain enumeration
     # needs scan authorization; otherwise the DNS-only passive mode runs.
@@ -414,6 +419,11 @@ async def osint_network_scan(request: Request, user: User = Depends(_user), db: 
     deep_scan = bool(data.get("deep_scan", False))
     if not target:
         raise HTTPException(400, "target is required")
+    # Even without deep_scan, the SSL analysis opens a socket straight at
+    # the target.
+    refused = await authorize_passive_target(db, user, target, ["osint"], source="osint_network_scan")
+    if refused is not None:
+        return refused
     scope = None
     if deep_scan:
         # Banner-grabs every port Shodan/Censys reported open -- active port

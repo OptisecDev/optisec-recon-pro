@@ -79,7 +79,8 @@ from web.routers import payment_routes
 from web.routers import ioc as ioc_router
 from web.routers import domain_verification as domain_verification_router
 from web.domain_verification import (
-    check_scan_authorization, denial_response, load_verified_scopes, network_scope_for,
+    authorize_passive_target, check_scan_authorization, denial_response, load_verified_scopes,
+    network_scope_for,
     preview_authorization,
 )
 from modules.scan_scope import ScanScope, install_scope_guard, run_in_scope
@@ -2371,11 +2372,14 @@ async def ws_scan(websocket: WebSocket, scan_id: str, db: AsyncSession = Depends
     ),
     responses={200: {"description": "SSL analysis results"}},
 )
-async def scan_ssl(request: Request, user: User = Depends(web_user)):
+async def scan_ssl(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
         raise HTTPException(400, "Target is required")
+    refused = await authorize_passive_target(db, user, target, ["ssl"], source="api_scan_ssl")
+    if refused is not None:
+        return refused
     from modules.recon.ssl_analysis import analyze_ssl
     result = await asyncio.to_thread(analyze_ssl, target)
     return JSONResponse(result)
@@ -2392,11 +2396,14 @@ async def scan_ssl(request: Request, user: User = Depends(web_user)):
     ),
     responses={200: {"description": "Header analysis results"}},
 )
-async def scan_headers(request: Request, user: User = Depends(web_user)):
+async def scan_headers(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
         raise HTTPException(400, "Target is required")
+    refused = await authorize_passive_target(db, user, target, ["headers"], source="api_scan_headers")
+    if refused is not None:
+        return refused
     if not target.startswith(("http://", "https://")):
         target = f"https://{target}"
     from modules.recon.security_headers import check_security_headers
@@ -2521,6 +2528,9 @@ async def run_osint(request: Request, user: User = Depends(web_user), db: AsyncS
     domain = data.get("domain", "").strip()
     if not domain:
         raise HTTPException(400, "Domain is required")
+    refused = await authorize_passive_target(db, user, domain, ["dns", "whois", "osint"], source="api_osint")
+    if refused is not None:
+        return refused
 
     # Probing subdomain enumeration is the active `subdomain` check
     # (web/scan_authz.py); the rest of this endpoint is passive. An

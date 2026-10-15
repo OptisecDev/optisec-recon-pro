@@ -373,3 +373,53 @@ def denial_response(decision: AuthzDecision) -> JSONResponse:
         "allowed_checks": sorted(decision.allowed),
         "verify_endpoint": "/api/domains/verify",
     }, status_code=403)
+
+
+async def internal_target_reason(target: str) -> Optional[str]:
+    """Why `target` must not be contacted from this server, or None.
+
+    Blocks the literal host via web/schemas._is_ssrf_blocked_host (loopback,
+    private, link-local, "localhost" names) and also every address the name
+    currently resolves to, so 127.1, 2130706433 or a public name pointing at
+    10.0.0.5 are caught too. A name that doesn't resolve passes: the scanner
+    can't connect to it either. DNS rebinding between this check and the
+    scanner's own lookup is out of scope here (see modules/scan_scope.py).
+    """
+    host = normalize_host(target)
+    if not host:
+        return "Invalid target"
+    if _is_ssrf_blocked_host(host):
+        return "Target is a local/internal address and can't be scanned"
+    try:
+        addrs = await _resolve_addresses(host)
+    except (OSError, UnicodeError):
+        return None
+    if any(_is_internal_address(a) for a in addrs):
+        return "Target resolves to a local/internal address and can't be scanned"
+    return None
+
+
+async def authorize_passive_target(
+    db: AsyncSession,
+    user: User,
+    target: str,
+    scan_types: Iterable[str],
+    *,
+    source: str,
+) -> Optional[JSONResponse]:
+    """Gate for endpoints that contact `target` directly for a passive check
+    (ssl, headers, dns/whois/osint lookups): refuses internal hosts, then
+    runs the normal check_scan_authorization() so every scan path is logged
+    and classified in one place. Returns the 403 response to send, or None
+    to proceed. Called before any connection to the target is made."""
+    reason = await internal_target_reason(target)
+    if reason:
+        logger.warning(
+            "scan_authz blocked internal target source=%s user_id=%s target=%r",
+            source, user.id, target,
+        )
+        return JSONResponse({"error": reason}, status_code=403)
+    decision = await check_scan_authorization(db, user, target, scan_types, source=source)
+    if not decision.ok:
+        return denial_response(decision)
+    return None
