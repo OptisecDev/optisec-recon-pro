@@ -260,9 +260,9 @@ async def _check_numverify(session: aiohttp.ClientSession, e164: str) -> dict:
                 "status": "Set NUMVERIFY_API_KEY environment variable to enable"}
 
     number = e164.lstrip("+")
-    url = f"http://apilayer.net/api/validate?access_key={api_key}&number={number}&country_code=IQ&format=1"
+    url = f"https://apilayer.net/api/validate?access_key={api_key}&number={number}&country_code=IQ&format=1"
     try:
-        async with session.get(url, ssl=False) as resp:
+        async with session.get(url, ssl=True) as resp:
             data = await resp.json()
             return {
                 "service": "NumVerify",
@@ -277,8 +277,16 @@ async def _check_numverify(session: aiohttp.ClientSession, e164: str) -> dict:
                 "carrier": data.get("carrier"),
                 "line_type": data.get("line_type"),
             }
+    # The NumVerify request sends access_key as a query parameter, so the request
+    # URL carries the key. aiohttp's ClientResponseError (incl. ContentTypeError
+    # from resp.json()) embeds that URL in str(e), so never surface exception
+    # text here -- only the status code or exception type.
+    except aiohttp.ClientResponseError as e:
+        return {"service": "NumVerify", "checked": False,
+                "error": f"NumVerify request failed: HTTP {e.status}"}
     except Exception as e:
-        return {"service": "NumVerify", "checked": False, "error": str(e)[:100]}
+        return {"service": "NumVerify", "checked": False,
+                "error": f"NumVerify request failed: {type(e).__name__}"}
 
 
 async def _check_abstractapi(session: aiohttp.ClientSession, e164: str) -> dict:
