@@ -48,9 +48,9 @@ def test_length_is_measured_in_utf8_bytes(monkeypatch):
 def test_pem_secret_is_rejected_without_leaking_value(monkeypatch):
     _clear_env(monkeypatch)
     pem = (
-        "-----BEGIN PRIVATE KEY-----\n"
-        "MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQC7pemtestbody\n"
-        "-----END PRIVATE KEY-----"
+        "-----BEGIN TEST-----\n"
+        "MIIEvQ" + "x" * 40 + "\n"
+        "-----END TEST-----"
     )
     monkeypatch.setenv("JWT_SECRET", pem)
     with pytest.raises(RuntimeError, match="PEM") as exc:
