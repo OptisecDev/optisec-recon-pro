@@ -23,6 +23,11 @@ class User(Base):
     subscription_tier = Column(String(20), default="free")
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
+    # Embedded in every session JWT as the "tv" claim and bumped on logout,
+    # so logging out revokes every token issued before it (web/auth.py
+    # get_current_user rejects a "tv" that no longer matches). Added to
+    # existing databases by web/migrate_add_user_token_version.py.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
 
     targets = relationship("Target", back_populates="user", cascade="all, delete-orphan")
     scans = relationship("Scan", back_populates="user", cascade="all, delete-orphan")

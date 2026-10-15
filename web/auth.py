@@ -192,10 +192,10 @@ def validate_password_strength(password: str) -> list:
 
 # ─── JWT helpers ───────────────────────────────────────────────────────────────
 
-def create_access_token(user_id: int, role: str, expires_minutes: int = None) -> str:
+def create_access_token(user_id: int, role: str, expires_minutes: int = None, token_version: int = 0) -> str:
     expire = datetime.utcnow() + timedelta(minutes=expires_minutes or ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(
-        {"sub": str(user_id), "role": role, "exp": expire},
+        {"sub": str(user_id), "role": role, "tv": int(token_version or 0), "exp": expire},
         SECRET_KEY,
         algorithm=ALGORITHM,
     )
@@ -280,19 +280,20 @@ async def get_current_user(request: Request, db: AsyncSession):
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = int(payload["sub"])
-    except (InvalidTokenError, KeyError, ValueError):
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-    result = await db.execute(
-        select(User).where(User.id == user_id, User.is_active == True)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    user = await _load_user_from_bearer(token, db)
+    state = getattr(request, "state", None)
+    if state is not None and token == request.cookies.get("access_token"):
+        # Lets session_refresh_middleware (web/app.py) re-mint this exact
+        # cookie only after it was checked against the DB here -- including
+        # token_version, so a logged-out cookie can't be slid forward.
+        state.verified_session = (token, user)
     return user
+
+
+def _token_version_claim(payload: dict) -> int:
+    """The token's "tv" claim. Tokens minted before token_version existed
+    carry none and count as 0, matching the column's backfill value."""
+    return int(payload.get("tv", 0))
 
 
 def _ws_origin_is_same_site(websocket) -> bool:
@@ -309,7 +310,8 @@ async def _load_user_from_bearer(token: str, db: AsyncSession):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
-    except (InvalidTokenError, KeyError, ValueError):
+        token_version = _token_version_claim(payload)
+    except (InvalidTokenError, KeyError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     result = await db.execute(
@@ -318,6 +320,10 @@ async def _load_user_from_bearer(token: str, db: AsyncSession):
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    # Bumped on logout -- a token issued before the user's last logout is
+    # revoked even though its signature and exp are still valid.
+    if token_version != (user.token_version or 0):
+        raise HTTPException(status_code=401, detail="Session has been revoked")
     return user
 
 

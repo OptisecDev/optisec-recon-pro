@@ -699,13 +699,19 @@ ACCESS_TOKEN_MAX_AGE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
 
 @app.middleware("http")
 async def session_refresh_middleware(request: Request, call_next):
+    # Touch request.state first so scope["state"] exists before the route
+    # runs -- get_current_user records the DB-verified cookie there, and
+    # only a cookie verified *this request* (signature, user still active,
+    # token_version unchanged since logout) is re-minted below. Decoding the
+    # JWT alone would keep sliding a revoked session forward forever.
+    request.state.verified_session = None
     response = await call_next(request)
     token = request.cookies.get("access_token")
-    if token and response.status_code < 400:
+    verified = getattr(request.state, "verified_session", None)
+    if token and response.status_code < 400 and verified and verified[0] == token:
         try:
-            import jwt as pyjwt
-            payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            new_token = create_access_token(int(payload["sub"]), payload["role"])
+            user = verified[1]
+            new_token = create_access_token(user.id, user.role, token_version=user.token_version)
             response.set_cookie(
                 "access_token", new_token,
                 httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION,
@@ -747,6 +753,10 @@ async def _startup_db_sequence():
             # table; see the module docstring for why this one runs here.
             from web.migrate_add_scan_authz_columns import migrate as _migrate_scan_authz_columns
             await _migrate_scan_authz_columns()
+            # Same for users.token_version (logout revocation); see
+            # web/migrate_add_user_token_version.py.
+            from web.migrate_add_user_token_version import migrate as _migrate_user_token_version
+            await _migrate_user_token_version()
 
             # init_db() only runs Base.metadata.create_all, which never adds
             # columns to a table that already exists. The users.api_key_hash
@@ -1057,7 +1067,7 @@ async def demo_login(request: Request, db: AsyncSession = Depends(get_db)):
         return RedirectResponse("/login?error=Demo+account+not+available", status_code=302)
     user.last_login = datetime.utcnow()
     await db.commit()
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     response = RedirectResponse("/", status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
@@ -1093,14 +1103,15 @@ def _safe_next_path(next_url: str) -> str:
 
 
 @app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request, next: str = "/", error: str = ""):
-    token = request.cookies.get("access_token")
-    if token:
+async def login_page(request: Request, next: str = "/", error: str = "", db: AsyncSession = Depends(get_db)):
+    if request.cookies.get("access_token"):
+        # Checked against the DB, not just the JWT signature: a cookie
+        # revoked by logging out elsewhere (token_version) would otherwise
+        # bounce between /login and / forever.
         try:
-            import jwt as pyjwt
-            pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            await get_current_user(request, db)
             return RedirectResponse("/", status_code=302)
-        except Exception:
+        except HTTPException:
             pass
     return templates.TemplateResponse(request, "login.html", {
         "app_name": APP_NAME, "next": _safe_next_path(next), "error": error,
@@ -1154,7 +1165,7 @@ async def login_submit(
     elif user.username == "demo":
         _cleanup_stale_initial_creds("demo")
 
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     response = RedirectResponse(_safe_next_path(next), status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
@@ -1218,7 +1229,7 @@ async def register_submit(
     clear_attempts(ip)
     await record_auth_event(db, "REGISTER", username, ip, True)
 
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     response = RedirectResponse("/", status_code=302)
     response.set_cookie("access_token", token, httponly=True, max_age=ACCESS_TOKEN_MAX_AGE_SECONDS, samesite="lax", secure=IS_PRODUCTION)
     _set_csrf_cookie(response, generate_csrf_secret())
@@ -1243,6 +1254,12 @@ async def logout(request: Request, db: AsyncSession = Depends(get_db)):
                 )).scalar_one_or_none()
                 if looked_up:
                     username = looked_up.username
+                    # Revoke every token issued so far -- deleting the
+                    # cookie below only clears this browser's copy; a copy
+                    # captured elsewhere would otherwise stay valid until
+                    # its exp. get_current_user rejects a stale "tv".
+                    looked_up.token_version = (looked_up.token_version or 0) + 1
+                    await db.commit()
         except Exception:
             pass
     await record_auth_event(db, "LOGOUT", username, ip, True)
@@ -1299,7 +1316,7 @@ async def api_login(request: Request, db: AsyncSession = Depends(get_db)):
     elif user.username == "demo":
         _cleanup_stale_initial_creds("demo")
 
-    token = create_access_token(user.id, user.role)
+    token = create_access_token(user.id, user.role, token_version=user.token_version)
     return JSONResponse({
         "access_token": token, "token_type": "bearer",
         "user": {"id": user.id, "username": user.username, "role": user.role},
