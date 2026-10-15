@@ -95,6 +95,11 @@ BASE_DIR = Path(__file__).parent
 
 logger = logging.getLogger("web.app")
 
+# Keep ?token=/?api_key=... values out of uvicorn's access log; see
+# web/log_redaction.py.
+from web import log_redaction
+log_redaction.install()
+
 # ─── Dark Web scheduler logging ────────────────────────────────────────────
 # modules/darkweb/scheduler.py logs under "darkweb.scheduler" but nothing
 # configured a level/handler for that namespace, so under uvicorn's default
