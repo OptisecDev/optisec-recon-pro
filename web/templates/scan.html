@@ -249,7 +249,7 @@ window.startScan = async function() {
   try {
     const r = await fetch('/api/scan', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
       body: JSON.stringify({ target, scan_types: scanTypes, target_id: targetId }),
     });
     const resp = await r.json().catch(() => ({}));

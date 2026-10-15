@@ -1802,6 +1802,7 @@ async def run_scan(
     db: AsyncSession = Depends(get_db),
 ):
     require_analyst_or_admin(user)
+    _require_csrf_for_cookie_auth(request)
     data = await request.json()
     target_url = data.get("target", "").strip()
     scan_types = data.get("scan_types", [])
@@ -2422,6 +2423,7 @@ async def scan_headers(request: Request, user: User = Depends(web_user), db: Asy
     responses={200: {"description": "Port scan results"}},
 )
 async def scan_ports(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
+    _require_csrf_for_cookie_auth(request)
     data = await request.json()
     target = data.get("target", "").strip()
     if not target:
@@ -2524,6 +2526,7 @@ async def download_report(
     responses={200: {"description": "Aggregated OSINT results"}},
 )
 async def run_osint(request: Request, user: User = Depends(web_user), db: AsyncSession = Depends(get_db)):
+    _require_csrf_for_cookie_auth(request)
     data = await request.json()
     domain = data.get("domain", "").strip()
     if not domain:
@@ -2787,6 +2790,19 @@ async def admin_delete_user(
 # one session to the user.
 CSRF_COOKIE_NAME = "csrf_secret"
 CSRF_COOKIE_MAX_AGE = ACCESS_TOKEN_MAX_AGE_SECONDS
+
+
+def _require_csrf_for_cookie_auth(request: Request) -> None:
+    """X-CSRF-Token check for JSON endpoints a browser session can reach --
+    same double-submit token and same exemption as
+    web/routers/domain_verification.py: X-API-Key and Bearer clients skip it,
+    since a cross-site page can't make the browser attach either header. The
+    token is served to every page via the csrf-token meta tag (base.html)."""
+    if request.headers.get("X-API-Key") or request.headers.get("Authorization", "").startswith("Bearer "):
+        return
+    secret = request.cookies.get(CSRF_COOKIE_NAME, "")
+    if not verify_csrf_token(secret, request.headers.get("X-CSRF-Token", "")):
+        raise HTTPException(403, "CSRF token missing or invalid")
 
 
 def _current_csrf_secret(request: Request) -> tuple:

@@ -37,11 +37,13 @@ import web.app as app_module
 import web.domain_verification as dv
 import web.migrate_add_scan_authz_columns as scan_cols_migration
 import web.rate_limit as rate_limit
-from web.auth import create_access_token
+from web.auth import create_access_token, generate_csrf_token
 from web.database import Base, get_db
 from web.models import DomainVerification, Scan, User
 from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS, SCAN_STEP_ORDER
 
+
+CSRF_SECRET = "scan-authz-test-csrf-secret"
 
 def _run(coro):
     return asyncio.run(coro)
@@ -80,7 +82,10 @@ def env():
             yield session
 
     app_module.app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app_module.app), sf
+    # POST /api/scan, /api/scan/ports and /api/osint require X-CSRF-Token
+    # for cookie auth; every session cookie set below carries CSRF_SECRET.
+    client = TestClient(app_module.app, headers={"X-CSRF-Token": generate_csrf_token(CSRF_SECRET)})
+    yield client, sf
     app_module.app.dependency_overrides.pop(get_db, None)
     _run(engine.dispose())
 
@@ -102,7 +107,7 @@ def _user(sf, username="alice", verified=()):
             await db.commit()
             return u.id
     uid = _run(go())
-    return {"access_token": create_access_token(uid, "analyst")}
+    return {"access_token": create_access_token(uid, "analyst"), "csrf_secret": CSRF_SECRET}
 
 
 def _scans(sf):

@@ -27,11 +27,13 @@ import modules.scan_scope as scan_scope_module
 import web.app as app_module
 import web.domain_verification as dv
 import web.rate_limit as rate_limit
-from web.auth import create_access_token
+from web.auth import create_access_token, generate_csrf_token
 from web.database import Base, get_db
 from web.models import DomainVerification, Target, User
 from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS, SCAN_STEP_ORDER
 
+
+CSRF_SECRET = "scan-authz-test-csrf-secret"
 
 def _run(coro):
     return asyncio.run(coro)
@@ -70,7 +72,10 @@ def env():
             yield session
 
     app_module.app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app_module.app), sf
+    # POST /api/scan, /api/scan/ports and /api/osint require X-CSRF-Token
+    # for cookie auth; every session cookie set below carries CSRF_SECRET.
+    client = TestClient(app_module.app, headers={"X-CSRF-Token": generate_csrf_token(CSRF_SECRET)})
+    yield client, sf
     app_module.app.dependency_overrides.pop(get_db, None)
     _run(engine.dispose())
 
@@ -100,7 +105,7 @@ def _seed(sf, username="alice", role="analyst", verifications=(), targets=()):
             await db.commit()
             return u.id, ids
     uid, ids = _run(go())
-    return {"access_token": create_access_token(uid, role)}, ids
+    return {"access_token": create_access_token(uid, role), "csrf_secret": CSRF_SECRET}, ids
 
 
 NOW = datetime.utcnow()
