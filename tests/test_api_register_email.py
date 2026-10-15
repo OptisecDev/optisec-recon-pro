@@ -85,3 +85,74 @@ def test_valid_email_still_registers(client):
     assert r.status_code == 200, r.text
     assert r.json()["api_key"]
     assert _count_users(client.session_factory) == before + 1
+
+
+# ─── form-data paths ──────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("bad", ["abc", "a@", "@x.com", "a b@x.com", ""])
+def test_html_register_rejects_invalid_email(client, bad):
+    before = _count_users(client.session_factory)
+    r = client.post(
+        "/register",
+        data={"username": "form_bad_email", "password": "StrongPass1!", "email": bad},
+        follow_redirects=False,
+    )
+    assert r.status_code == 400, r.text
+    assert "Invalid email address" in r.text
+    assert "access_token" not in r.cookies
+    assert _count_users(client.session_factory) == before
+
+
+def test_html_register_valid_email_creates_user(client):
+    before = _count_users(client.session_factory)
+    r = client.post(
+        "/register",
+        data={"username": "form_good_email", "password": "StrongPass1!", "email": "form@example.com"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 302, r.text
+    assert _count_users(client.session_factory) == before + 1
+
+
+def test_api_register_form_data_invalid_email_is_400_not_500(client):
+    before = _count_users(client.session_factory)
+    r = client.post(
+        "/api/auth/register",
+        data={"username": "api_form_bad", "password": "StrongPass1!", "email": "abc"},
+    )
+    assert r.status_code == 400, r.text
+    assert _count_users(client.session_factory) == before
+
+
+def test_api_register_form_data_valid_email_creates_user(client):
+    before = _count_users(client.session_factory)
+    r = client.post(
+        "/api/auth/register",
+        data={"username": "api_form_good", "password": "StrongPass1!", "email": "apiform@example.com"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["api_key"]
+    assert _count_users(client.session_factory) == before + 1
+
+
+@pytest.mark.parametrize("body,ctype", [
+    (b"{not json", "application/json"),
+    (b"[1, 2]", "application/json"),
+    (b"username=x", "text/plain"),
+])
+def test_api_register_malformed_body_is_400_not_500(client, body, ctype):
+    before = _count_users(client.session_factory)
+    r = client.post("/api/auth/register", content=body, headers={"content-type": ctype})
+    assert r.status_code == 400, r.text
+    assert _count_users(client.session_factory) == before
+
+
+def test_api_register_multipart_file_field_is_400_not_500(client):
+    before = _count_users(client.session_factory)
+    r = client.post(
+        "/api/auth/register",
+        data={"username": "api_multipart", "password": "StrongPass1!"},
+        files={"email": ("e.txt", b"x@example.com", "text/plain")},
+    )
+    assert r.status_code == 400, r.text
+    assert _count_users(client.session_factory) == before
