@@ -302,8 +302,16 @@ async def _check_abstractapi(session: aiohttp.ClientSession, e164: str) -> dict:
                 "type": data.get("type"),
                 "carrier": data.get("carrier"),
             }
+    # AbstractAPI only supports api_key as a query parameter, so the request
+    # URL carries the key. aiohttp's ClientResponseError (incl. ContentTypeError
+    # from resp.json()) embeds that URL in str(e), so never surface exception
+    # text here -- only the status code or exception type.
+    except aiohttp.ClientResponseError as e:
+        return {"service": "AbstractAPI Phone", "checked": False,
+                "error": f"AbstractAPI Phone request failed: HTTP {e.status}"}
     except Exception as e:
-        return {"service": "AbstractAPI Phone", "checked": False, "error": str(e)[:100]}
+        return {"service": "AbstractAPI Phone", "checked": False,
+                "error": f"AbstractAPI Phone request failed: {type(e).__name__}"}
 
 
 def _opencnam_patterns(variations: dict, carrier: Optional[dict]) -> dict:
