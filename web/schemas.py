@@ -2,6 +2,7 @@
 from __future__ import annotations
 from typing import Any, List, Optional
 from urllib.parse import urlparse
+from pydantic import EmailStr
 import ipaddress
 import re
 from pydantic import BaseModel, Field, field_validator
@@ -36,7 +37,7 @@ class LoginResponse(BaseModel):
 class RegisterRequest(BaseModel):
     username: str = Field(..., min_length=3, max_length=50, example="analyst1",
                           description="3–50 characters, alphanumeric + underscore")
-    email: str = Field(..., example="analyst@optisec.io")
+    email: EmailStr = Field(..., example="analyst@optisec.io")
     password: str = Field(..., min_length=8, example="StrongPass1!",
                           description="Min 8 chars, must include uppercase, digit, special char")
 
@@ -274,7 +275,7 @@ class CveDraftRequest(BaseModel):
     references: Optional[list] = Field(None, example=["https://github.com/org/repo/security/advisories/x"])
     credits: Optional[list] = Field(None, example=[{"name": "Jane Doe", "type": "finder"}])
     reporter_name: Optional[str] = Field(None, example="Jane Doe")
-    reporter_email: Optional[str] = Field(None, example="jane@example.com")
+    reporter_email: Optional[EmailStr] = Field(None, example="jane@example.com")
     cna_org: Optional[str] = Field(None, example="MyOrg CNA",
                                    description="Informational only — recorded on the draft, not used to submit anywhere")
 
