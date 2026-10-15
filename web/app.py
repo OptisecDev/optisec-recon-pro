@@ -2641,7 +2641,7 @@ async def ai_analyze(request: Request, user: User = Depends(web_user)):
         "**Example inputs:**\n"
         "- `افحص example.com عن ثغرات XSS`\n"
         "- `Scan example.com for SQL injection`\n"
-        "- `اجمع النطاقات الفرعية لـ google.com`\n"
+        "- `اجمع النطاقات الفرعية لـ example.com`\n"
         "- `Generate report for last scan`"
     ),
     responses={
