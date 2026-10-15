@@ -2,5 +2,5 @@
 useDefault = true
 
 [allowlist]
-description = "Known false positive: PEM test fixture in historical commit ed506ae (fake key, not a secret)"
-commits = ["ed506ae2030f2b34844003be58f24d1083633276"]
+description = "Known false positives: PEM test fixture in historical commit ed506ae (fake key, not a secret); fake fixture in historical commit 7bd4e33 (fake token in tests/test_log_redaction.py, not a secret)"
+commits = ["ed506ae2030f2b34844003be58f24d1083633276", "7bd4e335062db4070640659ad8ec144ec8f76e86"]

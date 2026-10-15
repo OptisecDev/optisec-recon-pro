@@ -19,7 +19,7 @@ import pytest
 import web.app  # noqa: F401 -- installs the filter
 from web.log_redaction import REDACTED, RedactQueryTokensFilter, install, redact_query
 
-SECRET = "eyJhbGciOiJIUzI1NiJ9.c2VjcmV0.c2lnbmF0dXJl"
+SECRET = "fake-test-token-value"
 
 
 @pytest.mark.parametrize("path", [
