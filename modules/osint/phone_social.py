@@ -366,7 +366,7 @@ async def phone_social_lookup(raw: str) -> dict:
     carrier = detect_carrier(variations)
     iraqi   = is_iraqi(variations)
 
-    connector = aiohttp.TCPConnector(limit=20, ssl=False)
+    connector = aiohttp.TCPConnector(limit=20)
     hdrs = {"User-Agent": UA, "Accept": "text/html,application/xhtml+xml,*/*;q=0.9"}
 
     async with aiohttp.ClientSession(headers=hdrs, timeout=TIMEOUT, connector=connector) as sess:
