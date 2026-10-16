@@ -925,10 +925,10 @@ async def _ensure_first_admin():
 
 _DEMO_TARGETS = [
     ("example.com",   "Example Inc."),
-    ("google.com",    "Google LLC"),
-    ("microsoft.com", "Microsoft Corp"),
-    ("apple.com",     "Apple Inc."),
-    ("amazon.com",    "Amazon AWS"),
+    ("example.com",   "Example Corp"),
+    ("example.com",   "Example Ltd"),
+    ("example.com",   "Example Co"),
+    ("example.com",   "Example LLC"),
 ]
 _DEMO_FINDINGS = [
     # severity uses the same Title Case convention the real scanners write
@@ -938,10 +938,10 @@ _DEMO_FINDINGS = [
     ("SQLi",          "Critical", "https://example.com/api/user",      "id",     "' OR 1=1--"),
     ("SSRF",          "High",     "https://example.com/fetch",         "url",    "http://169.254.169.254/"),
     ("Open Redirect", "Medium",   "https://example.com/redirect",      "next",   "//evil.com"),
-    ("XSS",           "Medium",   "https://google.com/search",       "q",      "\"><img src=x onerror=alert(1)>"),
-    ("LFI",           "Critical", "https://google.com/page",         "file",   "../../etc/passwd"),
-    ("SQLi",          "High",     "https://microsoft.com/api/login", "user",   "admin'--"),
-    ("XSS",           "Low",      "https://apple.com/feedback",      "msg",    "<b>test</b>"),
+    ("XSS",           "Medium",   "https://example.com/search",      "q",      "\"><img src=x onerror=alert(1)>"),
+    ("LFI",           "Critical", "https://example.com/page",        "file",   "../../etc/passwd"),
+    ("SQLi",          "High",     "https://example.com/api/login",   "user",   "admin'--"),
+    ("XSS",           "Low",      "https://example.com/feedback",    "msg",    "<b>test</b>"),
 ]
 
 async def _ensure_demo_account():

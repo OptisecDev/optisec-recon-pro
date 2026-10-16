@@ -1,6 +1,7 @@
 """
-Demo seed data in web/app.py must not use the real third-party domain
-tesla.com; example.com is reserved for this (RFC 2606).
+Demo seed data in web/app.py must not use real third-party domains
+(tesla.com, google.com, microsoft.com, apple.com, amazon.com); example.com is
+reserved for this (RFC 2606).
 
 _ensure_demo_account() stores _DEMO_TARGETS / _DEMO_FINDINGS as Target, Scan
 and Finding rows for the demo account, so whatever is in the seed block is
@@ -16,7 +17,7 @@ APP_PY = os.path.join(
 )
 SEED_START = "_DEMO_TARGETS = ["
 SEED_END = "async def _ensure_demo_account"
-REAL_DOMAIN = "tesla.com"
+REAL_DOMAINS = ["tesla.com", "google.com", "microsoft.com", "apple.com", "amazon.com"]
 
 
 def _seed_block():
@@ -37,5 +38,6 @@ def test_demo_seed_block_is_found():
 
 def test_demo_seed_does_not_use_real_domain():
     text = _seed_block()
-    has_real = REAL_DOMAIN in text
-    assert not has_real, "demo seed data still contains the real domain tesla.com"
+    for d in REAL_DOMAINS:
+        has_real = d in text
+        assert not has_real, f"demo seed data still contains the real domain {d}"
