@@ -68,8 +68,6 @@
               <span class="badge badge-success" title="{{ authz.basis }}">✓ Verified</span>
               {% elif authz.kind == 'training' %}
               <span class="badge badge-low" title="Public training target — limited active modules">🎓 Training</span>
-              {% elif authz.kind == 'unenforced' %}
-              <span class="badge badge-medium" title="SCAN_AUTHZ_ENFORCE=false (log-only)">Not enforced</span>
               {% else %}
               <span class="badge badge-info" title="Active modules need domain verification">Passive only</span>
               {% endif %}

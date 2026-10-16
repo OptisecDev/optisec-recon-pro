@@ -60,7 +60,6 @@ def _run(coro):
 @pytest.fixture(autouse=True)
 def _isolation(monkeypatch):
     rate_limit._buckets.clear()
-    monkeypatch.delenv("SCAN_AUTHZ_ENFORCE", raising=False)
 
     async def fake_resolve(host):
         if host in FAKE_DNS:

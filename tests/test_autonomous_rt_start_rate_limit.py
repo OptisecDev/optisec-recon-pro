@@ -34,6 +34,7 @@ from sqlalchemy.pool import StaticPool
 from web.database import Base, get_db
 from web.models import DomainVerification, User, Target
 import web.app as app_module
+import web.domain_verification as dv
 import web.rate_limit as rate_limit
 import web.routers.autonomous_rt as art_router
 import modules.ai_advanced.autonomous_redteam as autonomous_redteam
@@ -71,8 +72,9 @@ def client():
             session.add(user)
             await session.flush()
             session.add(Target(user_id=user.id, url="https://example.com", name="t1"))
-            # Fresh verification so /api/start passes scan authorization
-            # without a DNS re-check -- this test is about the rate limit.
+            # Verified record so /api/start passes scan authorization; the
+            # live re-check is faked as matching -- this test is about the
+            # rate limit.
             session.add(DomainVerification(
                 user_id=user.id, domain="example.com", method="dns_txt", token="tok-art",
                 status="verified", verified_at=datetime.utcnow(), last_checked_at=datetime.utcnow(),
@@ -100,6 +102,10 @@ def client():
 
 def test_start_simulation_is_rate_limited(client, monkeypatch):
     monkeypatch.setenv("RATE_LIMIT_AUTONOMOUS_RT_START", "2")
+
+    async def still_matches(domain, token):
+        return dv.CheckResult(True)
+    monkeypatch.setattr(dv, "check_dns_txt", still_matches)
 
     async def fake_start(**kwargs):
         return {"id": "sess-1", "target": kwargs.get("target"), "user_id": kwargs.get("user_id")}

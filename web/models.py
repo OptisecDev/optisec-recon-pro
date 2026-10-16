@@ -145,9 +145,10 @@ class Scan(Base):
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
     # Why this scan was allowed to run (web/scan_authz.py AuthzDecision):
-    # "passive_only" | "verified:<method>:<domain>" | "training:<host>",
-    # prefixed "unenforced:" under SCAN_AUTHZ_ENFORCE=false. NULL for scans
-    # created before scan authorization existed.
+    # "passive_only" | "verified:<method>:<domain>" | "training:<host>".
+    # Rows written by the since-removed log-only rollout mode may carry an
+    # "unenforced:" prefix. NULL for scans created before scan authorization
+    # existed.
     authz_basis = Column(String(300), nullable=True)
     authz_checks = Column(JSON, nullable=True)
 

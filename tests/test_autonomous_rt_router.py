@@ -53,8 +53,8 @@ def db_factory():
 
 
 async def _verify_domain(session_factory, owner_id: int, domain: str) -> None:
-    """A fresh (within-TTL) verified record, so /api/start passes scan
-    authorization without any DNS/HTTP re-check."""
+    """A verified record; /api/start re-checks it live, which the
+    _fake_dns_recheck fixture answers as still matching."""
     async with session_factory() as db:
         db.add(DomainVerification(
             user_id=owner_id, domain=domain, method="dns_txt", token=f"tok-{owner_id}-{domain}",
@@ -122,6 +122,14 @@ class TestStartSimulationEndpoint:
         import modules.ai_advanced.autonomous_redteam as art
         monkeypatch.setattr(art, "DATA_FILE", tmp_path / "autonomous_rt_sessions.json")
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
+
+    @pytest.fixture(autouse=True)
+    def _fake_dns_recheck(self, monkeypatch):
+        import web.domain_verification as dv
+
+        async def still_matches(domain, token):
+            return dv.CheckResult(True)
+        monkeypatch.setattr(dv, "check_dns_txt", still_matches)
 
     def test_unregistered_target_id_returns_404(self, db_factory):
         async def go():

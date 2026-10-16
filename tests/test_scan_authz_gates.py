@@ -2,8 +2,8 @@
 Endpoint coverage for scan authorization (web/scan_authz.py via
 web/domain_verification.check_scan_authorization): every route that can
 start an active check refuses it for an unverified target, lets passive
-work through, records why a scan was allowed, and honours the
-SCAN_AUTHZ_ENFORCE=false log-only switch.
+work through, and records why a scan was allowed. There is no log-only
+switch.
 
 Gated routes: POST /api/scan (+ _run_scan_task itself), /api/scan/ports,
 /api/osint (subdomain step only), /api/osint/network-scan with
@@ -11,8 +11,8 @@ deep_scan, /federation/api/scan. /autonomous-redteam/api/start is covered in
 tests/test_autonomous_rt_router.py.
 
 No network: every scanner the routes would call is monkeypatched to a
-recorder, and verifications are seeded fresh (within the TTL) so no DNS/HTTP
-re-check runs.
+recorder, and the live ownership re-check every active scan runs is faked
+as still matching (see _isolation).
 """
 
 import asyncio
@@ -52,12 +52,11 @@ def _run(coro):
 @pytest.fixture(autouse=True)
 def _isolation(monkeypatch):
     rate_limit._buckets.clear()
-    monkeypatch.delenv("SCAN_AUTHZ_ENFORCE", raising=False)
 
-    async def no_check(*a, **k):
-        raise AssertionError("unexpected ownership re-check (seeded records should be fresh)")
-    monkeypatch.setattr(dv, "check_dns_txt", no_check)
-    monkeypatch.setattr(dv, "check_http_file", no_check)
+    async def still_matches(*a, **k):
+        return dv.CheckResult(True)
+    monkeypatch.setattr(dv, "check_dns_txt", still_matches)
+    monkeypatch.setattr(dv, "check_http_file", still_matches)
     # network_scope_for() resolves the scope's hosts; keep that offline.
     monkeypatch.setattr(scan_scope_module, "_resolve", lambda host: {"93.184.216.34"})
     yield
@@ -176,6 +175,43 @@ def test_api_scan_verified_run_all(env, launched):
     assert scope.allows("shop.example.com") and not scope.allows("evil.test")
 
 
+def test_api_scan_rechecks_dns_before_launch(env, launched, monkeypatch):
+    c, sf = env
+    cookies = _user(sf, verified=["example.com"])
+    order = []
+
+    async def recheck(domain, token):
+        order.append(("dns", domain))
+        return dv.CheckResult(True)
+
+    async def fake_task(*args, **kwargs):
+        order.append(("launch", args[1]))
+    monkeypatch.setattr(dv, "check_dns_txt", recheck)
+    monkeypatch.setattr(app_module, "_run_scan_task", fake_task)
+    for _ in range(2):
+        r = c.post("/api/scan", json={"target": "example.com", "scan_types": ["nmap"]}, cookies=cookies)
+        assert r.status_code == 200, r.text
+    assert order == [("dns", "example.com"), ("launch", "example.com")] * 2
+
+
+def test_api_scan_refused_when_dns_no_longer_matches(env, launched, monkeypatch):
+    c, sf = env
+    cookies = _user(sf, verified=["example.com"])
+
+    async def gone(domain, token):
+        return dv.CheckResult(False, "TXT record found but the token does not match")
+    monkeypatch.setattr(dv, "check_dns_txt", gone)
+    r = c.post("/api/scan", json={"target": "example.com", "scan_types": ["sqli", "dns"]}, cookies=cookies)
+    assert r.status_code == 403
+    assert r.json()["denied_checks"] == ["sqli"]
+    assert launched == [] and _scans(sf) == []
+
+    async def status():
+        async with sf() as db:
+            return (await db.execute(select(DomainVerification.status))).scalar_one()
+    assert _run(status()) == "revoked"
+
+
 def test_api_scan_another_users_verification_does_not_count(env, launched):
     c, sf = env
     _user(sf, "owner", verified=["example.com"])
@@ -218,43 +254,24 @@ def test_api_scan_malformed_scan_types(env, launched, bad):
     assert launched == []
 
 
-def test_api_scan_log_only_mode_runs_but_marks_unenforced(env, launched, monkeypatch, caplog):
-    monkeypatch.setenv("SCAN_AUTHZ_ENFORCE", "false")
+@pytest.mark.parametrize("value", ["false", "0", "off", "no"])
+def test_scan_authz_enforce_env_is_ignored(env, launched, monkeypatch, value):
+    """The old SCAN_AUTHZ_ENFORCE=false log-only switch is gone: setting it
+    changes nothing, and active checks on an unverified target are refused."""
+    monkeypatch.setenv("SCAN_AUTHZ_ENFORCE", value)
     c, sf = env
-    with caplog.at_level(logging.WARNING, logger="optisec.scan_authz"):
-        r = c.post("/api/scan", json={"target": "unverified.test", "scan_types": ["xss", "dns"]}, cookies=_user(sf))
-    assert r.status_code == 200, r.text
-    (scan,) = _scans(sf)
-    assert scan.authz_basis == "unenforced:passive_only"
-    assert launched[0][1]["authorized_checks"] == {"xss", "dns"}
-    assert launched[0][1]["scope"] is None  # log-only mode must not block
-    assert any("enforced=False" in m and "api_scan" in m for m in caplog.messages)
-
-
-def test_api_scan_log_only_mode_still_refuses_unknown_types(env, launched, monkeypatch):
-    monkeypatch.setenv("SCAN_AUTHZ_ENFORCE", "false")
-    c, sf = env
-    r = c.post("/api/scan", json={"target": "unverified.test", "scan_types": ["rce"]}, cookies=_user(sf))
+    r = c.post("/api/scan", json={"target": "unverified.test", "scan_types": ["xss", "dns"]}, cookies=_user(sf))
     assert r.status_code == 403
+    assert r.json()["denied_checks"] == ["xss"]
+    assert launched == [] and _scans(sf) == []
+    assert not hasattr(dv, "scan_authz_enforced")
 
 
-@pytest.mark.parametrize("value,enforced", [
-    (None, True), ("true", True), ("", True), ("garbage", True),
-    ("false", False), ("FALSE", False), ("0", False), ("off", False),
-])
-def test_enforce_switch_parsing(monkeypatch, value, enforced):
-    if value is None:
-        monkeypatch.delenv("SCAN_AUTHZ_ENFORCE", raising=False)
-    else:
-        monkeypatch.setenv("SCAN_AUTHZ_ENFORCE", value)
-    assert dv.scan_authz_enforced() is enforced
-
-
-def test_denial_is_logged_when_enforced(env, launched, caplog):
+def test_denial_is_logged(env, launched, caplog):
     c, sf = env
     with caplog.at_level(logging.WARNING, logger="optisec.scan_authz"):
         c.post("/api/scan", json={"target": "unverified.test", "scan_types": ["nmap"]}, cookies=_user(sf))
-    assert any("source=api_scan" in m and "enforced=True" in m for m in caplog.messages)
+    assert any("source=api_scan" in m and "denied=['nmap']" in m for m in caplog.messages)
 
 
 # ── _run_scan_task ───────────────────────────────────────────────────────────

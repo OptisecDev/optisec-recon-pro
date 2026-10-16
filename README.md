@@ -1032,11 +1032,11 @@ Verification is per user — each account verifies the domains it scans.
 
 IP addresses can't be verified. The file check refuses hosts that resolve to
 internal addresses, only follows redirects on the same host, and never shows
-you the fetched content. A verified domain is re-checked when it's used for a
-scan more than `SCAN_VERIFICATION_TTL_DAYS` (default 7) after its last check:
-if the record or file is gone, the verification is revoked and active
-modules are refused again. A timeout or server error during a re-check
-refuses that scan but doesn't revoke anything.
+you the fetched content. A verified domain is re-checked live immediately
+before every active scan: if the record or file is gone or no longer
+matches, the verification is revoked and active modules are refused. A
+timeout, server error or unexpected failure during the re-check refuses that
+scan but doesn't revoke anything.
 
 ### Training targets
 
@@ -1053,10 +1053,11 @@ hostname match only):
 
 ### Operator notes
 
-- **Rollout switch:** `SCAN_AUTHZ_ENFORCE=false` puts the gate in log-only
-  mode for a deploy — denials are logged on the `optisec.scan_authz` logger
-  but active modules still run (scans are recorded with an `unenforced:`
-  basis). The default is to enforce.
+- **No override:** there is no environment variable or setting that turns
+  the gate off or into log-only mode. Denials are logged on the
+  `optisec.scan_authz` logger. An authorization basis the scope guard
+  doesn't recognize gets an empty network scope, so active modules can't
+  reach anything.
 - **Audit trail:** every scan records why it was allowed in
   `scans.authz_basis` (`passive_only`, `verified:<method>:<domain>`, or
   `training:<host>`) and `scans.authz_checks`. Those two nullable columns

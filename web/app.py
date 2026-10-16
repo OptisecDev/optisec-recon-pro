@@ -1782,8 +1782,8 @@ async def admin_panel(request: Request, user: User = Depends(web_user), db: Asyn
     description=(
         "Preview of the authorization `POST /api/scan` applies: passive modules are always "
         "allowed; active modules need a verified domain or a listed training target. "
-        "No DNS/HTTP checks are run -- a verification past its re-check interval is still "
-        "re-checked when a scan is actually launched."
+        "No DNS/HTTP checks are run -- every verification is re-checked live when a scan "
+        "is actually launched."
     ),
 )
 async def scan_authorization_preview(
@@ -2044,7 +2044,7 @@ async def _run_scan_task(
 
     `scope` (network_scope_for() of the same decision) confines every active
     step's traffic to the authorized hosts -- see modules/scan_scope.py.
-    None only for passive-only or log-only decisions. Also required, so a
+    None only for passive-only decisions. Also required, so a
     caller has to decide it explicitly."""
     authorized = frozenset(authorized_checks)
 

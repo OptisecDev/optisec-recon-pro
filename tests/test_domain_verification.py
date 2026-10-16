@@ -393,11 +393,59 @@ FRESH = NOW - timedelta(hours=1)
 STALE = NOW - timedelta(days=8)
 
 
-def test_authorize_fresh_verification_no_network(session_factory, monkeypatch):
-    _no_network(monkeypatch)
+def test_authorize_rechecks_dns_live_even_when_fresh(session_factory, monkeypatch):
+    """A record checked an hour ago is still re-checked against live DNS
+    before an active scan -- no cached verdict grants anything."""
     u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
+    calls = _txt(monkeypatch, ["optisec-verify=alice-0"])
     d = _authorize(session_factory, u, "https://shop.example.com", ["xss", "dns"])
     assert d.ok and d.basis == "verified:dns_txt:example.com"
+    assert calls == ["_optisec-verify.example.com"]
+
+
+def test_authorize_rechecks_dns_on_every_active_scan(session_factory, monkeypatch):
+    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
+    calls = _txt(monkeypatch, ["optisec-verify=alice-0"])
+    for _ in range(3):
+        assert _authorize(session_factory, u, "example.com", ["nmap"]).ok
+    assert calls == ["_optisec-verify.example.com"] * 3
+
+
+def test_authorize_refuses_when_dns_no_longer_matches(session_factory, monkeypatch):
+    """Verified a moment ago, but the TXT record now carries another value:
+    the scan is refused and the verification revoked."""
+    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
+    _txt(monkeypatch, ["optisec-verify=someone-elses-token"])
+    d = _authorize(session_factory, u, "example.com", ["sqli"])
+    assert not d.ok and d.denied == {"sqli"} and d.basis == "passive_only"
+    assert _status(session_factory, "example.com", u.id) == "revoked"
+
+
+def test_authorize_refuses_when_dns_record_removed(session_factory, monkeypatch):
+    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
+    _txt(monkeypatch, exc=dns.resolver.NXDOMAIN())
+    assert not _authorize(session_factory, u, "example.com", ["nmap"]).ok
+    assert _status(session_factory, "example.com", u.id) == "revoked"
+
+
+def test_authorize_rechecks_file_live_even_when_fresh(session_factory, monkeypatch):
+    u = _seed(session_factory, "alice", [("example.com", "http_file", "verified", FRESH)])
+    _addrs(monkeypatch)
+    _http(monkeypatch, lambda req: httpx.Response(404))
+    assert not _authorize(session_factory, u, "example.com", ["xss"]).ok
+    assert _status(session_factory, "example.com", u.id) == "revoked"
+
+
+def test_authorize_unexpected_recheck_error_denies(session_factory, monkeypatch, caplog):
+    """An outcome the re-check doesn't know how to classify (here: a crash)
+    denies the active checks rather than trusting the stored record."""
+    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
+    _txt(monkeypatch, exc=RuntimeError("resolver blew up"))
+    with caplog.at_level("ERROR", logger="optisec.scan_authz"):
+        d = _authorize(session_factory, u, "example.com", ["nmap", "dns"])
+    assert d.denied == {"nmap"} and d.allowed == {"dns"}
+    assert _status(session_factory, "example.com", u.id) == "verified"
+    assert any("re-check crashed" in m for m in caplog.messages)
 
 
 def test_authorize_passive_only_skips_db_and_network(session_factory, monkeypatch):
@@ -460,15 +508,16 @@ def test_authorize_only_rechecks_records_covering_target(session_factory, monkey
         ("unrelated.test", "dns_txt", "verified", STALE),
         ("example.com", "dns_txt", "verified", FRESH),
     ])
-    _no_network(monkeypatch)
+    calls = _txt(monkeypatch, ["optisec-verify=alice-1"])
     assert _authorize(session_factory, u, "example.com", ["xss"]).ok
+    assert calls == ["_optisec-verify.example.com"]
 
 
-def test_authorize_ttl_env_override(session_factory, monkeypatch):
+def test_authorize_ttl_env_no_longer_skips_recheck(session_factory, monkeypatch):
     monkeypatch.setenv("SCAN_VERIFICATION_TTL_DAYS", "30")
-    _no_network(monkeypatch)
-    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", STALE)])
-    assert _authorize(session_factory, u, "example.com", ["xss"]).ok
+    u = _seed(session_factory, "alice", [("example.com", "dns_txt", "verified", FRESH)])
+    _txt(monkeypatch, exc=dns.resolver.NXDOMAIN())
+    assert not _authorize(session_factory, u, "example.com", ["xss"]).ok
 
 
 def test_authorize_training_target_without_verification(session_factory, monkeypatch):

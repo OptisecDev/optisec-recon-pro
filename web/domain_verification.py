@@ -17,19 +17,20 @@ is never echoed back to the user -- only "matched" or a fixed error string --
 so a DNS-rebinding race between the resolve check and the fetch can at most
 answer "token not found" about an internal URL, not leak its contents.
 
-authorize_scan() is the DB-backed entry point endpoint gates call. Verified
-records whose last check is older than SCAN_VERIFICATION_TTL_DAYS are
-re-checked first, so removing the TXT record or file revokes access.
+authorize_scan() is the DB-backed entry point endpoint gates call. Every
+verified record covering the target is re-checked live (TXT lookup or file
+fetch) immediately before each active scan, and anything short of a match --
+record or file gone, wrong token, timeout, unexpected exception -- leaves
+the active checks denied (fail-closed). There is no switch that relaxes this.
 """
 
 import asyncio
 import ipaddress
 import logging
-import os
 import secrets
 import socket
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Iterable, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -66,10 +67,6 @@ _DNS_TIMEOUT = 10.0
 _HTTP_TIMEOUT = 10.0
 _MAX_FILE_BYTES = 4096
 _MAX_REDIRECTS = 3
-
-
-def verification_ttl() -> timedelta:
-    return timedelta(days=float(os.environ.get("SCAN_VERIFICATION_TTL_DAYS", "7")))
 
 
 def new_token() -> str:
@@ -256,9 +253,12 @@ async def authorize_scan(
     scan_types: Optional[Iterable[str]],
     now: Optional[datetime] = None,
 ) -> AuthzDecision:
-    """decide() fed with the user's own currently-verified domains. Only
-    records that actually cover the target are looked at, and any of those
-    past the TTL are re-checked (and committed) before being trusted."""
+    """decide() fed with the user's own domains that still verify right now.
+    Only records that actually cover the target are looked at, and each is
+    re-checked live (and the result committed) before being trusted -- no
+    cached verdict grants anything. A check that fails for any reason,
+    including an unexpected exception, leaves the record out, so the active
+    checks are denied."""
     checks = expand_checks(scan_types)
     host = normalize_host(target)
     if not (set(checks) & ACTIVE_CHECKS) or not host or is_ip_literal(host):
@@ -278,12 +278,16 @@ async def authorize_scan(
         scope = VerifiedScope(rec.domain, rec.method)
         if host_in_verified_scope(host, [scope]) is None:
             continue
-        if rec.last_checked_at is None or now - rec.last_checked_at > verification_ttl():
+        try:
             result = await run_check(rec, now)
-            changed = True
-            if not result.verified:
-                continue
-        scopes.append(scope)
+        except Exception:
+            logger.exception(
+                "scan_authz verification re-check crashed user_id=%s domain=%r", user.id, rec.domain,
+            )
+            continue
+        changed = True
+        if result.verified:
+            scopes.append(scope)
     if changed:
         await db.commit()
 
@@ -291,13 +295,6 @@ async def authorize_scan(
 
 
 # ── Endpoint gate ─────────────────────────────────────────────────────────────
-
-def scan_authz_enforced() -> bool:
-    """SCAN_AUTHZ_ENFORCE=false is a one-deploy, log-only rollout switch:
-    denials are still logged, but active checks run anyway. Defaults to
-    enforcing; anything other than an explicit false value enforces."""
-    return os.environ.get("SCAN_AUTHZ_ENFORCE", "true").strip().lower() not in ("false", "0", "no", "off")
-
 
 async def check_scan_authorization(
     db: AsyncSession,
@@ -307,33 +304,16 @@ async def check_scan_authorization(
     *,
     source: str,
 ) -> AuthzDecision:
-    """What every scan-launching endpoint calls. Logs each denial with the
-    calling `source`, and in log-only mode (see scan_authz_enforced) turns
-    denied active checks into allowed ones -- unknown check names stay
-    denied either way, since nothing could run them."""
+    """What every scan-launching endpoint calls, right before it runs
+    anything. Logs each denial with the calling `source`; a denied decision
+    always means the caller must return denial_response() -- there is no
+    log-only or override mode."""
     decision = await authorize_scan(db, user, target, scan_types)
-    if not decision.denied:
-        return decision
-
-    enforced = scan_authz_enforced()
-    logger.warning(
-        "scan_authz denied source=%s user_id=%s target=%r denied=%s basis=%s enforced=%s",
-        source, user.id, target, sorted(decision.denied), decision.basis, enforced,
-    )
-    if enforced:
-        return decision
-    return _apply_log_only(decision)
-
-
-def _apply_log_only(decision: AuthzDecision) -> AuthzDecision:
-    bypassed = decision.denied & ACTIVE_CHECKS
-    if not bypassed:
-        return decision
-    decision.allowed |= bypassed
-    decision.denied -= bypassed
-    decision.basis = f"unenforced:{decision.basis}"
-    if not decision.denied:
-        decision.reason = None
+    if decision.denied:
+        logger.warning(
+            "scan_authz denied source=%s user_id=%s target=%r denied=%s basis=%s",
+            source, user.id, target, sorted(decision.denied), decision.basis,
+        )
     return decision
 
 
@@ -352,23 +332,21 @@ async def preview_authorization(
 ) -> AuthzDecision:
     """What the UI shows before a scan: the decision for every check, with
     no network I/O and no logging. Verified records are taken at face value
-    here -- a stale one is still re-checked by check_scan_authorization()
-    when a scan is actually launched, so the preview can only be more
-    permissive than the real gate, never let anything run by itself.
+    here -- check_scan_authorization() re-checks them live when a scan is
+    actually launched, so the preview can only be more permissive than the
+    real gate, never let anything run by itself.
     Pass `scopes` (from load_verified_scopes) to preview many targets with
     one query."""
     if scopes is None:
         scopes = await load_verified_scopes(db, user)
-    decision = decide(target, None, scopes)
-    if decision.denied and not scan_authz_enforced():
-        decision = _apply_log_only(decision)
-    return decision
+    return decide(target, None, scopes)
 
 
 async def network_scope_for(decision: AuthzDecision, target: str) -> Optional[ScanScope]:
     """The ScanScope active checks under `decision` must stay inside (see
-    modules/scan_scope.py), or None when nothing should be restricted --
-    passive-only or log-only decisions. Resolves DNS, off the event loop."""
+    modules/scan_scope.py), or None for a passive-only decision, which runs
+    no active step. Any other basis it doesn't recognize gets an empty scope
+    that reaches nothing. Resolves DNS, off the event loop."""
     targets = scope_targets(decision)
     if targets is None:
         return None

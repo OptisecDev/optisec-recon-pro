@@ -101,7 +101,7 @@ def current_scope() -> Optional[ScanScope]:
 @contextmanager
 def scan_scope(scope: Optional[ScanScope]):
     """Run the block inside `scope`. None is a no-op (no restriction), which
-    is what log-only mode passes."""
+    is what a passive-only decision passes."""
     if scope is None:
         yield None
         return

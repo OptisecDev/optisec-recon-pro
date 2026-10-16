@@ -297,8 +297,13 @@ def test_subdomain_passive_mode_never_probes(monkeypatch, tmp_path):
     ("verified:http_file:app.example.org", (frozenset({"app.example.org"}), frozenset())),
     ("training:scanme.nmap.org", (frozenset({"scanme.nmap.org"}), frozenset())),
     ("passive_only", None),
-    ("unenforced:passive_only", None),
-    ("unenforced:verified:dns_txt:example.com", None),
+    # Anything else -- unknown, legacy "unenforced:", unknown method, empty
+    # -- gets an empty scope (nothing reachable), never an unrestricted None.
+    ("unenforced:passive_only", (frozenset(), frozenset())),
+    ("unenforced:verified:dns_txt:example.com", (frozenset(), frozenset())),
+    ("verified:carrier_pigeon:example.com", (frozenset(), frozenset())),
+    ("something_new", (frozenset(), frozenset())),
+    ("", (frozenset(), frozenset())),
 ])
 def test_scope_targets(basis, expected):
     assert scope_targets(AuthzDecision(basis=basis)) == expected
@@ -320,7 +325,11 @@ def test_build_scope_resolves_only_in_scope_names(monkeypatch):
 def test_network_scope_for(monkeypatch):
     monkeypatch.setattr(ss, "_resolve", lambda name: {"198.51.100.1"})
     assert _run(dv.network_scope_for(AuthzDecision(basis="passive_only"), "x.test")) is None
-    assert _run(dv.network_scope_for(AuthzDecision(basis="unenforced:passive_only"), "x.test")) is None
+    for basis in ("unenforced:passive_only", "unenforced:verified:dns_txt:x.test", "bogus"):
+        denied_all = _run(dv.network_scope_for(AuthzDecision(basis=basis), "https://x.test/a"))
+        assert denied_all is not None
+        assert not denied_all.hosts and not denied_all.suffixes and not denied_all.ips
+        assert not denied_all.allows("x.test") and not denied_all.allows("198.51.100.1")
     scope = _run(dv.network_scope_for(AuthzDecision(basis="verified:dns_txt:example.com"), "https://shop.example.com/a"))
     assert scope.suffixes == {"example.com"} and scope.hosts == frozenset()
     assert scope.ips == {"198.51.100.1"}
