@@ -21,8 +21,41 @@ from modules.osint.email_finder import find_emails
 from modules.osint.social_media import find_social_profiles
 from modules.target.manager import add_target, list_targets, remove_target
 from modules.report.pdf_generator import generate_report
+from web.scan_authz import decide, normalize_host, TRAINING_TARGETS
 
 console = Console()
+
+
+def _authorize_cli(target: str, scan_types: list):
+    """Scan authorization for the CLI (web/scan_authz.py policy).
+
+    The CLI has no user accounts, so per-domain ownership verification -- the
+    thing that unlocks active checks against your own domains in the hosted
+    web service (web/domain_verification.check_scan_authorization) -- isn't
+    possible here. So active checks (xss/sqli/ssrf/lfi/redirect, crawl,
+    nmap/ports, subdomain) run only against the hardcoded public training
+    targets in web/scan_authz.TRAINING_TARGETS, each within that target's own
+    permitted checks; passive checks (dns/whois/osint) run against anything.
+
+    Returns the AuthzDecision. Prints a clear refusal naming the allowlist for
+    any denied check so the user isn't left guessing. Callers run only the
+    checks in `decision.allowed`.
+    """
+    decision = decide(target, scan_types)
+    if decision.denied:
+        host = normalize_host(target) or target
+        console.print(f"\n[bold red]Not authorized to actively scan {host}.[/bold red]")
+        if decision.reason:
+            console.print(f"[red]{decision.reason}[/red]")
+        console.print(
+            "[yellow]The CLI runs active checks only against the public "
+            "training targets:[/yellow]\n  " + ", ".join(sorted(TRAINING_TARGETS))
+        )
+        console.print(
+            "[dim]To scan a domain you own, verify ownership in the web "
+            "dashboard (type [bold]web[/bold]) and scan from there.[/dim]"
+        )
+    return decision
 
 ACCENT = "[bold green]"
 RESET = "[/bold green]"
@@ -50,6 +83,8 @@ def _spinner(msg: str):
 
 
 def cmd_subdomain(domain: str, **kwargs):
+    if "subdomain" not in _authorize_cli(domain, ["subdomain"]).allowed:
+        return {"subdomains": [], "unconfirmed": []}
     console.print(f"\n[bold green]Enumerating subdomains for {domain}...[/bold green]")
     result = {"subdomains": [], "unconfirmed": []}
     with _spinner(f"Scanning subdomains of {domain}") as p:
@@ -116,6 +151,8 @@ def cmd_whois(domain: str, **kwargs):
 
 
 def cmd_nmap(target: str, **kwargs):
+    if "nmap" not in _authorize_cli(target, ["nmap"]).allowed:
+        return {"nmap": {"ports": [], "error": "not authorized for this target"}}
     console.print(f"\n[bold green]Nmap scan on {target}...[/bold green]")
     with _spinner(f"Scanning ports on {target}") as p:
         p.add_task("scan")
@@ -149,6 +186,15 @@ def cmd_vuln_scan(url: str, scan_types: list = None, **kwargs):
         url = f"https://{url}"
 
     scan_types = scan_types or ["xss", "sqli", "ssrf", "lfi", "redirect"]
+
+    # Active web attacks + the crawl that feeds them run only against
+    # authorized targets (web/scan_authz.py). Drop any check this target
+    # isn't cleared for; if nothing is left, don't crawl or scan at all.
+    allowed = _authorize_cli(url, scan_types).allowed
+    scan_types = [s for s in scan_types if s in allowed]
+    if not scan_types:
+        return {"vulnerabilities": []}
+
     all_findings = []
 
     scanners = {
