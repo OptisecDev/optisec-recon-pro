@@ -924,7 +924,7 @@ async def _ensure_first_admin():
 
 
 _DEMO_TARGETS = [
-    ("tesla.com",     "Tesla Inc."),
+    ("example.com",   "Example Inc."),
     ("google.com",    "Google LLC"),
     ("microsoft.com", "Microsoft Corp"),
     ("apple.com",     "Apple Inc."),
@@ -934,10 +934,10 @@ _DEMO_FINDINGS = [
     # severity uses the same Title Case convention the real scanners write
     # (modules/vuln/*.py via waf_aware_classifier.py: "Critical"/"High"/"Medium"/"Low"),
     # so demo findings don't mix casing with real scan findings on the same account.
-    ("XSS",           "High",     "https://tesla.com/search?q=test", "q",      "<script>alert(1)</script>"),
-    ("SQLi",          "Critical", "https://tesla.com/api/user",      "id",     "' OR 1=1--"),
-    ("SSRF",          "High",     "https://tesla.com/fetch",         "url",    "http://169.254.169.254/"),
-    ("Open Redirect", "Medium",   "https://tesla.com/redirect",      "next",   "//evil.com"),
+    ("XSS",           "High",     "https://example.com/search?q=test", "q",      "<script>alert(1)</script>"),
+    ("SQLi",          "Critical", "https://example.com/api/user",      "id",     "' OR 1=1--"),
+    ("SSRF",          "High",     "https://example.com/fetch",         "url",    "http://169.254.169.254/"),
+    ("Open Redirect", "Medium",   "https://example.com/redirect",      "next",   "//evil.com"),
     ("XSS",           "Medium",   "https://google.com/search",       "q",      "\"><img src=x onerror=alert(1)>"),
     ("LFI",           "Critical", "https://google.com/page",         "file",   "../../etc/passwd"),
     ("SQLi",          "High",     "https://microsoft.com/api/login", "user",   "admin'--"),
