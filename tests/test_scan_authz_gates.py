@@ -25,6 +25,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
+from unittest import mock
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -41,6 +42,10 @@ from web.auth import create_access_token, generate_csrf_token
 from web.database import Base, get_db
 from web.models import DomainVerification, Scan, User
 from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS, SCAN_STEP_ORDER
+from modules.recon.nmap_scanner import nmap_scan as real_nmap_scan
+
+# The real checks, before _isolation fakes them, for tests that only fake DNS.
+REAL_CHECK_DNS_TXT = dv.check_dns_txt
 
 
 CSRF_SECRET = "scan-authz-test-csrf-secret"
@@ -353,6 +358,29 @@ def test_ports_allowed_on_verified(env, nmap_calls):
     r = c.post("/api/scan/ports", json={"target": "api.example.com"}, cookies=_user(sf, verified=["example.com"]))
     assert r.status_code == 200
     assert nmap_calls == ["api.example.com"]
+
+
+def test_api_scan_ports_refused_when_ownership_mismatch(env, monkeypatch):
+    """The real TXT re-check (only the resolver faked) finds another token:
+    403 before nmap_scan is ever entered, nothing recorded."""
+    c, sf = env
+    cookies = _user(sf, verified=["example.com"])
+    lookups = []
+
+    async def txt(name):
+        lookups.append(name)
+        return ["optisec-verify=someone-elses-token"]
+    monkeypatch.setattr(dv, "check_dns_txt", REAL_CHECK_DNS_TXT)
+    monkeypatch.setattr(dv, "_resolve_txt", txt)
+    scanner = mock.create_autospec(real_nmap_scan, side_effect=AssertionError("nmap_scan launched"))
+    monkeypatch.setattr(app_module, "nmap_scan", scanner)
+
+    r = c.post("/api/scan/ports", json={"target": "api.example.com"}, cookies=cookies)
+    assert r.status_code == 403
+    assert r.json()["denied_checks"] == ["nmap"]
+    assert lookups == ["_optisec-verify.example.com"]
+    assert scanner.call_count == 0
+    assert _scans(sf) == []
 
 
 # ── /api/osint ───────────────────────────────────────────────────────────────

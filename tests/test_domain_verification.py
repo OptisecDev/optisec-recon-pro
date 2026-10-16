@@ -27,7 +27,7 @@ import web.domain_verification as dv
 import web.migrate_add_domain_verifications_table as migrate_module
 from web.database import Base
 from web.models import DomainVerification, User
-from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS
+from web.scan_authz import ACTIVE_CHECKS, PASSIVE_CHECKS, scope_targets
 
 TOKEN = "tok_abc123"
 NOW = datetime(2026, 10, 6, 12, 0, 0)
@@ -384,6 +384,15 @@ def _status(sf, domain, user_id):
     return _run(go())
 
 
+def _last_error(sf, domain, user_id):
+    async def go():
+        async with sf() as db:
+            return (await db.execute(select(DomainVerification.last_error).where(
+                DomainVerification.domain == domain, DomainVerification.user_id == user_id,
+            ))).scalar_one()
+    return _run(go())
+
+
 def _no_network(monkeypatch):
     _txt(monkeypatch, exc=AssertionError("unexpected DNS"))
     _addrs(monkeypatch, exc=AssertionError("unexpected resolve"))
@@ -433,6 +442,43 @@ def test_authorize_rechecks_file_live_even_when_fresh(session_factory, monkeypat
     _addrs(monkeypatch)
     _http(monkeypatch, lambda req: httpx.Response(404))
     assert not _authorize(session_factory, u, "example.com", ["xss"]).ok
+    assert _status(session_factory, "example.com", u.id) == "revoked"
+
+
+def test_authorize_http_file_different_token_revokes(session_factory, monkeypatch):
+    """The file verified with the record's token, but now serves another
+    token: one fetch, the scan is refused and the verification revoked."""
+    u = _seed(session_factory, "alice", [("example.com", "http_file", "verified", FRESH)])
+    _addrs(monkeypatch)
+    body = {"text": "alice-0"}
+    seen = _http(monkeypatch, lambda req: httpx.Response(200, text=body["text"]))
+    assert _authorize(session_factory, u, "example.com", ["xss"]).ok
+
+    body["text"] = "optisec-verify=someone-elses-token"
+    seen.clear()
+    d = _authorize(session_factory, u, "example.com", ["xss"])
+    assert not d.ok and d.denied == {"xss"} and d.allowed == set()
+    assert d.basis == "passive_only" and scope_targets(d) is None
+    assert _status(session_factory, "example.com", u.id) == "revoked"
+    assert seen == ["https://example.com/.well-known/optisec-verify.txt"]
+
+
+def test_authorize_http_file_offhost_redirect_denied_at_authorize(session_factory, monkeypatch):
+    """The re-check is redirected to another host that would serve the right
+    token: the redirect is not followed and the scan is refused."""
+    u = _seed(session_factory, "alice", [("example.com", "http_file", "verified", FRESH)])
+    _addrs(monkeypatch)
+
+    def handler(req):
+        if req.url.host == "example.com":
+            return httpx.Response(302, headers={"location": "https://attacker.test/optisec-verify.txt"})
+        return httpx.Response(200, text="alice-0")
+    seen = _http(monkeypatch, handler)
+    d = _authorize(session_factory, u, "example.com", ["nmap"])
+    assert not d.ok and d.denied == {"nmap"} and d.allowed == set()
+    assert d.basis == "passive_only" and scope_targets(d) is None
+    assert seen == ["https://example.com/.well-known/optisec-verify.txt"]
+    assert not any(httpx.URL(url).host == "attacker.test" for url in seen)
     assert _status(session_factory, "example.com", u.id) == "revoked"
 
 
@@ -501,6 +547,19 @@ def test_authorize_stale_recheck_transient_denies_but_keeps_record(session_facto
     _txt(monkeypatch, exc=dns.exception.Timeout())
     assert not _authorize(session_factory, u, "example.com", ["nmap"]).ok
     assert _status(session_factory, "example.com", u.id) == "verified"
+
+
+def test_authorize_http_file_timeout_denies_but_keeps_verified(session_factory, monkeypatch):
+    u = _seed(session_factory, "alice", [("example.com", "http_file", "verified", STALE)])
+    _addrs(monkeypatch)
+
+    def handler(req):
+        raise httpx.ReadTimeout("timed out", request=req)
+    _http(monkeypatch, handler)
+    d = _authorize(session_factory, u, "example.com", ["nmap"])
+    assert not d.ok and d.allowed == set() and scope_targets(d) is None
+    assert _status(session_factory, "example.com", u.id) == "verified"
+    assert _last_error(session_factory, "example.com", u.id)
 
 
 def test_authorize_only_rechecks_records_covering_target(session_factory, monkeypatch):
