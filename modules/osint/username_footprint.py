@@ -160,7 +160,7 @@ async def _check_platform(
         }
 
     try:
-        async with session.get(url, allow_redirects=True, ssl=False) as resp:
+        async with session.get(url, allow_redirects=True) as resp:
             exists = resp.status == 200
             return {
                 "platform": name,
@@ -189,7 +189,7 @@ async def search_username(username: str) -> dict:
     unverified = []
     errors = []
 
-    connector = aiohttp.TCPConnector(limit=30, ssl=False)
+    connector = aiohttp.TCPConnector(limit=30)
     async with aiohttp.ClientSession(
         headers=headers, timeout=TIMEOUT, connector=connector
     ) as session:
