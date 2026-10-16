@@ -159,6 +159,35 @@ def test_file_match(monkeypatch):
     assert seen == ["https://example.com/.well-known/optisec-verify.txt"]
 
 
+@pytest.mark.parametrize("body", [
+    TOKEN,
+    f"optisec-verify={TOKEN}",
+    f"\n\t {TOKEN} \r\n",
+    f"  optisec-verify={TOKEN}\n",
+])
+def test_file_accepts_bare_and_prefixed_token(monkeypatch, body):
+    _addrs(monkeypatch)
+    _http(monkeypatch, lambda req: httpx.Response(200, text=body))
+    assert _run(dv.check_http_file("example.com", TOKEN)).verified
+
+
+@pytest.mark.parametrize("body", [
+    "optisec-verify=wrong-token",
+    f"optisec-verify={TOKEN}x",
+    f"optisec-verify=x{TOKEN}",
+    "optisec-verify=",
+    f"other-prefix={TOKEN}",
+    "",
+    "   \n",
+])
+def test_file_wrong_or_empty_token_rejected(monkeypatch, body):
+    _addrs(monkeypatch)
+    _http(monkeypatch, lambda req: httpx.Response(200, text=body))
+    r = _run(dv.check_http_file("example.com", TOKEN))
+    assert not r.verified and not r.transient
+    assert r.error == "Verification file found but the token does not match"
+
+
 def test_file_mismatch_does_not_echo_body(monkeypatch):
     _addrs(monkeypatch)
     _http(monkeypatch, lambda req: httpx.Response(200, text="SECRET-INTERNAL-CONTENT"))

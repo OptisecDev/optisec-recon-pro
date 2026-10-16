@@ -1028,7 +1028,7 @@ Verification is per user — each account verifies the domains it scans.
 | Method | What to publish | Covers |
 |--------|-----------------|--------|
 | **DNS TXT** | TXT record `_optisec-verify.<domain>` = `optisec-verify=<token>` | The domain **and all its subdomains** |
-| **Verification file** | `https://<host>/.well-known/optisec-verify.txt` containing exactly `<token>` (plain `http://` is tried if HTTPS can't connect) | **That exact host only** |
+| **Verification file** | `https://<host>/.well-known/optisec-verify.txt` containing `<token>` or `optisec-verify=<token>` (surrounding whitespace ignored; plain `http://` is tried if HTTPS can't connect) | **That exact host only** |
 
 IP addresses can't be verified. The file check refuses hosts that resolve to
 internal addresses, only follows redirects on the same host, and never shows

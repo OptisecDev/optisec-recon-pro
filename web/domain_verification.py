@@ -6,8 +6,9 @@ trusts. Two methods:
   dns_txt    TXT record at  _optisec-verify.<domain>  with value
              optisec-verify=<token>. Covers the domain and all subdomains.
   http_file  https://<host>/.well-known/optisec-verify.txt (http:// as a
-             fallback when https can't connect) whose body is exactly the
-             token. Covers only that exact host.
+             fallback when https can't connect) whose body is the token,
+             either bare or as optisec-verify=<token>. Covers only that
+             exact host.
 
 The file fetch is SSRF-hardened: the host must not resolve to any internal
 address, redirects are followed one hop at a time and only to the same host
@@ -181,6 +182,15 @@ async def _fetch_token_file(client: httpx.AsyncClient, host: str, url: str) -> b
     raise _Definitive("Too many redirects")
 
 
+def _file_token(body: bytes) -> str:
+    """The token part of a verification file: the stripped body, minus an
+    optional optisec-verify= prefix (the same value the TXT record uses)."""
+    value = body.decode("utf-8", "replace").strip()
+    if value.startswith(DNS_VALUE_PREFIX):
+        value = value[len(DNS_VALUE_PREFIX):].strip()
+    return value
+
+
 async def check_http_file(host: str, token: str) -> CheckResult:
     if _is_ssrf_blocked_host(host):
         return CheckResult(False, "Local/internal hosts can't be verified")
@@ -201,7 +211,7 @@ async def check_http_file(host: str, token: str) -> CheckResult:
                 continue  # https not served -- fall back to http
             except httpx.HTTPError:
                 return CheckResult(False, "Could not fetch the verification file; try again later", transient=True)
-            if body.decode("utf-8", "replace").strip() == token:
+            if _file_token(body) == token:
                 return CheckResult(True)
             return CheckResult(False, "Verification file found but the token does not match")
     return CheckResult(False, "Could not connect to the host; try again later", transient=True)
