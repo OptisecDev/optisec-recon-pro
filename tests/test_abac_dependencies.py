@@ -25,7 +25,7 @@ import auth.dependencies as abac
 from auth.dependencies import Decision, PolicyError, evaluate, load_policy, policy_from_dict, require_abac
 from web.scan_authz import VerifiedScope
 
-RULES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "abac_rules.json")
+RULES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "abac", "abac_rules.json")
 
 UTC = timezone.utc
 IN_HOURS = datetime(2026, 10, 13, 10, 30, tzinfo=UTC)      # Tue 10:30 UTC
@@ -147,6 +147,13 @@ def test_confirm_flag_does_not_change_evaluation(policy):
 def test_default_rules_path_is_the_shipped_file():
     assert os.path.samefile(abac.DEFAULT_RULES_PATH, RULES_FILE)
     assert len(abac.get_policy().rules) == 8
+
+
+def test_rules_dir_does_not_shadow_config_module():
+    import config
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    assert os.path.samefile(config.__file__, os.path.join(root, "config.py"))
+    assert not os.path.exists(os.path.join(root, "config"))
 
 
 # ── Rule 1: analyst -> CVE Pipeline (cve_read / cve_action) ──────────────────
@@ -917,7 +924,7 @@ def test_scan_viewer_malformed_or_broad_request_denied(body):
 
 @pytest.mark.parametrize("role", ["analyst", "admin"])
 def test_scan_analyst_and_admin_follow_config_default_deny(role):
-    # No api_scan rule names these roles in config/abac_rules.json, so ABAC denies.
+    # No api_scan rule names these roles in abac/abac_rules.json, so ABAC denies.
     # Live, run_scan's require_analyst_or_admin is what admits them; ABAC is not wired.
     assert _scan_app(role).post("/api/scan", json=AUTHORIZED).status_code == 403
 

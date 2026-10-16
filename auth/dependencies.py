@@ -1,6 +1,6 @@
 """Context-aware (ABAC) authorization layered on top of web/auth.py's role checks.
 
-Rules are data, not code. They are loaded from config/abac_rules.json
+Rules are data, not code. They are loaded from abac/abac_rules.json
 (override the path with ABAC_RULES_PATH). Each rule must have
 id / roles / resource / conditions / effect / confirm; the file is validated
 at load and any error makes every require_abac() dependency deny. "confirm"
@@ -56,16 +56,15 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from abac.policy_config import DEFAULT_RULES_PATH, RULES_PATH_ENV
 from web import scan_authz
 from web.auth import get_client_ip, get_current_user
 from web.database import get_db
 
 logger = logging.getLogger("auth.abac")
 
-RULES_PATH_ENV = "ABAC_RULES_PATH"
 TIMEZONE_ENV = "ABAC_TIMEZONE"
 DEFAULT_TIMEZONE = "Asia/Baghdad"
-DEFAULT_RULES_PATH = Path(__file__).resolve().parent.parent / "config" / "abac_rules.json"
 
 PROVIDED_ATTRIBUTES = frozenset({"resource_severity", "scan_checks", "target_authorized"})
 ATTRIBUTES = frozenset({"role", "ip_address", "request_time", "operation", "route"}) | PROVIDED_ATTRIBUTES
