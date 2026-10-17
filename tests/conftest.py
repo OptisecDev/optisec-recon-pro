@@ -9,4 +9,7 @@ os.environ.setdefault("GROQ_ENV", "test")
 # (load_dotenv doesn't override), and the suite runs without that file.
 from cryptography.fernet import Fernet
 os.environ.setdefault("FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
+# Per-run test credential; never a real password.
+import secrets
+os.environ.setdefault("AUDIT_LOG_ADMIN_PASSWORD", secrets.token_urlsafe(32))
 os.environ.setdefault("GROQ_API_KEY", "")
