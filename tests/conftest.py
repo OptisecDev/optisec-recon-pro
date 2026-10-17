@@ -4,4 +4,9 @@ import os
 # setdefault keeps any value already set in the shell; under pytest, the test
 # environment lets the startup guards load without production secrets.
 os.environ.setdefault("GROQ_ENV", "test")
+# A per-run test key; never a real key. Setting it before app.core.config is
+# imported keeps the real .env.eternal key out of the test process
+# (load_dotenv doesn't override), and the suite runs without that file.
+from cryptography.fernet import Fernet
+os.environ.setdefault("FIELD_ENCRYPTION_KEY", Fernet.generate_key().decode())
 os.environ.setdefault("GROQ_API_KEY", "")
